@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+:root {
+  --background: #050608;
+  --foreground: #f8fafc;
+  --surface: rgba(15, 23, 42, 0.9);
+  --surface-strong: rgba(15, 23, 42, 0.95);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+html,
+body,
+#__next {
+  min-height: 100%;
+}
+
+.argus-leaflet-map .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.72) contrast(1.15) saturate(0.75);
+}
+
+.argus-leaflet-map .leaflet-control-attribution {
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 10px;
+}
+
+.argus-leaflet-map .leaflet-div-icon,
+.argus-leaflet-map .leaflet-marker-icon {
+  background: transparent !important;
+  border: none !important;
+}

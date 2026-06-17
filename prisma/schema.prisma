@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String         @id @default(cuid())
+  name             String
+  email            String         @unique
+  phone            String?
+  governmentIdHash String         @unique
+  publicAlias      String
+  role             String         @default("CITIZEN")
+  accountStatus    String         @default("ACTIVE")
+  trustScore       Int            @default(70)
+  strikes          Int            @default(0)
+  reports          Report[]
+  helpRequests     HelpRequest[]
+  sanctionCreated  Sanction[]     @relation("SanctionCreator")
+  sanctions        Sanction[]     @relation("SanctionTarget")
+  auditLogs        AuditLog[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+model Report {
+  id              String         @id @default(cuid())
+  user            User           @relation(fields: [userId], references: [id])
+  userId          String
+  category        String
+  title           String
+  description     String
+  latitude        Float
+  longitude       Float
+  locationText    String?
+  severity        String         @default("LOW")
+  status          String         @default("NEW")
+  aiSummary       String?
+  aiRecommendation String?
+  aiConfidence    Int?
+  falseReportRisk Int?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model HelpRequest {
+  id              String         @id @default(cuid())
+  user            User           @relation(fields: [userId], references: [id])
+  userId          String
+  category        String
+  title           String
+  description     String
+  latitude        Float
+  longitude       Float
+  locationText    String?
+  priority        String         @default("LOW")
+  status          String         @default("RECEIVED")
+  restrictedMode  Boolean        @default(false)
+  aiSummary       String?
+  aiRecommendation String?
+  aiConfidence    Int?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUser   User?    @relation(fields: [actorUserId], references: [id])
+  actorUserId String?
+  action      String
+  targetType  String
+  targetId    String?
+  metadata    String?
+  createdAt   DateTime @default(now())
+}
+
+model Sanction {
+  id          String   @id @default(cuid())
+  user        User     @relation("SanctionTarget", fields: [userId], references: [id])
+  userId      String
+  type        String
+  reason      String
+  createdBy   User?    @relation("SanctionCreator", fields: [createdById], references: [id])
+  createdById String?
+  createdAt   DateTime @default(now())
+}
