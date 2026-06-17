@@ -38,6 +38,16 @@ body,
   min-height: 100%;
 }
 
+.argus-hud {
+  border-color: rgba(45, 212, 191, 0.18);
+  background-image: radial-gradient(circle at top left, rgba(45, 212, 191, 0.08), transparent 36%), radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.05), transparent 28%);
+}
+
+.argus-tactical-panel {
+  border-color: rgba(56, 189, 248, 0.18);
+  background-image: radial-gradient(circle at top left, rgba(45, 212, 191, 0.1), transparent 34%), radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.06), transparent 26%);
+}
+
 .argus-leaflet-map .leaflet-tile-pane {
   filter: invert(1) hue-rotate(180deg) brightness(0.72) contrast(1.15) saturate(0.75);
 }

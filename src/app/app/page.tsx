@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import OperationalMap from "@/components/map/OperationalMap";
 import MapHUD from "@/components/map/MapHUD";
+import MapLayerControls from "@/components/map/MapLayerControls";
 import FloatingSOSButton from "@/components/app/FloatingSOSButton";
 import FloatingReportButton from "@/components/app/FloatingReportButton";
 import NearbyEventsSheet from "@/components/app/NearbyEventsSheet";
@@ -26,7 +27,7 @@ const initialEventState: CrisisEvent[] = [];
 export default function AppPage() {
   const [selectedEvent, setSelectedEvent] = useState<CrisisEvent | null>(null);
   const [events, setEvents] = useState<CrisisEvent[]>(initialEventState);
-  const [layerSettings] = useState(initialLayers);
+  const [layerSettings, setLayerSettings] = useState(initialLayers);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -35,6 +36,13 @@ export default function AppPage() {
 
   const canReport = Boolean(sessionUser && !["LIMITED", "SUSPENDED", "BANNED"].includes(sessionUser.accountStatus));
   const canSOS = Boolean(sessionUser);
+
+  const toggleLayer = (key: keyof typeof initialLayers) => {
+    setLayerSettings((current) => ({
+      ...current,
+      [key]: !current[key],
+    }));
+  };
 
   const gpsStatus = useMemo(() => {
     if (location.status === "loading") return "Buscando GPS";
@@ -120,6 +128,10 @@ export default function AppPage() {
       />
 
       <MapHUD gpsStatus={gpsStatus} />
+
+      <div className="pointer-events-auto fixed right-4 top-28 z-40 w-[min(320px,calc(100%-2rem))] md:w-[320px]">
+        <MapLayerControls layers={layerSettings} onToggle={toggleLayer} />
+      </div>
 
       <div className="pointer-events-none fixed left-4 top-20 z-40 hidden max-w-xs rounded-3xl border border-cyan-400/20 bg-slate-950/85 p-4 text-sm text-slate-200 backdrop-blur-xl shadow-2xl shadow-black/40 md:block">
         <p className="text-[0.68rem] uppercase tracking-[0.36em] text-cyan-300/85">Modo ciudadano</p>

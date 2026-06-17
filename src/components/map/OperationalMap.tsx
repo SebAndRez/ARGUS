@@ -149,8 +149,10 @@ export default function OperationalMap({
     if (selectedEventId && centerOnSelected) {
       const selectedEvent = visibleEvents.find((event) => event.id === selectedEventId);
       if (selectedEvent) {
-        map.flyTo([selectedEvent.latitude, selectedEvent.longitude], {
-          zoom: 13,
+        const lat = Number(selectedEvent.latitude);
+        const lng = Number(selectedEvent.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+        map.flyTo([lat, lng], 13, {
           duration: 0.8,
         });
       }
@@ -159,8 +161,10 @@ export default function OperationalMap({
 
   useEffect(() => {
     if (!mapReady || !mapRef.current || selectedEventId) return;
-    mapRef.current.flyTo([location.latitude, location.longitude], {
-      zoom: 12,
+    const lat = Number(location.latitude);
+    const lng = Number(location.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    mapRef.current.flyTo([lat, lng], 12, {
       duration: 0.7,
     });
   }, [location.latitude, location.longitude, mapReady, selectedEventId]);

@@ -23,8 +23,13 @@ const labels: Record<keyof Props["layers"], string> = {
 
 export default function MapLayerControls({ layers, onToggle }: Props) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-slate-950/90 p-4 shadow-xl shadow-black/30 backdrop-blur-xl">
-      <p className="mb-3 text-xs uppercase tracking-[0.24em] text-cyan-300/85">Capas</p>
+    <div className="argus-tactical-panel rounded-3xl border bg-slate-950/95 p-4 shadow-2xl shadow-black/35 backdrop-blur-xl">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <p className="text-[0.65rem] uppercase tracking-[0.28em] text-cyan-300/80">CAPAS / LAYERS</p>
+          <p className="mt-1 text-sm font-semibold text-white">Control táctico</p>
+        </div>
+      </div>
       <div className="grid gap-3">
         {(Object.keys(layers) as Array<keyof Props["layers"]>).map((key) => (
           <button
@@ -38,7 +43,7 @@ export default function MapLayerControls({ layers, onToggle }: Props) {
             }`}
           >
             <span>{labels[key]}</span>
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-white/15 text-[0.7rem] font-semibold">
+            <span className="inline-flex h-6 min-w-[2rem] items-center justify-center rounded-full border border-white/15 bg-slate-950/70 px-2 text-[0.65rem] font-semibold">
               {layers[key] ? "ON" : "OFF"}
             </span>
           </button>
