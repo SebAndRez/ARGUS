@@ -5,6 +5,20 @@ export type HelpPriority = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 export type HelpStatus = "RECEIVED" | "UNDER_REVIEW" | "ASSIGNED" | "RESOLVED" | "CANCELLED";
 export type UserRole = "CITIZEN" | "RESPONDER" | "OPERATOR" | "ANALYST" | "ADMIN";
 export type AccountStatus = "ACTIVE" | "WATCHED" | "LIMITED" | "SUSPENDED" | "BANNED";
+export type AlertLifecycleStatus =
+  | "new"
+  | "verifying"
+  | "confirmed"
+  | "responding"
+  | "resolved"
+  | "expired"
+  | "dismissed";
+export type AlertVerificationAction =
+  | "still_happening"
+  | "not_happening"
+  | "cannot_verify"
+  | "false_report"
+  | "reactivate";
 
 export interface CrisisEvent {
   id: string;
@@ -32,6 +46,16 @@ export interface CrisisEvent {
   recommendedAction?: string | null;
   operatorRecommendedAction?: string | null;
   falseReportRisk?: number | null;
+  lifecycleStatus?: AlertLifecycleStatus | null;
+  verificationCount?: number | null;
+  stillHappeningCount?: number | null;
+  notHappeningCount?: number | null;
+  falseReportCount?: number | null;
+  lastVerifiedAt?: string | null;
+  expiresAt?: string | null;
+  isExpired?: boolean | null;
+  canReactivate?: boolean | null;
+  priorityScore?: number | null;
   restrictedMode?: boolean;
   author?: string;
   recordType?: "Report" | "HelpRequest";

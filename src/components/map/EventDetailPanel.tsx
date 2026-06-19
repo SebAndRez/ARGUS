@@ -5,17 +5,31 @@ import {
   CONFIDENCE_PRESENTATION,
   getDefaultConfidenceLevel,
   getDefaultSourceSummary,
-  getDefaultWhyItMatters,
+  type InterfaceVariant,
 } from "@/config/argusDesignSystem";
+import {
+  deriveConfidenceFromSignals,
+  derivePriorityScore,
+  deriveRecommendedAction,
+  deriveWhyItMatters,
+  getLifecycleStatus,
+} from "@/lib/alertLifecycle";
+import AlertLifecycleBadge from "@/components/ui/AlertLifecycleBadge";
+import AlertVerificationActions from "@/components/ui/AlertVerificationActions";
 import ConfidenceBlock from "@/components/ui/ConfidenceBlock";
 import RecommendedActionBlock from "@/components/ui/RecommendedActionBlock";
 import SourceTypeBadge from "@/components/ui/SourceTypeBadge";
-import type { CrisisEvent } from "@/types/crisis";
+import type {
+  AlertVerificationAction,
+  CrisisEvent,
+} from "@/types/crisis";
 
 interface Props {
   event: CrisisEvent | null;
   onCenter?: (event: CrisisEvent) => void;
   onClose?: () => void;
+  onVerifyAction?: (eventId: string, action: AlertVerificationAction) => void;
+  variant?: InterfaceVariant;
 }
 
 const priorityLabels: Record<string, string> = {
@@ -100,7 +114,13 @@ function formatTimestamp(value: string | null | undefined) {
   });
 }
 
-export default function EventDetailPanel({ event, onCenter, onClose }: Props) {
+export default function EventDetailPanel({
+  event,
+  onCenter,
+  onClose,
+  onVerifyAction,
+  variant = "operator",
+}: Props) {
   if (!event) {
     return (
       <section className="relative min-w-0 overflow-hidden rounded-lg border border-cyan-400/15 bg-slate-950/90 shadow-2xl shadow-black/30 backdrop-blur-xl">
@@ -129,18 +149,16 @@ export default function EventDetailPanel({ event, onCenter, onClose }: Props) {
   const severity = ALERT_SEVERITY_PRESENTATION[event.severity];
   const type = typeBadge(event.type);
   const status = statusBadge(event.status);
+  const lifecycleStatus = getLifecycleStatus(event);
   const priorityValue = event.priority?.toUpperCase() ?? null;
   const priorityLabel = priorityValue ? priorityLabels[priorityValue] ?? `Prioridad ${priorityValue}` : null;
+  const priorityScore = event.priorityScore ?? derivePriorityScore(event);
   const latitude = Number(event.latitude);
   const longitude = Number(event.longitude);
   const coordinates =
     Number.isFinite(latitude) && Number.isFinite(longitude) ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}` : null;
   const timestamp = formatTimestamp(event.createdAt);
-  const rawConfidence = event.confidence ?? event.aiConfidence;
-  const confidence =
-    typeof rawConfidence === "number" && Number.isFinite(rawConfidence)
-      ? Math.max(0, Math.min(100, rawConfidence))
-      : null;
+  const confidence = deriveConfidenceFromSignals(event);
   const confidenceLabel =
     event.confidenceLabel ??
     CONFIDENCE_PRESENTATION[getDefaultConfidenceLevel({ type: event.type, status: event.status })].label;
@@ -154,9 +172,13 @@ export default function EventDetailPanel({ event, onCenter, onClose }: Props) {
         ? "Solicitud ciudadana"
         : "Fuente pendiente";
   const sourceSummary = event.sourceSummary?.trim() || getDefaultSourceSummary(event.type);
-  const whyItMatters = event.whyItMatters?.trim() || getDefaultWhyItMatters(event.severity, event.type);
+  const whyItMatters = deriveWhyItMatters(event);
   const recommendedAction =
-    event.operatorRecommendedAction?.trim() || event.recommendedAction?.trim() || event.aiRecommendation?.trim();
+    deriveRecommendedAction(event, variant) || event.aiRecommendation?.trim();
+  const lastVerifiedAt = formatTimestamp(event.lastVerifiedAt);
+  const verificationCount = event.verificationCount ?? 0;
+  const stillHappeningCount = event.stillHappeningCount ?? 0;
+  const notHappeningCount = event.notHappeningCount ?? 0;
   const hasDescription = Boolean(event.description?.trim());
   const hasAiAnalysis = Boolean(event.aiSummary?.trim());
   const hasOperationalData = Boolean(event.locationText?.trim() || coordinates || timestamp);
@@ -191,7 +213,7 @@ export default function EventDetailPanel({ event, onCenter, onClose }: Props) {
 
         <div className="mt-4 flex flex-wrap gap-2">
           <span className={`rounded-md border px-2.5 py-1 text-[0.65rem] font-semibold uppercase ${severity.className}`}>
-            {severity.operatorLabel}
+            {variant === "citizen" ? severity.citizenLabel : severity.operatorLabel}
           </span>
           {priorityLabel && (
             <span className={`rounded-md border px-2.5 py-1 text-[0.65rem] font-semibold uppercase ${severity.className}`}>
@@ -201,7 +223,8 @@ export default function EventDetailPanel({ event, onCenter, onClose }: Props) {
           <span className={`rounded-md border px-2.5 py-1 text-[0.65rem] font-semibold uppercase ${status.className}`}>
             {status.label}
           </span>
-          <SourceTypeBadge category={sourceCategory} label={sourceBadgeLabel} variant="operator" />
+          <AlertLifecycleBadge status={lifecycleStatus} />
+          <SourceTypeBadge category={sourceCategory} label={sourceBadgeLabel} variant={variant} />
         </div>
       </header>
 
@@ -249,33 +272,66 @@ export default function EventDetailPanel({ event, onCenter, onClose }: Props) {
         )}
 
         <section className="grid gap-3 px-5 py-5 sm:px-6">
+          <section className="argus-calm-panel rounded-lg border border-white/10 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-white">Señales ciudadanas</p>
+              <span className="rounded-md border border-white/10 bg-slate-900/80 px-2 py-1 font-mono text-[0.65rem] text-slate-300">
+                Prioridad {priorityScore}/100
+              </span>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-md border border-cyan-300/15 bg-cyan-400/5 px-2 py-2">
+                <p className="font-mono text-sm font-bold text-cyan-200">{stillHappeningCount}</p>
+                <p className="mt-1 text-[0.6rem] text-slate-400">Sigue activa</p>
+              </div>
+              <div className="rounded-md border border-emerald-300/15 bg-emerald-400/5 px-2 py-2">
+                <p className="font-mono text-sm font-bold text-emerald-200">{notHappeningCount}</p>
+                <p className="mt-1 text-[0.6rem] text-slate-400">Ya no ocurre</p>
+              </div>
+              <div className="rounded-md border border-white/10 bg-slate-900/60 px-2 py-2">
+                <p className="font-mono text-sm font-bold text-white">{verificationCount}</p>
+                <p className="mt-1 text-[0.6rem] text-slate-400">Verificaciones</p>
+              </div>
+            </div>
+            {lastVerifiedAt && (
+              <p className="mt-3 text-xs text-slate-500">Última señal: {lastVerifiedAt}</p>
+            )}
+          </section>
           <ConfidenceBlock
             score={confidence}
             label={confidenceLabel}
             sourceSummary={sourceSummary}
-            lastUpdatedLabel={event.lastUpdatedLabel}
+            lastUpdatedLabel={event.lastUpdatedLabel ?? lastVerifiedAt}
             whyItMatters={whyItMatters}
-            variant="operator"
+            variant={variant}
           />
           <RecommendedActionBlock
             action={recommendedAction}
             severity={event.severity}
             type={event.type}
             status={event.status}
-            variant="operator"
+            variant={variant}
           />
+          {onVerifyAction && (
+            <AlertVerificationActions
+              event={event}
+              onVerifyAction={(action) => onVerifyAction(event.id, action)}
+            />
+          )}
         </section>
       </div>
 
-      <footer className="border-t border-white/10 px-5 py-4 sm:px-6">
-        <button
-          type="button"
-          onClick={() => onCenter?.(event)}
-          className="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-cyan-300/30 bg-cyan-400 px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-200/80 focus:ring-offset-2 focus:ring-offset-slate-950 sm:w-auto"
-        >
-          Centrar en mapa
-        </button>
-      </footer>
+      {onCenter && (
+        <footer className="border-t border-white/10 px-5 py-4 sm:px-6">
+          <button
+            type="button"
+            onClick={() => onCenter(event)}
+            className="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-cyan-300/30 bg-cyan-400 px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-200/80 focus:ring-offset-2 focus:ring-offset-slate-950 sm:w-auto"
+          >
+            Centrar en mapa
+          </button>
+        </footer>
+      )}
     </section>
   );
 }

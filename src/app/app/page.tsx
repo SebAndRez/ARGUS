@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import OperationalMap from "@/components/map/OperationalMap";
 import MapHUD from "@/components/map/MapHUD";
 import MapLayerControls from "@/components/map/MapLayerControls";
+import EventDetailPanel from "@/components/map/EventDetailPanel";
 import VisualSourcePopup from "@/components/map/VisualSourcePopup";
 import WindLayerLegend from "@/components/map/WindLayerLegend";
 import FloatingSOSButton from "@/components/app/FloatingSOSButton";
@@ -18,7 +19,15 @@ import {
   demoRiskProjections,
   demoWeatherObservations,
 } from "@/data/demoWeatherRisk";
-import type { CrisisEvent, SessionUser } from "@/types/crisis";
+import {
+  applyDemoVerification,
+  enrichEventLifecycle,
+} from "@/lib/alertLifecycle";
+import type {
+  AlertVerificationAction,
+  CrisisEvent,
+  SessionUser,
+} from "@/types/crisis";
 import type { VisualSource } from "@/types/visualSource";
 import type { RiskProjection } from "@/types/weatherRisk";
 
@@ -70,6 +79,22 @@ export default function AppPage() {
     setSelectedRiskProjection(projection);
   }, []);
 
+  const handleVerifyAction = useCallback(
+    (eventId: string, action: AlertVerificationAction) => {
+      const verifiedAt = new Date();
+
+      setEvents((current) =>
+        current.map((event) =>
+          event.id === eventId ? applyDemoVerification(event, action, verifiedAt) : event
+        )
+      );
+      setSelectedEvent((current) =>
+        current?.id === eventId ? applyDemoVerification(current, action, verifiedAt) : current
+      );
+    },
+    []
+  );
+
   const toggleLayer = (key: keyof typeof initialLayers) => {
     setLayerSettings((current) => ({
       ...current,
@@ -90,7 +115,18 @@ export default function AppPage() {
         const res = await fetch("/api/events", { cache: "no-store" });
         if (!res.ok) throw new Error("No se pudieron cargar los eventos");
         const data = await res.json();
-        setEvents(data.events ?? []);
+        let expiredDemoAssigned = false;
+        const enrichedEvents = (data.events ?? []).map((event: CrisisEvent) => {
+          const normalizedStatus = event.status?.trim().toUpperCase();
+          const expiredDemo =
+            !expiredDemoAssigned &&
+            event.type === "REPORT" &&
+            !["RESOLVED", "DISCARDED", "CANCELLED"].includes(normalizedStatus);
+
+          if (expiredDemo) expiredDemoAssigned = true;
+          return enrichEventLifecycle(event, { expiredDemo });
+        });
+        setEvents(enrichedEvents);
       } catch (error) {
         setErrorMessage("Error al cargar eventos. Usando datos locales.");
       }
@@ -114,11 +150,11 @@ export default function AppPage() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "No se pudo enviar el reporte");
     setEvents((prev) => [
-      {
+      enrichEventLifecycle({
         ...data.report,
         type: "REPORT",
         recordType: "Report",
-      },
+      }),
       ...prev,
     ]);
   }
@@ -140,11 +176,11 @@ export default function AppPage() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "No se pudo enviar la solicitud SOS");
     setEvents((prev) => [
-      {
+      enrichEventLifecycle({
         ...data.helpRequest,
         type: "SOS",
         recordType: "HelpRequest",
-      },
+      }),
       ...prev,
     ]);
   }
@@ -218,6 +254,30 @@ export default function AppPage() {
       </button>
 
       <NearbyEventsSheet events={events} latitude={location.latitude} longitude={location.longitude} onSelect={selectEvent} />
+
+      {selectedEvent && (
+        <div
+          className="fixed inset-0 z-[65] flex items-end justify-center bg-black/60 p-3 backdrop-blur-sm sm:items-center sm:p-6"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSelectedEvent(null);
+          }}
+        >
+          <div
+            className="w-full max-w-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Detalle de ${selectedEvent.title}`}
+          >
+            <EventDetailPanel
+              event={selectedEvent}
+              onClose={() => setSelectedEvent(null)}
+              onVerifyAction={handleVerifyAction}
+              variant="citizen"
+            />
+          </div>
+        </div>
+      )}
 
       <VisualSourcePopup source={selectedVisualSource} onClose={() => setSelectedVisualSource(null)} />
 

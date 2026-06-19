@@ -6,6 +6,12 @@ import {
   getDefaultConfidenceLevel,
   getDefaultSourceSummary,
 } from "@/config/argusDesignSystem";
+import {
+  deriveConfidenceFromSignals,
+  deriveRecommendedAction,
+  getLifecycleStatus,
+} from "@/lib/alertLifecycle";
+import AlertLifecycleBadge from "@/components/ui/AlertLifecycleBadge";
 import ConfidenceBlock from "@/components/ui/ConfidenceBlock";
 import RecommendedActionBlock from "@/components/ui/RecommendedActionBlock";
 import type { CrisisEvent } from "@/types/crisis";
@@ -33,22 +39,6 @@ function eventTypeLabel(type: CrisisEvent["type"]) {
   if (type === "SOS") return "SOS";
   if (type === "ALERT") return "Alerta";
   return "Reporte";
-}
-
-function statusLabel(status: string) {
-  const labels: Record<string, string> = {
-    NEW: "Nuevo",
-    RECEIVED: "Recibido",
-    UNDER_REVIEW: "En revisión",
-    VALIDATED: "Validado",
-    ASSIGNED: "Asignado",
-    ESCALATED: "Escalado",
-    RESOLVED: "Resuelto",
-    DISCARDED: "Descartado",
-    CANCELLED: "Cancelado",
-  };
-
-  return labels[status] ?? status.replaceAll("_", " ");
 }
 
 export default function NearbyEventsSheet({ events, latitude, longitude, onSelect }: Props) {
@@ -79,12 +69,13 @@ export default function NearbyEventsSheet({ events, latitude, longitude, onSelec
           {nearbyEvents.map(({ event, distance }) => {
             const severity = ALERT_SEVERITY_PRESENTATION[event.severity];
             const formattedDistance = distance < 1 ? `${Math.round(distance * 1000)} m` : `${distance.toFixed(1)} km`;
-            const confidence = event.confidence ?? event.aiConfidence;
+            const confidence = deriveConfidenceFromSignals(event);
             const confidenceLabel =
               event.confidenceLabel ??
               CONFIDENCE_PRESENTATION[getDefaultConfidenceLevel({ type: event.type, status: event.status })].label;
             const sourceSummary = event.sourceSummary?.trim() || getDefaultSourceSummary(event.type);
-            const recommendedAction = event.recommendedAction?.trim();
+            const recommendedAction = deriveRecommendedAction(event, "citizen");
+            const lifecycleStatus = getLifecycleStatus(event);
 
             return (
               <button
@@ -107,9 +98,7 @@ export default function NearbyEventsSheet({ events, latitude, longitude, onSelec
 
                 <div className="mt-2 flex items-center justify-between gap-3">
                   <span className="truncate text-xs text-slate-400">{event.category}</span>
-                  <span className="shrink-0 text-[0.62rem] font-semibold uppercase text-cyan-300">
-                    {statusLabel(event.status)}
-                  </span>
+                  <AlertLifecycleBadge status={lifecycleStatus} compact />
                 </div>
 
                 <div className="mt-2 border-t border-white/8 pt-2">

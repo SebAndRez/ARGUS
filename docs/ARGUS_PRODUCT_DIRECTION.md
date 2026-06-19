@@ -149,3 +149,35 @@ Evolución prevista:
 - revisión humana antes de publicar alertas de alto impacto.
 
 Esta capa no reemplaza instrucciones oficiales, evaluación en terreno ni herramientas científicas especializadas.
+
+## Alert Lifecycle and Verification Foundation
+
+ARGUS trata cada alerta como un objeto vivo. La base visual demo usa este ciclo simplificado:
+
+`new → verifying → confirmed → responding → resolved`
+
+También contempla:
+
+- `expired` cuando la alerta pierde vigencia;
+- `dismissed` cuando fue descartada;
+- reactivación desde `expired` hacia `verifying` cuando una persona indica **Sigo viendo esto**.
+
+La verificación ciudadana ofrece respuestas simples:
+
+- **Sigo viendo esto**;
+- **Ya no ocurre**;
+- **No puedo verificar**;
+- **Reactivar alerta** cuando corresponde.
+
+Estas señales ajustan localmente contadores, confianza, prioridad y recomendaciones. Una sola respuesta ciudadana no confirma, resuelve, descarta ni sanciona automáticamente.
+
+La interfaz debe comunicar:
+
+- qué está pasando;
+- estado actual del ciclo;
+- confianza y prioridad estimadas;
+- por qué importa;
+- qué hacer ahora;
+- si existen señales recientes de que continúa o terminó.
+
+En esta fase no existe persistencia real para las verificaciones, reputación ciudadana, sanciones, clustering masivo ni notificaciones push. La evolución futura incorporará backend, auditoría, agrupación geoespacial, reputación de fuentes y revisión humana para decisiones de alto impacto.
