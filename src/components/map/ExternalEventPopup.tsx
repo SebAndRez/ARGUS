@@ -14,6 +14,16 @@ const severityLabels: Record<ArgusNormalizedEvent["severity"], string> = {
   critical: "Atención crítica",
 };
 
+const categoryLabels: Partial<Record<ArgusNormalizedEvent["category"], string>> = {
+  earthquake: "Terremoto",
+  flood: "Inundación",
+  cyclone: "Ciclón",
+  volcano: "Volcán",
+  drought: "Sequía",
+  wildfire: "Incendio forestal",
+  unknown: "Desastre",
+};
+
 function formatDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Fecha no disponible";
@@ -25,6 +35,9 @@ function formatDate(value: string) {
 
 export default function ExternalEventPopup({ event, onClose }: Props) {
   if (!event) return null;
+
+  const isGdacs = event.sourceId === "gdacs";
+  const sourceShortName = isGdacs ? "GDACS" : "USGS";
 
   return (
     <div
@@ -44,7 +57,7 @@ export default function ExternalEventPopup({ event, onClose }: Props) {
           <div className="min-w-0">
             <div className="flex flex-wrap gap-2">
               <span className="rounded-md border border-red-300/30 bg-red-500/10 px-2 py-1 text-[0.6rem] font-bold uppercase text-red-100">
-                USGS · Fuente oficial
+                {sourceShortName} · Fuente institucional
               </span>
               <span className="rounded-md border border-orange-300/30 bg-orange-500/10 px-2 py-1 text-[0.6rem] font-bold uppercase text-orange-100">
                 {severityLabels[event.severity]}
@@ -61,29 +74,55 @@ export default function ExternalEventPopup({ event, onClose }: Props) {
             type="button"
             onClick={onClose}
             className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-white/10 bg-slate-900 text-xl text-slate-300 transition hover:border-orange-300/40 hover:text-white"
-            aria-label="Cerrar sismo"
+            aria-label="Cerrar evento externo"
           >
             <span aria-hidden="true">&times;</span>
           </button>
         </header>
 
         <div className="grid gap-4 p-5">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="border border-white/10 bg-slate-900/65 p-3">
-              <p className="text-[0.6rem] font-semibold uppercase text-slate-500">Magnitud</p>
-              <p className="mt-1 font-mono text-lg font-bold text-orange-200">
-                {event.rawMagnitude?.toFixed(1) ?? "N/D"}
-              </p>
+          {isGdacs ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="border border-white/10 bg-slate-900/65 p-3">
+                <p className="text-[0.6rem] font-semibold uppercase text-slate-500">Tipo</p>
+                <p className="mt-1 text-sm font-bold text-orange-200">
+                  {categoryLabels[event.category] ?? "Desastre"}
+                </p>
+              </div>
+              <div className="border border-white/10 bg-slate-900/65 p-3">
+                <p className="text-[0.6rem] font-semibold uppercase text-slate-500">Alerta GDACS</p>
+                <p className="mt-1 font-mono text-sm font-bold uppercase text-slate-200">
+                  {event.rawAlertLevel ?? "unknown"}
+                </p>
+              </div>
             </div>
-            <div className="border border-white/10 bg-slate-900/65 p-3">
-              <p className="text-[0.6rem] font-semibold uppercase text-slate-500">Profundidad</p>
-              <p className="mt-1 font-mono text-lg font-bold text-slate-200">
-                {typeof event.rawDepthKm === "number"
-                  ? `${event.rawDepthKm.toFixed(1)} km`
-                  : "N/D"}
-              </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="border border-white/10 bg-slate-900/65 p-3">
+                <p className="text-[0.6rem] font-semibold uppercase text-slate-500">Magnitud</p>
+                <p className="mt-1 font-mono text-lg font-bold text-orange-200">
+                  {event.rawMagnitude?.toFixed(1) ?? "N/D"}
+                </p>
+              </div>
+              <div className="border border-white/10 bg-slate-900/65 p-3">
+                <p className="text-[0.6rem] font-semibold uppercase text-slate-500">Profundidad</p>
+                <p className="mt-1 font-mono text-lg font-bold text-slate-200">
+                  {typeof event.rawDepthKm === "number"
+                    ? `${event.rawDepthKm.toFixed(1)} km`
+                    : "N/D"}
+                </p>
+              </div>
             </div>
-          </div>
+          )}
+
+          {event.locationName && (
+            <div className="border border-white/10 bg-slate-900/55 p-4">
+              <p className="text-[0.62rem] font-semibold uppercase text-slate-500">
+                Ubicación
+              </p>
+              <p className="mt-2 text-sm text-slate-200">{event.locationName}</p>
+            </div>
+          )}
 
           <p className="text-sm leading-6 text-slate-300">{event.description}</p>
 
@@ -112,7 +151,7 @@ export default function ExternalEventPopup({ event, onClose }: Props) {
               rel="noreferrer"
               className="inline-flex min-h-11 items-center justify-center rounded-md bg-orange-400 px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-orange-300"
             >
-              Abrir información oficial USGS
+              Abrir información oficial {sourceShortName}
             </a>
           )}
         </div>

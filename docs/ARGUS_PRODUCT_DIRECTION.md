@@ -308,7 +308,7 @@ La normalización debe conservar atribución, timestamp original, licencia, prec
 
 ## Data Ingestion Foundation
 
-USGS Earthquake es la primera fuente externa real conectada a ARGUS.
+USGS Earthquake y GDACS son las primeras fuentes externas reales conectadas a ARGUS.
 
 La integración inicial:
 
@@ -324,6 +324,8 @@ La integración inicial:
 
 USGS se considera fuente oficial primaria para terremotos. Su alta confianza no elimina la necesidad de comunicar fecha, ubicación, magnitud, profundidad y límites de interpretación.
 
+GDACS funciona como semáforo global institucional de desastres. ARGUS consume su RSS público, conserva el nivel Green, Orange o Red y normaliza alertas georreferenciadas de terremotos, inundaciones, ciclones, volcanes, sequías e incendios forestales.
+
 Todas las fuentes futuras deben pasar por el mismo principio:
 
 ```text
@@ -335,7 +337,7 @@ fuente externa
     → mapa y paneles
 ```
 
-El registro maestro clasifica fuentes Tier 1, Tier 2 y Tier 3, incluyendo estado, prioridad, confiabilidad y modalidad de acceso. Solo USGS está activo en esta fase.
+El registro maestro clasifica fuentes Tier 1, Tier 2 y Tier 3, incluyendo estado, prioridad, confiabilidad y modalidad de acceso. USGS y GDACS están activos en esta fase.
 
 Liveuamap queda como referencia visual y posible integración pagada futura, no como API gratuita principal. AP, Reuters, Bloomberg, AccuWeather y cualquier servicio comercial requieren acuerdos y licencias apropiadas.
 
@@ -354,9 +356,23 @@ La integración USGS actual incorpora:
 - endpoint `/api/ingest/status` para consultar registro, estado, confiabilidad, modalidad de acceso y metadata de caché sin llamar servicios externos;
 - estado visible en `/app`, incluyendo origen red/caché, última actualización y reintento manual ante error.
 
+La integración GDACS incorpora:
+
+- lectura del RSS público de 24 horas, con fallback al RSS de 7 días;
+- normalización de tipo de desastre, semáforo, ubicación, fecha y enlace oficial;
+- descarte de items sin coordenadas válidas para evitar representación geográfica ambigua;
+- caché server-side de 5 minutos;
+- deduplicación por `sourceId + externalId`;
+- capa opcional **GDACS Desastres**, apagada por defecto;
+- estado de red/caché, cantidad y reintento visible en `/app`.
+
+El RSS puede contener eventos actualizados fuera de la ventana nominal, texto variable, codificación heredada o items sin coordenadas. La normalización es conservadora y no reemplaza el reporte oficial enlazado.
+
 El caché actual es local a cada instancia Node y se pierde al reiniciar o reemplazar el proceso. Es una protección de corto plazo, no una capa de persistencia ni una garantía compartida entre instancias.
 
 La deduplicación actual opera dentro del lote normalizado de cada fuente. La correlación de un mismo incidente entre proveedores diferentes sigue pendiente.
+
+La correlación futura deberá identificar, por ejemplo, cuándo un terremoto USGS y una alerta GDACS representan el mismo incidente sin perder atribución, timestamps ni diferencias de severidad.
 
 Evolución futura:
 
@@ -400,6 +416,7 @@ La implementación actual incluye:
 - rutas demo terrestres, aéreas y marítimas;
 - registro maestro de fuentes externas;
 - ingesta bajo demanda de sismos USGS M4.5+;
+- ingesta bajo demanda de alertas globales GDACS;
 - dashboard operativo local;
 - Prisma/SQLite y autenticación demo existentes.
 

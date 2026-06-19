@@ -21,6 +21,7 @@ interface MapLayerSettings {
   reports: boolean;
   demoReports?: boolean;
   usgsEarthquakes?: boolean;
+  gdacsAlerts?: boolean;
   sos: boolean;
   alerts: boolean;
   critical: boolean;
@@ -267,8 +268,13 @@ export default function OperationalMap({
       });
     });
 
-    if (layerSettings.usgsEarthquakes) {
-      externalEvents.forEach((event) => {
+    externalEvents
+      .filter(
+        (event) =>
+          (event.sourceId === "usgs_earthquake" && layerSettings.usgsEarthquakes) ||
+          (event.sourceId === "gdacs" && layerSettings.gdacsAlerts)
+      )
+      .forEach((event) => {
         const latitude = Number(event.latitude);
         const longitude = Number(event.longitude);
         if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
@@ -300,7 +306,6 @@ export default function OperationalMap({
         );
         marker.on("click", () => onExternalEventSelect?.(event));
       });
-    }
 
     visibleVisualSources.forEach((source) => {
       const lat = Number(source.latitude);

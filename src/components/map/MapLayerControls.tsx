@@ -13,6 +13,7 @@ export interface MapLayerState {
   reports: boolean;
   demoReports?: boolean;
   usgsEarthquakes?: boolean;
+  gdacsAlerts?: boolean;
   sos: boolean;
   alerts: boolean;
   critical: boolean;
@@ -69,7 +70,16 @@ const layerGroups: Array<{
 }> = [
   {
     label: "Alertas y eventos",
-    keys: ["reports", "demoReports", "usgsEarthquakes", "sos", "alerts", "critical", "resolved"],
+    keys: [
+      "reports",
+      "demoReports",
+      "usgsEarthquakes",
+      "gdacsAlerts",
+      "sos",
+      "alerts",
+      "critical",
+      "resolved",
+    ],
   },
   {
     label: "Fuentes y contexto",
@@ -85,6 +95,7 @@ const labels: Record<keyof MapLayerState, string> = {
   reports: "Reportes",
   demoReports: "Reportes demo",
   usgsEarthquakes: "Sismos USGS",
+  gdacsAlerts: "GDACS Desastres",
   sos: "SOS",
   alerts: "Alertas",
   critical: "Críticos",
@@ -151,6 +162,11 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
       label: "Sismos USGS",
       enabled: Boolean(layers.usgsEarthquakes),
       available: Object.prototype.hasOwnProperty.call(layers, "usgsEarthquakes"),
+    },
+    {
+      label: "GDACS",
+      enabled: Boolean(layers.gdacsAlerts),
+      available: Object.prototype.hasOwnProperty.call(layers, "gdacsAlerts"),
     },
   ].filter((item) => item.available);
 

@@ -55,6 +55,7 @@ const initialLayers = {
   reports: true,
   demoReports: false,
   usgsEarthquakes: false,
+  gdacsAlerts: false,
   sos: true,
   alerts: true,
   critical: true,
@@ -98,6 +99,16 @@ export default function AppPage() {
   const [usgsCached, setUsgsCached] = useState(false);
   const [usgsRetryVersion, setUsgsRetryVersion] = useState(0);
   const usgsFetchStartedRef = useRef(false);
+  const [gdacsEvents, setGdacsEvents] = useState<ArgusNormalizedEvent[]>([]);
+  const [gdacsStatus, setGdacsStatus] = useState<
+    "idle" | "loading" | "loaded" | "error"
+  >("idle");
+  const [gdacsErrorMessage, setGdacsErrorMessage] = useState<string | null>(null);
+  const [gdacsUpdatedAt, setGdacsUpdatedAt] = useState<string | null>(null);
+  const [gdacsExpiresAt, setGdacsExpiresAt] = useState<string | null>(null);
+  const [gdacsCached, setGdacsCached] = useState(false);
+  const [gdacsRetryVersion, setGdacsRetryVersion] = useState(0);
+  const gdacsFetchStartedRef = useRef(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -157,7 +168,18 @@ export default function AppPage() {
   );
 
   const toggleLayer = (key: keyof typeof initialLayers) => {
-    if (key === "usgsEarthquakes" && layerSettings.usgsEarthquakes) {
+    if (
+      key === "usgsEarthquakes" &&
+      layerSettings.usgsEarthquakes &&
+      selectedExternalEvent?.sourceId === "usgs_earthquake"
+    ) {
+      setSelectedExternalEvent(null);
+    }
+    if (
+      key === "gdacsAlerts" &&
+      layerSettings.gdacsAlerts &&
+      selectedExternalEvent?.sourceId === "gdacs"
+    ) {
       setSelectedExternalEvent(null);
     }
     setLayerSettings((current) => ({
@@ -226,6 +248,31 @@ export default function AppPage() {
       minute: "2-digit",
     }).format(expiresAt);
   }, [usgsExpiresAt]);
+  const gdacsUpdatedLabel = useMemo(() => {
+    if (!gdacsUpdatedAt) return null;
+    const updatedAt = new Date(gdacsUpdatedAt);
+    if (Number.isNaN(updatedAt.getTime())) return "Actualización recibida";
+
+    return `Actualizado ${new Intl.DateTimeFormat("es-CL", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZoneName: "short",
+    }).format(updatedAt)}`;
+  }, [gdacsUpdatedAt]);
+  const gdacsExpiresLabel = useMemo(() => {
+    if (!gdacsExpiresAt) return null;
+    const expiresAt = new Date(gdacsExpiresAt);
+    if (Number.isNaN(expiresAt.getTime())) return null;
+
+    return new Intl.DateTimeFormat("es-CL", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(expiresAt);
+  }, [gdacsExpiresAt]);
+  const externalEvents = useMemo(
+    () => [...usgsEvents, ...gdacsEvents],
+    [gdacsEvents, usgsEvents]
+  );
   const officialSourceCount = useMemo(
     () =>
       demoVisualSources.filter((source) =>
@@ -279,6 +326,25 @@ export default function AppPage() {
             : usgsStatus === "error"
               ? "error"
               : usgsStatus,
+      },
+      gdacsAlerts: {
+        count: gdacsEvents.length,
+        detail:
+          gdacsStatus === "loading"
+            ? "Consultando alertas globales..."
+            : gdacsStatus === "error"
+              ? "Sin conexión con GDACS"
+              : gdacsStatus === "loaded"
+                ? `${gdacsCached ? "Caché" : "Red"} · ${
+                    gdacsUpdatedLabel ?? "actualización recibida"
+                  }${gdacsExpiresLabel ? ` · vence ${gdacsExpiresLabel}` : ""}`
+                : "Semáforo global bajo demanda",
+        status:
+          gdacsStatus === "loaded"
+            ? "ready"
+            : gdacsStatus === "error"
+              ? "error"
+              : gdacsStatus,
       },
       sos: {
         count: events.filter((event) => event.type === "SOS").length,
@@ -341,6 +407,11 @@ export default function AppPage() {
       demoEvents.length,
       events,
       filteredDemoEvents.length,
+      gdacsCached,
+      gdacsEvents.length,
+      gdacsExpiresLabel,
+      gdacsStatus,
+      gdacsUpdatedLabel,
       gpsStatus,
       layerSettings.demoReports,
       officialSourceCount,
@@ -426,6 +497,54 @@ export default function AppPage() {
     setUsgsRetryVersion((current) => current + 1);
   };
 
+  useEffect(() => {
+    if (!layerSettings.gdacsAlerts || gdacsFetchStartedRef.current) return;
+
+    gdacsFetchStartedRef.current = true;
+    setGdacsStatus("loading");
+    setGdacsErrorMessage(null);
+
+    async function loadGdacsAlerts() {
+      try {
+        const response = await fetch("/api/ingest/gdacs-alerts", {
+          cache: "no-store",
+        });
+        const payload = (await response.json()) as Partial<
+          ArgusIngestionSourceResponse
+        > & { error?: string };
+        if (!response.ok) {
+          throw new Error(payload.error || "No fue posible cargar alertas GDACS.");
+        }
+
+        setGdacsEvents(Array.isArray(payload.events) ? payload.events : []);
+        setGdacsUpdatedAt(
+          typeof payload.fetchedAt === "string" ? payload.fetchedAt : null
+        );
+        setGdacsExpiresAt(
+          typeof payload.expiresAt === "string" ? payload.expiresAt : null
+        );
+        setGdacsCached(payload.cached === true);
+        setGdacsStatus("loaded");
+      } catch (error) {
+        setGdacsStatus("error");
+        setGdacsErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "No fue posible cargar alertas GDACS."
+        );
+      }
+    }
+
+    loadGdacsAlerts();
+  }, [gdacsRetryVersion, layerSettings.gdacsAlerts]);
+
+  const retryGdacsAlerts = () => {
+    gdacsFetchStartedRef.current = false;
+    setGdacsStatus("idle");
+    setGdacsErrorMessage(null);
+    setGdacsRetryVersion((current) => current + 1);
+  };
+
   async function createReport(payload: {
     category: string;
     title: string;
@@ -482,7 +601,7 @@ export default function AppPage() {
       <OperationalMap
         events={events}
         demoEvents={filteredDemoEvents}
-        externalEvents={usgsEvents}
+        externalEvents={externalEvents}
         selectedEventId={selectedEvent?.id}
         location={{ latitude: location.latitude, longitude: location.longitude }}
         locationStatus={location.status}
@@ -557,6 +676,25 @@ export default function AppPage() {
             type="button"
             onClick={retryUsgsEarthquakes}
             className="mt-3 border border-amber-200/30 bg-amber-400/10 px-3 py-2 text-xs font-semibold uppercase text-amber-100 transition hover:bg-amber-400/20"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {layerSettings.gdacsAlerts && gdacsStatus === "loading" && (
+        <div className="fixed left-4 top-56 z-40 border border-blue-300/20 bg-slate-950/90 px-4 py-3 text-sm text-blue-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-48">
+          Consultando alertas GDACS...
+        </div>
+      )}
+
+      {layerSettings.gdacsAlerts && gdacsStatus === "error" && gdacsErrorMessage && (
+        <div className="fixed left-4 top-56 z-40 max-w-sm border border-blue-300/25 bg-slate-950/92 px-4 py-3 text-sm text-blue-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-48">
+          <p>GDACS no disponible: {gdacsErrorMessage}</p>
+          <button
+            type="button"
+            onClick={retryGdacsAlerts}
+            className="mt-3 border border-blue-200/30 bg-blue-400/10 px-3 py-2 text-xs font-semibold uppercase text-blue-100 transition hover:bg-blue-400/20"
           >
             Reintentar
           </button>

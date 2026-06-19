@@ -19,6 +19,7 @@ export type ArgusExternalSourceId =
 export type ArgusIngestionCategory =
   | "earthquake"
   | "disaster"
+  | "disaster_alerts"
   | "wildfire"
   | "weather"
   | "tsunami"
@@ -28,9 +29,14 @@ export type ArgusIngestionCategory =
   | "flood"
   | "air_quality"
   | "conflict"
-  | "news";
+  | "news"
+  | "cyclone"
+  | "volcano"
+  | "drought"
+  | "unknown";
 
 export type ArgusIngestionSeverity = "low" | "medium" | "high" | "critical";
+export type ArgusExternalAlertLevel = "green" | "orange" | "red" | "unknown";
 
 export interface ArgusNormalizedEvent {
   id: string;
@@ -50,6 +56,8 @@ export interface ArgusNormalizedEvent {
   url?: string | null;
   rawMagnitude?: number | null;
   rawDepthKm?: number | null;
+  rawAlertLevel?: ArgusExternalAlertLevel | null;
+  locationName?: string | null;
   recommendedAction?: string | null;
   whyItMatters?: string | null;
   isExternal: true;
@@ -97,4 +105,19 @@ export interface UsgsEarthquakeFeatureCollection {
     status?: number;
   };
   features: UsgsEarthquakeFeature[];
+}
+
+export interface GdacsRssItem {
+  title: string;
+  description: string;
+  link: string;
+  guid: string;
+  pubDate: string;
+  dateModified: string;
+  eventType: string;
+  alertLevel: string;
+  eventId: string;
+  country: string;
+  latitude: number | null;
+  longitude: number | null;
 }
