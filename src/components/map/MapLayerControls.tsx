@@ -8,6 +8,7 @@ interface LayerState {
   resolved: boolean;
   user: boolean;
   visualSources?: boolean;
+  weatherRisk?: boolean;
 }
 
 interface Props<TLayers extends LayerState> {
@@ -23,6 +24,7 @@ const labels: Record<keyof LayerState, string> = {
   resolved: "Resueltos",
   user: "Mi ubicación",
   visualSources: "Fuentes visuales",
+  weatherRisk: "Clima y riesgo",
 };
 
 export default function MapLayerControls<TLayers extends LayerState>({ layers, onToggle }: Props<TLayers>) {

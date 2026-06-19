@@ -5,7 +5,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { CrisisEvent } from "@/types/crisis";
 import type { UserLocationStatus } from "@/types/crisis";
 import type { VisualSource } from "@/types/visualSource";
+import type { RiskProjection } from "@/types/weatherRisk";
 import IncidentMarker from "@/components/map/IncidentMarker";
+import RiskProjectionOverlay from "@/components/map/RiskProjectionOverlay";
 import UserLocationMarker from "@/components/map/UserLocationMarker";
 import VisualSourceMarker from "@/components/map/VisualSourceMarker";
 
@@ -17,6 +19,7 @@ interface MapLayerSettings {
   resolved: boolean;
   user: boolean;
   visualSources?: boolean;
+  weatherRisk?: boolean;
 }
 
 interface Props {
@@ -32,6 +35,8 @@ interface Props {
   visualSources?: VisualSource[];
   selectedVisualSourceId?: string;
   onVisualSourceSelect?: (source: VisualSource) => void;
+  riskProjections?: RiskProjection[];
+  onRiskProjectionSelect?: (projection: RiskProjection) => void;
   centerOnSelected?: boolean;
 }
 
@@ -57,6 +62,8 @@ export default function OperationalMap({
   visualSources = [],
   selectedVisualSourceId,
   onVisualSourceSelect,
+  riskProjections = [],
+  onRiskProjectionSelect,
   centerOnSelected = true,
 }: Props) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -231,6 +238,13 @@ export default function OperationalMap({
   return (
     <div className="relative h-full w-full overflow-hidden rounded-[32px] border border-white/10 bg-slate-950/50 shadow-2xl shadow-black/40">
       <div ref={mapContainerRef} className="argus-leaflet-map h-full w-full" />
+      <RiskProjectionOverlay
+        projections={riskProjections}
+        visible={Boolean(layerSettings.weatherRisk)}
+        onProjectionSelect={onRiskProjectionSelect}
+        map={mapReady ? mapRef.current : null}
+        leaflet={mapReady ? leafletRef.current : null}
+      />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-slate-950/90 to-transparent" />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-950/90 to-transparent" />
     </div>

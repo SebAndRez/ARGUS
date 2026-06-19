@@ -5,6 +5,7 @@ import OperationalMap from "@/components/map/OperationalMap";
 import MapHUD from "@/components/map/MapHUD";
 import MapLayerControls from "@/components/map/MapLayerControls";
 import VisualSourcePopup from "@/components/map/VisualSourcePopup";
+import WindLayerLegend from "@/components/map/WindLayerLegend";
 import FloatingSOSButton from "@/components/app/FloatingSOSButton";
 import FloatingReportButton from "@/components/app/FloatingReportButton";
 import NearbyEventsSheet from "@/components/app/NearbyEventsSheet";
@@ -13,8 +14,13 @@ import HelpRequestModal from "@/components/app/HelpRequestModal";
 import { useSession } from "@/hooks/useSession";
 import { useUserLocation } from "@/hooks/useUserLocation";
 import { demoVisualSources } from "@/data/demoVisualSources";
+import {
+  demoRiskProjections,
+  demoWeatherObservations,
+} from "@/data/demoWeatherRisk";
 import type { CrisisEvent, SessionUser } from "@/types/crisis";
 import type { VisualSource } from "@/types/visualSource";
+import type { RiskProjection } from "@/types/weatherRisk";
 
 const initialLayers = {
   reports: true,
@@ -24,6 +30,7 @@ const initialLayers = {
   resolved: true,
   user: true,
   visualSources: true,
+  weatherRisk: true,
 };
 
 const initialEventState: CrisisEvent[] = [];
@@ -31,6 +38,9 @@ const initialEventState: CrisisEvent[] = [];
 export default function AppPage() {
   const [selectedEvent, setSelectedEvent] = useState<CrisisEvent | null>(null);
   const [selectedVisualSource, setSelectedVisualSource] = useState<VisualSource | null>(null);
+  const [selectedRiskProjection, setSelectedRiskProjection] = useState<RiskProjection | null>(
+    demoRiskProjections[0] ?? null
+  );
   const [events, setEvents] = useState<CrisisEvent[]>(initialEventState);
   const [layerSettings, setLayerSettings] = useState(initialLayers);
   const [isReportOpen, setIsReportOpen] = useState(false);
@@ -44,12 +54,20 @@ export default function AppPage() {
 
   const selectEvent = useCallback((event: CrisisEvent) => {
     setSelectedVisualSource(null);
+    setSelectedRiskProjection(null);
     setSelectedEvent(event);
   }, []);
 
   const selectVisualSource = useCallback((source: VisualSource) => {
     setSelectedEvent(null);
+    setSelectedRiskProjection(null);
     setSelectedVisualSource(source);
+  }, []);
+
+  const selectRiskProjection = useCallback((projection: RiskProjection) => {
+    setSelectedEvent(null);
+    setSelectedVisualSource(null);
+    setSelectedRiskProjection(projection);
   }, []);
 
   const toggleLayer = (key: keyof typeof initialLayers) => {
@@ -143,9 +161,16 @@ export default function AppPage() {
         visualSources={demoVisualSources}
         selectedVisualSourceId={selectedVisualSource?.id}
         onVisualSourceSelect={selectVisualSource}
+        riskProjections={demoRiskProjections}
+        onRiskProjectionSelect={selectRiskProjection}
       />
 
       <MapHUD gpsStatus={gpsStatus} />
+      <WindLayerLegend
+        observation={demoWeatherObservations[0] ?? null}
+        selectedProjection={selectedRiskProjection}
+        visible={layerSettings.weatherRisk}
+      />
 
       <div className="pointer-events-auto fixed right-4 top-28 z-40 w-[min(320px,calc(100%-2rem))] md:w-[320px]">
         <MapLayerControls layers={layerSettings} onToggle={toggleLayer} />

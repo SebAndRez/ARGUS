@@ -119,3 +119,33 @@ Al seleccionar una fuente:
 - la metadata interna queda fuera de la vista civil principal.
 
 Esta base no realiza scraping, no consume una API EarthCam ni analiza video. Los datos son locales y preparan la arquitectura para integraciones futuras revisadas fuente por fuente.
+
+## Weather, Wind and Risk Projection Foundation
+
+La primera capa de clima, viento y riesgo usa observaciones y peligros demo locales. No consume servicios meteorológicos externos ni ejecuta un modelo de dispersión científica.
+
+Convención de dirección:
+
+- `windFromDeg` indica desde dónde viene el viento;
+- `windToDeg` indica hacia dónde podría desplazarse humo, gas o contaminantes;
+- `windToDeg = (windFromDeg + 180) % 360`.
+
+La UI representa una **Zona estimada de riesgo** mediante un sector geográfico de baja opacidad. Es una aproximación visual para apoyar lectura y coordinación, no una zona exacta ni una predicción garantizada.
+
+Cada proyección debe comunicar:
+
+- fuente y actualización de la observación;
+- dirección y velocidad del viento;
+- confianza estimada;
+- explicación breve;
+- acción recomendada conservadora;
+- condición demo o nivel de incertidumbre.
+
+Evolución prevista:
+
+- integración con observaciones meteorológicas oficiales y sensores reales;
+- contraste con cámaras y fuentes OSINT geolocalizadas;
+- modelos serios de dispersión atmosférica y validación operacional;
+- revisión humana antes de publicar alertas de alto impacto.
+
+Esta capa no reemplaza instrucciones oficiales, evaluación en terreno ni herramientas científicas especializadas.

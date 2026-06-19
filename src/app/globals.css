@@ -96,3 +96,20 @@ body,
   background: transparent !important;
   border: none !important;
 }
+
+.argus-leaflet-map .argus-risk-projection {
+  cursor: pointer;
+}
+
+.argus-leaflet-map .argus-risk-tooltip {
+  background: rgba(2, 6, 23, 0.96);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 6px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  color: #f8fafc;
+  padding: 10px 12px;
+}
+
+.argus-leaflet-map .argus-risk-tooltip::before {
+  border-top-color: rgba(251, 191, 36, 0.3);
+}
