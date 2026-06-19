@@ -16,6 +16,7 @@ import { useSession } from "@/hooks/useSession";
 import { useUserLocation } from "@/hooks/useUserLocation";
 import { demoVisualSources } from "@/data/demoVisualSources";
 import { demoRoutes } from "@/data/demoRoutes";
+import { demoCrisisEvents } from "@/data/generateDemoCrisisEvents";
 import {
   demoRiskProjections,
   demoWeatherObservations,
@@ -24,6 +25,16 @@ import {
   applyDemoVerification,
   enrichEventLifecycle,
 } from "@/lib/alertLifecycle";
+import {
+  filterEventsByLifecycle,
+  filterEventsBySeverity,
+  filterEventsByType,
+  limitVisibleEvents,
+  sortEventsByPriority,
+  type DemoLifecycleFilter,
+  type DemoSeverityFilter,
+  type DemoTypeFilter,
+} from "@/lib/demoEventFilters";
 import type {
   AlertVerificationAction,
   CrisisEvent,
@@ -35,6 +46,7 @@ import type { BaseMapType } from "@/types/map";
 
 const initialLayers = {
   reports: true,
+  demoReports: false,
   sos: true,
   alerts: true,
   critical: true,
@@ -58,8 +70,14 @@ export default function AppPage() {
     demoRiskProjections[0] ?? null
   );
   const [events, setEvents] = useState<CrisisEvent[]>(initialEventState);
+  const [demoEvents, setDemoEvents] = useState<CrisisEvent[]>(() => [...demoCrisisEvents]);
   const [layerSettings, setLayerSettings] = useState(initialLayers);
   const [baseMapType, setBaseMapType] = useState<BaseMapType>("tactical");
+  const [demoSeverityFilter, setDemoSeverityFilter] =
+    useState<DemoSeverityFilter>("ALL");
+  const [demoTypeFilter, setDemoTypeFilter] = useState<DemoTypeFilter>("ALL");
+  const [demoLifecycleFilter, setDemoLifecycleFilter] =
+    useState<DemoLifecycleFilter>("ALL");
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -96,6 +114,11 @@ export default function AppPage() {
           event.id === eventId ? applyDemoVerification(event, action, verifiedAt) : event
         )
       );
+      setDemoEvents((current) =>
+        current.map((event) =>
+          event.id === eventId ? applyDemoVerification(event, action, verifiedAt) : event
+        )
+      );
       setSelectedEvent((current) =>
         current?.id === eventId ? applyDemoVerification(current, action, verifiedAt) : current
       );
@@ -115,13 +138,39 @@ export default function AppPage() {
     if (location.status === "loading" || location.status === "idle") return "unknown";
     return "inactive";
   }, [location.status]);
+  const filteredDemoEvents = useMemo(() => {
+    const severityFiltered = filterEventsBySeverity(
+      demoEvents,
+      demoSeverityFilter
+    );
+    const typeFiltered = filterEventsByType(severityFiltered, demoTypeFilter);
+    const lifecycleFiltered = filterEventsByLifecycle(
+      typeFiltered,
+      demoLifecycleFilter
+    );
+
+    return limitVisibleEvents(sortEventsByPriority(lifecycleFiltered), demoEvents.length);
+  }, [
+    demoEvents,
+    demoLifecycleFilter,
+    demoSeverityFilter,
+    demoTypeFilter,
+  ]);
+  const visibleDemoEvents = layerSettings.demoReports ? filteredDemoEvents : [];
+  const nearbyEventPool = useMemo(
+    () => [...events, ...visibleDemoEvents],
+    [events, visibleDemoEvents]
+  );
   const activeLayerCount = useMemo(
     () => Object.values(layerSettings).filter(Boolean).length,
     [layerSettings]
   );
   const criticalCount = useMemo(
-    () => events.filter((event) => event.severity === "CRITICAL" && event.status !== "RESOLVED").length,
-    [events]
+    () =>
+      nearbyEventPool.filter(
+        (event) => event.severity === "CRITICAL" && event.status !== "RESOLVED"
+      ).length,
+    [nearbyEventPool]
   );
 
   useEffect(() => {
@@ -204,6 +253,7 @@ export default function AppPage() {
     <main className="relative h-screen min-h-screen overflow-hidden bg-slate-950 text-white">
       <OperationalMap
         events={events}
+        demoEvents={filteredDemoEvents}
         selectedEventId={selectedEvent?.id}
         location={{ latitude: location.latitude, longitude: location.longitude }}
         locationStatus={location.status}
@@ -226,7 +276,7 @@ export default function AppPage() {
           gpsStatus={gpsStatus}
           systemStatus={errorMessage ? "degraded" : "online"}
           activeLayerCount={activeLayerCount}
-          eventCount={events.length}
+          eventCount={nearbyEventPool.length}
           criticalCount={criticalCount}
         />
       </div>
@@ -242,6 +292,16 @@ export default function AppPage() {
           onToggle={toggleLayer}
           baseMapType={baseMapType}
           onBaseMapChange={setBaseMapType}
+          demoFilters={{
+            severity: demoSeverityFilter,
+            type: demoTypeFilter,
+            lifecycle: demoLifecycleFilter,
+            onSeverityChange: setDemoSeverityFilter,
+            onTypeChange: setDemoTypeFilter,
+            onLifecycleChange: setDemoLifecycleFilter,
+            visibleCount: filteredDemoEvents.length,
+            totalCount: demoEvents.length,
+          }}
         />
       </div>
 
@@ -268,7 +328,17 @@ export default function AppPage() {
         Mi ubicación
       </button>
 
-      <NearbyEventsSheet events={events} latitude={location.latitude} longitude={location.longitude} onSelect={selectEvent} />
+      <NearbyEventsSheet
+        events={nearbyEventPool}
+        latitude={location.latitude}
+        longitude={location.longitude}
+        onSelect={selectEvent}
+        maxItems={20}
+        demoVisibleCount={
+          layerSettings.demoReports ? filteredDemoEvents.length : undefined
+        }
+        demoTotalCount={layerSettings.demoReports ? demoEvents.length : undefined}
+      />
 
       {selectedEvent && (
         <div

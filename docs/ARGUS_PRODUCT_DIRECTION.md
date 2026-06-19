@@ -257,6 +257,36 @@ No implementar integraciones hasta crear el módulo de ingesta y revisar términ
 
 Para terremotos, USGS es la fuente base prevista. Para conflicto, Liveuamap puede servir como referencia visual futura, no como integración inmediata.
 
+## Demo Reports, Filtering and Scalability
+
+ARGUS incluye una capa local de **420 reportes ciudadanos demo** para probar densidad visual sin contaminar los datos reales.
+
+Características:
+
+- generación determinística mediante seed fija;
+- distribución aproximada en 15 comunas de Santiago;
+- categorías civiles, alertas y SOS sintéticos;
+- severidad, prioridad, confianza y ciclo de vida compatibles con `CrisisEvent`;
+- filtros por severidad, tipo y estado de ciclo;
+- agrupación geoespacial simple por grilla latitud/longitud;
+- clusters circulares con cantidad y severidad máxima;
+- selección del evento de mayor prioridad dentro del cluster;
+- bandeja cercana limitada a 20 resultados;
+- orden por criticidad, prioridad, distancia, recencia y confianza;
+- capa desactivada por defecto y separada de reportes reales.
+
+Esta base sirve para evaluar legibilidad y comportamiento del frontend. No representa actividad real ni ejecuta persistencia, auditoría o reputación.
+
+Evolución necesaria para volumen productivo:
+
+- clustering dinámico según zoom;
+- heatmap especializado;
+- virtualización de listas;
+- paginación y consultas espaciales en backend;
+- almacenamiento geoespacial;
+- deduplicación y agrupación semántica;
+- pruebas de rendimiento con ingesta real.
+
 ## L. Arquitectura futura de ingesta
 
 ```text

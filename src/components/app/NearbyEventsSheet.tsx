@@ -11,6 +11,7 @@ import {
   deriveRecommendedAction,
   getLifecycleStatus,
 } from "@/lib/alertLifecycle";
+import { getNearbyEvents } from "@/lib/demoEventFilters";
 import AlertLifecycleBadge from "@/components/ui/AlertLifecycleBadge";
 import ConfidenceBlock from "@/components/ui/ConfidenceBlock";
 import RecommendedActionBlock from "@/components/ui/RecommendedActionBlock";
@@ -21,18 +22,9 @@ interface Props {
   latitude: number;
   longitude: number;
   onSelect: (event: CrisisEvent) => void;
-}
-
-function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const toRad = (value: number) => (value * Math.PI) / 180;
-  const R = 6371;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+  maxItems?: number;
+  demoVisibleCount?: number;
+  demoTotalCount?: number;
 }
 
 function eventTypeLabel(type: CrisisEvent["type"]) {
@@ -41,14 +33,19 @@ function eventTypeLabel(type: CrisisEvent["type"]) {
   return "Reporte";
 }
 
-export default function NearbyEventsSheet({ events, latitude, longitude, onSelect }: Props) {
-  const nearbyEvents = events
-    .map((event) => ({
-      event,
-      distance: getDistance(latitude, longitude, event.latitude, event.longitude),
-    }))
-    .sort((a, b) => a.distance - b.distance)
-    .slice(0, 5);
+export default function NearbyEventsSheet({
+  events,
+  latitude,
+  longitude,
+  onSelect,
+  maxItems = 20,
+  demoVisibleCount,
+  demoTotalCount,
+}: Props) {
+  const nearbyEvents = getNearbyEvents(events, latitude, longitude, maxItems);
+  const hasDemoSummary =
+    typeof demoVisibleCount === "number" && typeof demoTotalCount === "number";
+  const displayedDemoCount = nearbyEvents.filter(({ event }) => event.isDemo).length;
 
   return (
     <aside className="pointer-events-auto fixed inset-x-0 bottom-0 z-40 mx-auto max-w-5xl rounded-t-lg border border-white/10 bg-slate-950/92 px-4 pb-4 pt-3 backdrop-blur-xl shadow-[0_-18px_48px_rgba(0,0,0,0.42)] sm:px-6">
@@ -58,6 +55,12 @@ export default function NearbyEventsSheet({ events, latitude, longitude, onSelec
         <div>
           <p className="text-[0.65rem] font-semibold uppercase text-cyan-300/80">Perímetro cercano</p>
           <p className="mt-1 text-xs text-slate-400">Ordenado por distancia</p>
+          {hasDemoSummary && (
+            <p className="mt-1 text-[0.65rem] text-cyan-200/80">
+              Mostrando {displayedDemoCount} de {demoTotalCount} reportes demo
+              {demoVisibleCount !== demoTotalCount ? ` · ${demoVisibleCount} coinciden con filtros` : ""}
+            </p>
+          )}
         </div>
         <span className="shrink-0 rounded-md border border-white/10 bg-slate-900/80 px-2.5 py-1 text-[0.65rem] font-semibold uppercase text-slate-300">
           {events.length} activos
@@ -66,9 +69,12 @@ export default function NearbyEventsSheet({ events, latitude, longitude, onSelec
 
       <div className="mr-40 overflow-hidden 2xl:mr-0">
         <div className="flex snap-x snap-mandatory gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {nearbyEvents.map(({ event, distance }) => {
+          {nearbyEvents.map(({ event, distanceKm }) => {
             const severity = ALERT_SEVERITY_PRESENTATION[event.severity];
-            const formattedDistance = distance < 1 ? `${Math.round(distance * 1000)} m` : `${distance.toFixed(1)} km`;
+            const formattedDistance =
+              distanceKm < 1
+                ? `${Math.round(distanceKm * 1000)} m`
+                : `${distanceKm.toFixed(1)} km`;
             const confidence = deriveConfidenceFromSignals(event);
             const confidenceLabel =
               event.confidenceLabel ??

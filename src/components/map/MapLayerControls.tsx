@@ -1,10 +1,17 @@
 "use client";
 
 import MapLegend from "@/components/map/MapLegend";
+import DemoEventFilterControls from "@/components/map/DemoEventFilterControls";
 import type { BaseMapType } from "@/types/map";
+import type {
+  DemoLifecycleFilter,
+  DemoSeverityFilter,
+  DemoTypeFilter,
+} from "@/lib/demoEventFilters";
 
 export interface MapLayerState {
   reports: boolean;
+  demoReports?: boolean;
   sos: boolean;
   alerts: boolean;
   critical: boolean;
@@ -25,6 +32,16 @@ interface Props<TLayers extends MapLayerState> {
   baseMapType?: BaseMapType;
   onBaseMapChange?: (type: BaseMapType) => void;
   showLegend?: boolean;
+  demoFilters?: {
+    severity: DemoSeverityFilter;
+    type: DemoTypeFilter;
+    lifecycle: DemoLifecycleFilter;
+    onSeverityChange: (value: DemoSeverityFilter) => void;
+    onTypeChange: (value: DemoTypeFilter) => void;
+    onLifecycleChange: (value: DemoLifecycleFilter) => void;
+    visibleCount: number;
+    totalCount: number;
+  };
 }
 
 const layerGroups: Array<{
@@ -33,7 +50,7 @@ const layerGroups: Array<{
 }> = [
   {
     label: "Alertas y eventos",
-    keys: ["reports", "sos", "alerts", "critical", "resolved"],
+    keys: ["reports", "demoReports", "sos", "alerts", "critical", "resolved"],
   },
   {
     label: "Fuentes y contexto",
@@ -47,6 +64,7 @@ const layerGroups: Array<{
 
 const labels: Record<keyof MapLayerState, string> = {
   reports: "Reportes",
+  demoReports: "Reportes demo",
   sos: "SOS",
   alerts: "Alertas",
   critical: "Críticos",
@@ -78,6 +96,7 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
   baseMapType,
   onBaseMapChange,
   showLegend = true,
+  demoFilters,
 }: Props<TLayers>) {
   return (
     <div className="argus-tactical-panel max-h-[calc(100dvh-8.5rem)] overflow-y-auto border bg-slate-950/95 p-4 shadow-2xl shadow-black/35 backdrop-blur-xl">
@@ -163,6 +182,9 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
                 );
               })}
             </div>
+            {group.label === "Alertas y eventos" &&
+              Boolean(layers.demoReports) &&
+              demoFilters && <DemoEventFilterControls {...demoFilters} />}
           </section>
         );
       })}

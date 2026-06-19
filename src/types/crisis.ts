@@ -57,6 +57,7 @@ export interface CrisisEvent {
   canReactivate?: boolean | null;
   priorityScore?: number | null;
   restrictedMode?: boolean;
+  isDemo?: boolean;
   author?: string;
   recordType?: "Report" | "HelpRequest";
 }

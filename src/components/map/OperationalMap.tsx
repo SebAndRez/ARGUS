@@ -7,6 +7,8 @@ import type { UserLocationStatus } from "@/types/crisis";
 import type { VisualSource } from "@/types/visualSource";
 import type { RiskProjection } from "@/types/weatherRisk";
 import type { ArgusRoute, BaseMapType, RouteType } from "@/types/map";
+import { clusterEventsByGrid } from "@/lib/simpleEventClustering";
+import EventClusterMarker from "@/components/map/EventClusterMarker";
 import IncidentMarker from "@/components/map/IncidentMarker";
 import RiskProjectionOverlay from "@/components/map/RiskProjectionOverlay";
 import RouteLayerOverlay from "@/components/map/RouteLayerOverlay";
@@ -15,6 +17,7 @@ import VisualSourceMarker from "@/components/map/VisualSourceMarker";
 
 interface MapLayerSettings {
   reports: boolean;
+  demoReports?: boolean;
   sos: boolean;
   alerts: boolean;
   critical: boolean;
@@ -31,6 +34,7 @@ interface MapLayerSettings {
 
 interface Props {
   events: CrisisEvent[];
+  demoEvents?: CrisisEvent[];
   selectedEventId?: string;
   location: {
     latitude: number;
@@ -63,6 +67,7 @@ const isEventVisible = (event: CrisisEvent, layers: MapLayerSettings) => {
 
 export default function OperationalMap({
   events,
+  demoEvents = [],
   selectedEventId,
   location,
   locationStatus,
@@ -81,6 +86,7 @@ export default function OperationalMap({
   const mapRef = useRef<any>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const eventLayerRef = useRef<any>(null);
+  const demoEventLayerRef = useRef<any>(null);
   const visualSourceLayerRef = useRef<any>(null);
   const userLayerRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -88,6 +94,14 @@ export default function OperationalMap({
   const visibleEvents = useMemo(
     () => events.filter((event) => isEventVisible(event, layerSettings)),
     [events, layerSettings]
+  );
+  const visibleDemoEvents = useMemo(
+    () => (layerSettings.demoReports ? demoEvents : []),
+    [demoEvents, layerSettings.demoReports]
+  );
+  const demoEventClusters = useMemo(
+    () => clusterEventsByGrid(visibleDemoEvents),
+    [visibleDemoEvents]
   );
   const visibleVisualSources = useMemo(() => {
     if (!layerSettings.visualSources) return [];
@@ -144,6 +158,7 @@ export default function OperationalMap({
       }).addTo(map);
 
       eventLayerRef.current = L.layerGroup().addTo(map);
+      demoEventLayerRef.current = L.layerGroup().addTo(map);
       visualSourceLayerRef.current = L.layerGroup().addTo(map);
       userLayerRef.current = L.layerGroup().addTo(map);
       mapRef.current = map;
@@ -161,6 +176,7 @@ export default function OperationalMap({
         mapRef.current = null;
       }
       eventLayerRef.current = null;
+      demoEventLayerRef.current = null;
       visualSourceLayerRef.current = null;
       userLayerRef.current = null;
     };
@@ -171,10 +187,12 @@ export default function OperationalMap({
     const L = leafletRef.current;
     const map = mapRef.current;
     const eventLayer = eventLayerRef.current;
+    const demoEventLayer = demoEventLayerRef.current;
     const visualSourceLayer = visualSourceLayerRef.current;
     const userLayer = userLayerRef.current;
 
     eventLayer?.clearLayers();
+    demoEventLayer?.clearLayers();
     visualSourceLayer?.clearLayers();
     userLayer?.clearLayers();
 
@@ -198,6 +216,40 @@ export default function OperationalMap({
 
       marker.on("click", () => {
         onEventSelect?.(event);
+      });
+    });
+
+    demoEventClusters.forEach((cluster) => {
+      const primaryEvent = cluster.events[0];
+      if (!primaryEvent) return;
+
+      const clusterIcon = L.divIcon({
+        html: renderToStaticMarkup(
+          <EventClusterMarker
+            cluster={cluster}
+            isSelected={cluster.events.some((event) => event.id === selectedEventId)}
+          />
+        ),
+        className: "leaflet-div-icon bg-transparent p-0",
+        iconSize: [44, 44],
+        iconAnchor: [22, 22],
+      });
+
+      const marker = L.marker([cluster.latitude, cluster.longitude], {
+        icon: clusterIcon,
+        title: `${cluster.count} reportes demo`,
+      }).addTo(demoEventLayer);
+
+      marker.bindTooltip(
+        `${cluster.count} reportes demo · prioridad ${cluster.priorityScore} · ${cluster.highestSeverity}`,
+        {
+          direction: "top",
+          offset: [0, -18],
+          opacity: 0.95,
+        }
+      );
+      marker.on("click", () => {
+        onEventSelect?.(primaryEvent);
       });
     });
 
@@ -243,7 +295,9 @@ export default function OperationalMap({
     }
 
     if (selectedEventId && centerOnSelected) {
-      const selectedEvent = visibleEvents.find((event) => event.id === selectedEventId);
+      const selectedEvent =
+        visibleEvents.find((event) => event.id === selectedEventId) ??
+        visibleDemoEvents.find((event) => event.id === selectedEventId);
       if (selectedEvent) {
         const lat = Number(selectedEvent.latitude);
         const lng = Number(selectedEvent.longitude);
@@ -256,6 +310,8 @@ export default function OperationalMap({
   }, [
     mapReady,
     visibleEvents,
+    visibleDemoEvents,
+    demoEventClusters,
     visibleVisualSources,
     selectedEventId,
     selectedVisualSourceId,
