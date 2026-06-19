@@ -97,3 +97,25 @@ No se implementará scraping ni integración real con EarthCam en esta etapa.
 - colaboración entre civiles, operadores e instituciones.
 
 Estas capacidades se incorporarán por etapas, con fuentes explícitas, revisión humana y límites claros de confianza.
+
+## Visual Sources Foundation
+
+La primera base local de fuentes visuales usa marcadores geolocalizados y datos demo:
+
+- morado para cámaras públicas, abiertas o comerciales;
+- rojo institucional para gobierno y organismos oficiales;
+- cian para sensores ARGUS verificados;
+- ámbar para fuentes pendientes;
+- gris para fuentes offline o históricas.
+
+El marcador de fuente usa forma e identificación de cámara para diferenciar el rojo institucional de una alerta crítica.
+
+Al seleccionar una fuente:
+
+- se abre un popup simple con nombre, estado y ubicación;
+- un embed permitido se muestra sin autoplay ni audio;
+- el audio y la experiencia completa requieren abrir la fuente original;
+- una fuente restringida muestra **STREAM RESTRINGIDO** y un enlace externo;
+- la metadata interna queda fuera de la vista civil principal.
+
+Esta base no realiza scraping, no consume una API EarthCam ni analiza video. Los datos son locales y preparan la arquitectura para integraciones futuras revisadas fuente por fuente.

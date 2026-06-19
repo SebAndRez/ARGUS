@@ -4,8 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { CrisisEvent } from "@/types/crisis";
 import type { UserLocationStatus } from "@/types/crisis";
+import type { VisualSource } from "@/types/visualSource";
 import IncidentMarker from "@/components/map/IncidentMarker";
 import UserLocationMarker from "@/components/map/UserLocationMarker";
+import VisualSourceMarker from "@/components/map/VisualSourceMarker";
 
 interface MapLayerSettings {
   reports: boolean;
@@ -14,6 +16,7 @@ interface MapLayerSettings {
   critical: boolean;
   resolved: boolean;
   user: boolean;
+  visualSources?: boolean;
 }
 
 interface Props {
@@ -26,6 +29,9 @@ interface Props {
   locationStatus: UserLocationStatus;
   layerSettings: MapLayerSettings;
   onEventSelect?: (event: CrisisEvent) => void;
+  visualSources?: VisualSource[];
+  selectedVisualSourceId?: string;
+  onVisualSourceSelect?: (source: VisualSource) => void;
   centerOnSelected?: boolean;
 }
 
@@ -48,18 +54,26 @@ export default function OperationalMap({
   locationStatus,
   layerSettings,
   onEventSelect,
+  visualSources = [],
+  selectedVisualSourceId,
+  onVisualSourceSelect,
   centerOnSelected = true,
 }: Props) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const eventLayerRef = useRef<any>(null);
+  const visualSourceLayerRef = useRef<any>(null);
   const userLayerRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
 
   const visibleEvents = useMemo(
     () => events.filter((event) => isEventVisible(event, layerSettings)),
     [events, layerSettings]
+  );
+  const visibleVisualSources = useMemo(
+    () => (layerSettings.visualSources ? visualSources : []),
+    [layerSettings.visualSources, visualSources]
   );
 
   useEffect(() => {
@@ -81,6 +95,7 @@ export default function OperationalMap({
       }).addTo(map);
 
       eventLayerRef.current = L.layerGroup().addTo(map);
+      visualSourceLayerRef.current = L.layerGroup().addTo(map);
       userLayerRef.current = L.layerGroup().addTo(map);
       mapRef.current = map;
       setMapReady(true);
@@ -97,6 +112,7 @@ export default function OperationalMap({
         mapRef.current = null;
       }
       eventLayerRef.current = null;
+      visualSourceLayerRef.current = null;
       userLayerRef.current = null;
     };
   }, []);
@@ -106,9 +122,11 @@ export default function OperationalMap({
     const L = leafletRef.current;
     const map = mapRef.current;
     const eventLayer = eventLayerRef.current;
+    const visualSourceLayer = visualSourceLayerRef.current;
     const userLayer = userLayerRef.current;
 
     eventLayer?.clearLayers();
+    visualSourceLayer?.clearLayers();
     userLayer?.clearLayers();
 
     visibleEvents.forEach((event) => {
@@ -131,6 +149,35 @@ export default function OperationalMap({
 
       marker.on("click", () => {
         onEventSelect?.(event);
+      });
+    });
+
+    visibleVisualSources.forEach((source) => {
+      const lat = Number(source.latitude);
+      const lng = Number(source.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+      const markerIcon = L.divIcon({
+        html: renderToStaticMarkup(
+          <VisualSourceMarker source={source} isSelected={source.id === selectedVisualSourceId} />
+        ),
+        className: "leaflet-div-icon bg-transparent p-0",
+        iconSize: [40, 40],
+        iconAnchor: [20, 20],
+      });
+
+      const marker = L.marker([lat, lng], {
+        icon: markerIcon,
+        title: source.title,
+      }).addTo(visualSourceLayer);
+
+      marker.bindTooltip(source.title, {
+        direction: "top",
+        offset: [0, -18],
+        opacity: 0.9,
+      });
+      marker.on("click", () => {
+        onVisualSourceSelect?.(source);
       });
     });
 
@@ -157,7 +204,19 @@ export default function OperationalMap({
         });
       }
     }
-  }, [mapReady, visibleEvents, selectedEventId, onEventSelect, layerSettings, location, locationStatus, centerOnSelected]);
+  }, [
+    mapReady,
+    visibleEvents,
+    visibleVisualSources,
+    selectedEventId,
+    selectedVisualSourceId,
+    onEventSelect,
+    onVisualSourceSelect,
+    layerSettings,
+    location,
+    locationStatus,
+    centerOnSelected,
+  ]);
 
   useEffect(() => {
     if (!mapReady || !mapRef.current || selectedEventId) return;

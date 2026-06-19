@@ -8,6 +8,7 @@ export const VISUAL_SOURCE_CATEGORIES = [
   "media_stream",
   "citizen_stream",
   "argus_verified_sensor",
+  "unverified_source",
   "unverified",
   "offline",
 ] as const;
@@ -108,6 +109,12 @@ export const SOURCE_PRESENTATION: Record<
     operatorLabel: "Sensor ARGUS verificado",
     iconText: "ARG",
     className: "border-cyan-300/35 bg-cyan-400/10 text-cyan-100",
+  },
+  unverified_source: {
+    citizenLabel: "Pendiente de confirmar",
+    operatorLabel: "Fuente no verificada",
+    iconText: "?",
+    className: "border-amber-300/30 bg-amber-400/10 text-amber-100",
   },
   unverified: {
     citizenLabel: "Pendiente de confirmar",

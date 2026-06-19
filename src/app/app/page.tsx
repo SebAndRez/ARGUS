@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import OperationalMap from "@/components/map/OperationalMap";
 import MapHUD from "@/components/map/MapHUD";
 import MapLayerControls from "@/components/map/MapLayerControls";
+import VisualSourcePopup from "@/components/map/VisualSourcePopup";
 import FloatingSOSButton from "@/components/app/FloatingSOSButton";
 import FloatingReportButton from "@/components/app/FloatingReportButton";
 import NearbyEventsSheet from "@/components/app/NearbyEventsSheet";
@@ -11,7 +12,9 @@ import ReportModal from "@/components/app/ReportModal";
 import HelpRequestModal from "@/components/app/HelpRequestModal";
 import { useSession } from "@/hooks/useSession";
 import { useUserLocation } from "@/hooks/useUserLocation";
+import { demoVisualSources } from "@/data/demoVisualSources";
 import type { CrisisEvent, SessionUser } from "@/types/crisis";
+import type { VisualSource } from "@/types/visualSource";
 
 const initialLayers = {
   reports: true,
@@ -20,12 +23,14 @@ const initialLayers = {
   critical: true,
   resolved: true,
   user: true,
+  visualSources: true,
 };
 
 const initialEventState: CrisisEvent[] = [];
 
 export default function AppPage() {
   const [selectedEvent, setSelectedEvent] = useState<CrisisEvent | null>(null);
+  const [selectedVisualSource, setSelectedVisualSource] = useState<VisualSource | null>(null);
   const [events, setEvents] = useState<CrisisEvent[]>(initialEventState);
   const [layerSettings, setLayerSettings] = useState(initialLayers);
   const [isReportOpen, setIsReportOpen] = useState(false);
@@ -36,6 +41,16 @@ export default function AppPage() {
 
   const canReport = Boolean(sessionUser && !["LIMITED", "SUSPENDED", "BANNED"].includes(sessionUser.accountStatus));
   const canSOS = Boolean(sessionUser);
+
+  const selectEvent = useCallback((event: CrisisEvent) => {
+    setSelectedVisualSource(null);
+    setSelectedEvent(event);
+  }, []);
+
+  const selectVisualSource = useCallback((source: VisualSource) => {
+    setSelectedEvent(null);
+    setSelectedVisualSource(source);
+  }, []);
 
   const toggleLayer = (key: keyof typeof initialLayers) => {
     setLayerSettings((current) => ({
@@ -124,7 +139,10 @@ export default function AppPage() {
         location={{ latitude: location.latitude, longitude: location.longitude }}
         locationStatus={location.status}
         layerSettings={layerSettings}
-        onEventSelect={setSelectedEvent}
+        onEventSelect={selectEvent}
+        visualSources={demoVisualSources}
+        selectedVisualSourceId={selectedVisualSource?.id}
+        onVisualSourceSelect={selectVisualSource}
       />
 
       <MapHUD gpsStatus={gpsStatus} />
@@ -174,7 +192,9 @@ export default function AppPage() {
         Mi ubicación
       </button>
 
-      <NearbyEventsSheet events={events} latitude={location.latitude} longitude={location.longitude} onSelect={setSelectedEvent} />
+      <NearbyEventsSheet events={events} latitude={location.latitude} longitude={location.longitude} onSelect={selectEvent} />
+
+      <VisualSourcePopup source={selectedVisualSource} onClose={() => setSelectedVisualSource(null)} />
 
       <ReportModal
         open={isReportOpen}
