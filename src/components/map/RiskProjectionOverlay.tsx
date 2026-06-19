@@ -87,9 +87,9 @@ export default function RiskProjectionOverlay({
         .polygon(conePoints, {
           color: presentation.color,
           fillColor: presentation.fillColor,
-          fillOpacity: 0.2,
-          opacity: 0.85,
-          weight: 2,
+          fillOpacity: 0.26,
+          opacity: 0.92,
+          weight: 2.5,
           dashArray: "8 7",
           className: "argus-risk-projection",
         })

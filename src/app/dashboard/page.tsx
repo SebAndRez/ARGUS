@@ -8,7 +8,10 @@ import EventDetailPanel from "@/components/map/EventDetailPanel";
 import VisualSourcePopup from "@/components/map/VisualSourcePopup";
 import DashboardUsersPanel from "@/components/dashboard/DashboardUsersPanel";
 import AuditLogPanel from "@/components/dashboard/AuditLogPanel";
-import type { MapLayerState } from "@/components/map/MapLayerControls";
+import type {
+  LayerDisplayMeta,
+  MapLayerState,
+} from "@/components/map/MapLayerControls";
 import { useUserLocation } from "@/hooks/useUserLocation";
 import { useSession } from "@/hooks/useSession";
 import { demoVisualSources } from "@/data/demoVisualSources";
@@ -87,6 +90,81 @@ export default function DashboardPage() {
   const criticalCount = useMemo(
     () => events.filter((event) => event.severity === "CRITICAL" && event.status !== "RESOLVED").length,
     [events]
+  );
+  const layerMeta = useMemo<
+    Partial<Record<keyof MapLayerState, LayerDisplayMeta>>
+  >(
+    () => ({
+      reports: {
+        count: events.filter((event) => event.type === "REPORT").length,
+        detail: "Reportes ciudadanos",
+      },
+      sos: {
+        count: events.filter((event) => event.type === "SOS").length,
+        detail: "Solicitudes de ayuda",
+      },
+      alerts: {
+        count: events.filter((event) => event.type === "ALERT").length,
+        detail: "Alertas operacionales",
+      },
+      critical: {
+        count: criticalCount,
+        detail: "Prioridad critica activa",
+      },
+      resolved: {
+        count: events.filter((event) => event.status === "RESOLVED").length,
+        detail: "Eventos cerrados",
+      },
+      visualSources: {
+        count: demoVisualSources.length,
+        detail: "Fuentes de contexto",
+        status: "ready",
+      },
+      officialSources: {
+        count: demoVisualSources.filter((source) =>
+          ["governmental_osint", "institutional_camera"].includes(source.category)
+        ).length,
+        detail: "Gobierno e instituciones",
+        status: "ready",
+      },
+      publicCameras: {
+        count: demoVisualSources.filter((source) =>
+          [
+            "open_public_camera",
+            "commercial_webcam",
+            "media_stream",
+            "citizen_stream",
+          ].includes(source.category)
+        ).length,
+        detail: "Camaras y transmisiones",
+        status: "ready",
+      },
+      weatherRisk: {
+        count: demoRiskProjections.length,
+        detail: "Zonas estimadas, no exactas",
+        status: "ready",
+      },
+      terrestrialRoutes: {
+        count: demoRoutes.filter((route) => route.type === "terrestrial").length,
+        detail: "Corredor urbano demo",
+        status: "ready",
+      },
+      airRoutes: {
+        count: demoRoutes.filter((route) => route.type === "air").length,
+        detail: "Trayectoria diferenciada",
+        status: "ready",
+      },
+      maritimeRoutes: {
+        count: demoRoutes.filter((route) => route.type === "maritime").length,
+        detail: "Referencia en Valparaiso",
+        status: "ready",
+      },
+      user: {
+        detail: gpsStatus === "active" ? "Posicion disponible" : "Ubicacion no confirmada",
+        status: gpsStatus === "active" ? "ready" : "idle",
+      },
+    }),
+    [criticalCount, events, gpsStatus]
   );
 
   const selectEvent = useCallback((event: CrisisEvent) => {
@@ -221,6 +299,7 @@ export default function DashboardPage() {
             baseMapType={baseMapType}
             onBaseMapChange={setBaseMapType}
             onSelectEvent={selectEvent}
+            layerMeta={layerMeta}
           />
         </div>
 

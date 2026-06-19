@@ -45,7 +45,7 @@ export default function NearbyEventsSheet({
   const nearbyEvents = getNearbyEvents(events, latitude, longitude, maxItems);
   const hasDemoSummary =
     typeof demoVisibleCount === "number" && typeof demoTotalCount === "number";
-  const displayedDemoCount = nearbyEvents.filter(({ event }) => event.isDemo).length;
+  const displayedDemoCount = Math.min(maxItems, demoVisibleCount ?? 0);
 
   return (
     <aside className="pointer-events-auto fixed inset-x-0 bottom-0 z-40 mx-auto max-w-5xl rounded-t-lg border border-white/10 bg-slate-950/92 px-4 pb-4 pt-3 backdrop-blur-xl shadow-[0_-18px_48px_rgba(0,0,0,0.42)] sm:px-6">

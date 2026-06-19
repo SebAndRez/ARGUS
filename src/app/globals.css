@@ -106,6 +106,12 @@ body,
   border: none !important;
 }
 
+.argus-leaflet-map .argus-visual-source-icon,
+.argus-leaflet-map .argus-external-event-icon {
+  border-radius: 9999px !important;
+  overflow: visible !important;
+}
+
 .argus-leaflet-map .argus-risk-projection {
   cursor: pointer;
 }

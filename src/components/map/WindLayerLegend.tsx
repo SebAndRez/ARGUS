@@ -25,7 +25,7 @@ export default function WindLayerLegend({
   const confidence = selectedProjection?.confidence ?? observation.confidence;
 
   return (
-    <aside className="pointer-events-none fixed left-4 top-56 z-40 hidden w-72 border border-amber-300/20 bg-slate-950/90 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl lg:block">
+    <aside className="pointer-events-none fixed left-4 top-56 z-40 hidden w-72 border border-amber-300/20 bg-slate-950/90 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl md:block">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[0.62rem] font-semibold uppercase tracking-[0.2em] text-amber-300/90">
@@ -56,7 +56,7 @@ export default function WindLayerLegend({
       </div>
 
       <p className="mt-4 border-t border-white/10 pt-3 text-[0.65rem] leading-4 text-slate-500">
-        Zona aproximada para apoyo visual. No reemplaza instrucciones oficiales.
+        Zona estimada, no exacta. No reemplaza instrucciones oficiales.
       </p>
     </aside>
   );

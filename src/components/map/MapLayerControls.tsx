@@ -27,12 +27,23 @@ export interface MapLayerState {
   maritimeRoutes?: boolean;
 }
 
+export type LayerDisplayStatus = "idle" | "loading" | "ready" | "error";
+
+export interface LayerDisplayMeta {
+  count?: number;
+  detail?: string;
+  status?: LayerDisplayStatus;
+  emphasis?: boolean;
+}
+
 interface Props<TLayers extends MapLayerState> {
   layers: TLayers;
   onToggle: (key: keyof TLayers) => void;
   baseMapType?: BaseMapType;
   onBaseMapChange?: (type: BaseMapType) => void;
   showLegend?: boolean;
+  showActiveSummary?: boolean;
+  layerMeta?: Partial<Record<keyof MapLayerState, LayerDisplayMeta>>;
   demoFilters?: {
     severity: DemoSeverityFilter;
     type: DemoTypeFilter;
@@ -44,6 +55,13 @@ interface Props<TLayers extends MapLayerState> {
     totalCount: number;
   };
 }
+
+const statusTextClasses: Record<LayerDisplayStatus, string> = {
+  idle: "text-slate-500",
+  loading: "text-amber-300",
+  ready: "text-emerald-300",
+  error: "text-red-300",
+};
 
 const layerGroups: Array<{
   label: string;
@@ -98,8 +116,44 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
   baseMapType,
   onBaseMapChange,
   showLegend = true,
+  showActiveSummary = false,
+  layerMeta,
   demoFilters,
 }: Props<TLayers>) {
+  const currentBaseMapLabel = baseMapOptions.find(
+    (option) => option.type === baseMapType
+  )?.label;
+  const routesActive = Boolean(
+    layers.terrestrialRoutes || layers.airRoutes || layers.maritimeRoutes
+  );
+  const activeSummary = [
+    {
+      label: "Reportes demo",
+      enabled: Boolean(layers.demoReports),
+      available: Object.prototype.hasOwnProperty.call(layers, "demoReports"),
+    },
+    {
+      label: "Fuentes",
+      enabled: Boolean(layers.visualSources),
+      available: Object.prototype.hasOwnProperty.call(layers, "visualSources"),
+    },
+    {
+      label: "Rutas",
+      enabled: routesActive,
+      available: Object.prototype.hasOwnProperty.call(layers, "terrestrialRoutes"),
+    },
+    {
+      label: "Clima / riesgo",
+      enabled: Boolean(layers.weatherRisk),
+      available: Object.prototype.hasOwnProperty.call(layers, "weatherRisk"),
+    },
+    {
+      label: "Sismos USGS",
+      enabled: Boolean(layers.usgsEarthquakes),
+      available: Object.prototype.hasOwnProperty.call(layers, "usgsEarthquakes"),
+    },
+  ].filter((item) => item.available);
+
   return (
     <div className="argus-tactical-panel max-h-[calc(100dvh-8.5rem)] overflow-y-auto border bg-slate-950/95 p-4 shadow-2xl shadow-black/35 backdrop-blur-xl">
       <div className="flex items-center justify-between gap-3">
@@ -116,9 +170,14 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
 
       {baseMapType && onBaseMapChange && (
         <section className="mt-4 border-t border-white/10 pt-3">
-          <p className="text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
-            Tipo de mapa
-          </p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Tipo de mapa
+            </p>
+            <span className="text-[0.6rem] font-semibold uppercase text-cyan-200">
+              Actual: {currentBaseMapLabel}
+            </span>
+          </div>
           <div className="mt-2 grid grid-cols-2 gap-2">
             {baseMapOptions.map((option) => (
               <button
@@ -158,27 +217,51 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
             <div className="mt-2 grid gap-1.5">
               {availableKeys.map((key) => {
                 const enabled = Boolean(layers[key]);
+                const meta = layerMeta?.[key as keyof MapLayerState];
+                const emphasized = Boolean(meta?.emphasis && !enabled);
                 return (
                   <button
                     key={key}
                     type="button"
                     onClick={() => onToggle(key)}
-                    className={`flex min-h-9 items-center justify-between border px-3 py-2 text-left text-xs transition ${
+                    className={`flex min-h-11 items-center justify-between gap-3 border px-3 py-2 text-left text-xs transition ${
                       enabled
                         ? "border-cyan-400/20 bg-cyan-500/8 text-slate-100"
-                        : "border-white/8 bg-white/[0.03] text-slate-400 hover:bg-white/[0.06]"
+                        : emphasized
+                          ? "border-violet-300/30 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15"
+                          : "border-white/8 bg-white/[0.03] text-slate-400 hover:bg-white/[0.06]"
                     }`}
                     aria-label={`${labels[key as keyof MapLayerState]} ${enabled ? "ON" : "OFF"}`}
                   >
-                    <span>{labels[key as keyof MapLayerState]}</span>
-                    <span
-                      className={`inline-flex h-5 min-w-8 items-center justify-center rounded-full border px-1.5 text-[0.55rem] font-bold ${
-                        enabled
-                          ? "border-cyan-300/30 bg-cyan-400/15 text-cyan-200"
-                          : "border-white/10 bg-slate-950/70 text-slate-500"
-                      }`}
-                    >
-                      {enabled ? "ON" : "OFF"}
+                    <span className="min-w-0">
+                      <span className="block font-medium">
+                        {labels[key as keyof MapLayerState]}
+                      </span>
+                      {meta?.detail && (
+                        <span
+                          className={`mt-0.5 block truncate text-[0.6rem] ${
+                            statusTextClasses[meta.status ?? "idle"]
+                          }`}
+                        >
+                          {meta.detail}
+                        </span>
+                      )}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      {typeof meta?.count === "number" && (
+                        <span className="rounded-full border border-white/10 bg-slate-950/70 px-2 py-1 font-mono text-[0.58rem] text-slate-300">
+                          {meta.count}
+                        </span>
+                      )}
+                      <span
+                        className={`inline-flex h-5 min-w-8 items-center justify-center rounded-full border px-1.5 text-[0.55rem] font-bold ${
+                          enabled
+                            ? "border-cyan-300/30 bg-cyan-400/15 text-cyan-200"
+                            : "border-white/10 bg-slate-950/70 text-slate-500"
+                        }`}
+                      >
+                        {enabled ? "ON" : "OFF"}
+                      </span>
                     </span>
                   </button>
                 );
@@ -190,6 +273,36 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
           </section>
         );
       })}
+
+      {showActiveSummary && (
+        <section className="mt-4 border-t border-white/10 pt-3">
+          <div className="flex items-center justify-between">
+            <p className="text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Capas activas
+            </p>
+            <span className="font-mono text-[0.6rem] text-cyan-200">
+              {activeSummary.filter((item) => item.enabled).length}/{activeSummary.length}
+            </span>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
+            {activeSummary.map((item) => (
+              <div
+                key={item.label}
+                className="flex min-w-0 items-center justify-between gap-2 border border-white/8 bg-black/20 px-2 py-1.5"
+              >
+                <span className="truncate text-[0.6rem] text-slate-400">{item.label}</span>
+                <span
+                  className={`text-[0.55rem] font-bold ${
+                    item.enabled ? "text-emerald-300" : "text-slate-600"
+                  }`}
+                >
+                  {item.enabled ? "ON" : "OFF"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {showLegend && <div className="mt-4"><MapLegend /></div>}
     </div>

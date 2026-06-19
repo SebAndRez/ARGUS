@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import OperationalMap from "@/components/map/OperationalMap";
 import ArgusOperationalHUD from "@/components/map/ArgusOperationalHUD";
-import MapLayerControls from "@/components/map/MapLayerControls";
+import MapLayerControls, {
+  type LayerDisplayMeta,
+} from "@/components/map/MapLayerControls";
 import EventDetailPanel from "@/components/map/EventDetailPanel";
 import ExternalEventPopup from "@/components/map/ExternalEventPopup";
 import VisualSourcePopup from "@/components/map/VisualSourcePopup";
@@ -88,6 +90,7 @@ export default function AppPage() {
     "idle" | "loading" | "loaded" | "error"
   >("idle");
   const [usgsErrorMessage, setUsgsErrorMessage] = useState<string | null>(null);
+  const [usgsUpdatedAt, setUsgsUpdatedAt] = useState<string | null>(null);
   const usgsFetchStartedRef = useRef(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -196,6 +199,139 @@ export default function AppPage() {
       ).length,
     [nearbyEventPool]
   );
+  const usgsUpdatedLabel = useMemo(() => {
+    if (!usgsUpdatedAt) return null;
+    const updatedAt = new Date(usgsUpdatedAt);
+    if (Number.isNaN(updatedAt.getTime())) return "Actualizacion recibida";
+
+    return `Actualizado ${new Intl.DateTimeFormat("es-CL", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZoneName: "short",
+    }).format(updatedAt)}`;
+  }, [usgsUpdatedAt]);
+  const officialSourceCount = useMemo(
+    () =>
+      demoVisualSources.filter((source) =>
+        ["governmental_osint", "institutional_camera"].includes(source.category)
+      ).length,
+    []
+  );
+  const publicCameraCount = useMemo(
+    () =>
+      demoVisualSources.filter((source) =>
+        [
+          "open_public_camera",
+          "commercial_webcam",
+          "media_stream",
+          "citizen_stream",
+        ].includes(source.category)
+      ).length,
+    []
+  );
+  const layerMeta = useMemo<
+    Partial<Record<keyof typeof initialLayers, LayerDisplayMeta>>
+  >(
+    () => ({
+      reports: {
+        count: events.filter((event) => event.type === "REPORT").length,
+        detail: "Reportes ciudadanos",
+      },
+      demoReports: {
+        count: demoEvents.length,
+        detail: layerSettings.demoReports
+          ? `${filteredDemoEvents.length} visibles con filtros`
+          : `${demoEvents.length} disponibles para probar`,
+        status: layerSettings.demoReports ? "ready" : "idle",
+        emphasis: true,
+      },
+      usgsEarthquakes: {
+        count: usgsEvents.length,
+        detail:
+          usgsStatus === "loading"
+            ? "Consultando fuente oficial..."
+            : usgsStatus === "error"
+              ? "Sin conexion con USGS"
+              : usgsStatus === "loaded"
+                ? usgsUpdatedLabel ?? "Actualizacion recibida"
+                : "Disponible bajo demanda",
+        status:
+          usgsStatus === "loaded"
+            ? "ready"
+            : usgsStatus === "error"
+              ? "error"
+              : usgsStatus,
+      },
+      sos: {
+        count: events.filter((event) => event.type === "SOS").length,
+        detail: "Solicitudes de ayuda",
+      },
+      alerts: {
+        count: events.filter((event) => event.type === "ALERT").length,
+        detail: "Alertas operacionales",
+      },
+      critical: {
+        count: criticalCount,
+        detail: "Prioridad critica activa",
+      },
+      resolved: {
+        count: events.filter((event) => event.status === "RESOLVED").length,
+        detail: "Eventos cerrados",
+      },
+      visualSources: {
+        count: demoVisualSources.length,
+        detail: "Todas las fuentes demo",
+        status: "ready",
+      },
+      officialSources: {
+        count: officialSourceCount,
+        detail: "Gobierno e instituciones",
+        status: "ready",
+      },
+      publicCameras: {
+        count: publicCameraCount,
+        detail: "Camaras y transmisiones",
+        status: "ready",
+      },
+      weatherRisk: {
+        count: demoRiskProjections.length,
+        detail: "Zonas estimadas, no exactas",
+        status: "ready",
+      },
+      terrestrialRoutes: {
+        count: demoRoutes.filter((route) => route.type === "terrestrial").length,
+        detail: "Corredor urbano demo",
+        status: "ready",
+      },
+      airRoutes: {
+        count: demoRoutes.filter((route) => route.type === "air").length,
+        detail: "Trayectoria diferenciada",
+        status: "ready",
+      },
+      maritimeRoutes: {
+        count: demoRoutes.filter((route) => route.type === "maritime").length,
+        detail: "Referencia en Valparaiso",
+        status: "ready",
+      },
+      user: {
+        detail: gpsStatus === "active" ? "Posicion disponible" : "Ubicacion no confirmada",
+        status: gpsStatus === "active" ? "ready" : "idle",
+      },
+    }),
+    [
+      criticalCount,
+      demoEvents.length,
+      events,
+      filteredDemoEvents.length,
+      gpsStatus,
+      layerSettings.demoReports,
+      officialSourceCount,
+      publicCameraCount,
+      usgsEvents.length,
+      usgsStatus,
+      usgsUpdatedLabel,
+    ]
+  );
 
   useEffect(() => {
     async function loadEvents() {
@@ -240,6 +376,9 @@ export default function AppPage() {
         }
 
         setUsgsEvents(Array.isArray(payload.events) ? payload.events : []);
+        setUsgsUpdatedAt(
+          typeof payload.generatedAt === "string" ? payload.generatedAt : null
+        );
         setUsgsStatus("loaded");
       } catch (error) {
         setUsgsStatus("error");
@@ -351,6 +490,8 @@ export default function AppPage() {
           onToggle={toggleLayer}
           baseMapType={baseMapType}
           onBaseMapChange={setBaseMapType}
+          layerMeta={layerMeta}
+          showActiveSummary
           demoFilters={{
             severity: demoSeverityFilter,
             type: demoTypeFilter,

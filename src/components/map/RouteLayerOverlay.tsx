@@ -75,8 +75,8 @@ export default function RouteLayerOverlay({
           .polyline(route.coordinates, {
             color: presentation.color,
             dashArray: presentation.dashArray,
-            opacity: 0.75,
-            weight: route.type === "terrestrial" ? 4 : 3,
+            opacity: 0.9,
+            weight: route.type === "terrestrial" ? 5 : 4,
             className: `argus-route argus-route-${route.type}`,
           })
           .addTo(layer);

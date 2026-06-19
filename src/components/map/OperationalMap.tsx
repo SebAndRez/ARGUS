@@ -280,7 +280,7 @@ export default function OperationalMap({
               isSelected={event.id === selectedExternalEventId}
             />
           ),
-          className: "leaflet-div-icon bg-transparent p-0",
+          className: "argus-external-event-icon leaflet-div-icon bg-transparent p-0",
           iconSize: [44, 44],
           iconAnchor: [22, 22],
         });
@@ -311,7 +311,7 @@ export default function OperationalMap({
         html: renderToStaticMarkup(
           <VisualSourceMarker source={source} isSelected={source.id === selectedVisualSourceId} />
         ),
-        className: "leaflet-div-icon bg-transparent p-0",
+        className: "argus-visual-source-icon leaflet-div-icon bg-transparent p-0",
         iconSize: [40, 40],
         iconAnchor: [20, 20],
       });

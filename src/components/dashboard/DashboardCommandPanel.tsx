@@ -1,7 +1,10 @@
 "use client";
 
 import type { CrisisEvent } from "@/types/crisis";
-import MapLayerControls, { type MapLayerState } from "@/components/map/MapLayerControls";
+import MapLayerControls, {
+  type LayerDisplayMeta,
+  type MapLayerState,
+} from "@/components/map/MapLayerControls";
 import type { BaseMapType } from "@/types/map";
 
 interface Props {
@@ -11,6 +14,7 @@ interface Props {
   baseMapType: BaseMapType;
   onBaseMapChange: (type: BaseMapType) => void;
   onSelectEvent: (event: CrisisEvent) => void;
+  layerMeta?: Partial<Record<keyof MapLayerState, LayerDisplayMeta>>;
 }
 
 export default function DashboardCommandPanel({
@@ -20,6 +24,7 @@ export default function DashboardCommandPanel({
   baseMapType,
   onBaseMapChange,
   onSelectEvent,
+  layerMeta,
 }: Props) {
   return (
     <aside className="flex h-full flex-col gap-5 rounded-lg border border-white/10 bg-slate-950/85 p-4 shadow-2xl shadow-black/30 backdrop-blur-xl xl:w-[320px]">
@@ -32,6 +37,8 @@ export default function DashboardCommandPanel({
         onToggle={onToggleLayer}
         baseMapType={baseMapType}
         onBaseMapChange={onBaseMapChange}
+        layerMeta={layerMeta}
+        showActiveSummary
       />
       <div className="rounded-lg border border-white/10 bg-slate-900/70 p-4">
         <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.24em] text-slate-400">
