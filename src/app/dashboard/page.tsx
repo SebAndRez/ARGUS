@@ -169,10 +169,12 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <main className="grid min-h-[calc(100vh-190px)] gap-6 px-4 pb-8 pt-6 xl:grid-cols-[320px_minmax(0,1fr)_420px] xl:px-8">
-        <DashboardCommandPanel events={events} layers={layerSettings} onToggleLayer={toggleLayer} onSelectEvent={setSelectedEvent} />
+      <main className="grid min-h-[calc(100vh-190px)] min-w-0 gap-6 px-4 pb-8 pt-6 xl:h-[calc(100dvh-190px)] xl:min-h-0 xl:grid-cols-[320px_minmax(0,1fr)_420px] xl:px-8">
+        <div className="min-h-0 min-w-0 xl:h-full xl:overflow-y-auto xl:pr-1">
+          <DashboardCommandPanel events={events} layers={layerSettings} onToggleLayer={toggleLayer} onSelectEvent={setSelectedEvent} />
+        </div>
 
-        <div className="relative min-h-[calc(100vh-240px)] overflow-hidden rounded-[36px] border border-white/10 bg-slate-950/70 shadow-2xl shadow-black/40">
+        <div className="relative h-[55vh] min-h-[420px] min-w-0 overflow-hidden rounded-[36px] border border-white/10 bg-slate-950/70 shadow-2xl shadow-black/40 sm:h-[600px] xl:h-full xl:min-h-0">
           <OperationalMap
             events={events}
             selectedEventId={selectedEvent?.id}
@@ -183,7 +185,7 @@ export default function DashboardPage() {
           />
         </div>
 
-        <div className="grid gap-6">
+        <div className="grid min-h-0 min-w-0 auto-rows-max content-start gap-6 xl:h-full xl:overflow-y-auto xl:overscroll-contain xl:pr-1">
           <EventDetailPanel event={selectedEvent} onCenter={setSelectedEvent} />
           <DashboardUsersPanel users={users} />
           <AuditLogPanel logs={logs} />

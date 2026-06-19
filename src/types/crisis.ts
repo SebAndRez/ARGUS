@@ -15,6 +15,7 @@ export interface CrisisEvent {
   longitude: number;
   locationText?: string | null;
   severity: EventSeverity;
+  priority?: HelpPriority | null;
   type: EventType;
   status: string;
   createdAt: string;

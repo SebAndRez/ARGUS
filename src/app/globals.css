@@ -48,6 +48,14 @@ body,
   background-image: radial-gradient(circle at top left, rgba(45, 212, 191, 0.1), transparent 34%), radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.06), transparent 26%);
 }
 
+.argus-leaflet-map {
+  isolation: isolate;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
 .argus-leaflet-map .leaflet-tile-pane {
   filter: invert(1) hue-rotate(180deg) brightness(0.72) contrast(1.15) saturate(0.75);
 }
