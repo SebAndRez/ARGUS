@@ -1,5 +1,15 @@
 "use client";
 
+import {
+  ALERT_SEVERITY_PRESENTATION,
+  CONFIDENCE_PRESENTATION,
+  getDefaultConfidenceLevel,
+  getDefaultSourceSummary,
+  getDefaultWhyItMatters,
+} from "@/config/argusDesignSystem";
+import ConfidenceBlock from "@/components/ui/ConfidenceBlock";
+import RecommendedActionBlock from "@/components/ui/RecommendedActionBlock";
+import SourceTypeBadge from "@/components/ui/SourceTypeBadge";
 import type { CrisisEvent } from "@/types/crisis";
 
 interface Props {
@@ -7,35 +17,6 @@ interface Props {
   onCenter?: (event: CrisisEvent) => void;
   onClose?: () => void;
 }
-
-interface BadgeStyle {
-  label: string;
-  className: string;
-  accent: string;
-}
-
-const severityStyles: Record<CrisisEvent["severity"], BadgeStyle> = {
-  LOW: {
-    label: "Severidad baja",
-    className: "border-cyan-300/25 bg-cyan-400/10 text-cyan-200",
-    accent: "bg-cyan-400",
-  },
-  MEDIUM: {
-    label: "Severidad media",
-    className: "border-amber-300/25 bg-amber-400/10 text-amber-200",
-    accent: "bg-amber-300",
-  },
-  HIGH: {
-    label: "Severidad alta",
-    className: "border-orange-300/30 bg-orange-500/10 text-orange-200",
-    accent: "bg-orange-400",
-  },
-  CRITICAL: {
-    label: "Severidad crítica",
-    className: "border-red-300/35 bg-red-500/15 text-red-100",
-    accent: "bg-red-500",
-  },
-};
 
 const priorityLabels: Record<string, string> = {
   LOW: "Prioridad baja",
@@ -145,7 +126,7 @@ export default function EventDetailPanel({ event, onCenter, onClose }: Props) {
     );
   }
 
-  const severity = severityStyles[event.severity] ?? severityStyles.LOW;
+  const severity = ALERT_SEVERITY_PRESENTATION[event.severity];
   const type = typeBadge(event.type);
   const status = statusBadge(event.status);
   const priorityValue = event.priority?.toUpperCase() ?? null;
@@ -155,17 +136,34 @@ export default function EventDetailPanel({ event, onCenter, onClose }: Props) {
   const coordinates =
     Number.isFinite(latitude) && Number.isFinite(longitude) ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}` : null;
   const timestamp = formatTimestamp(event.createdAt);
+  const rawConfidence = event.confidence ?? event.aiConfidence;
   const confidence =
-    typeof event.aiConfidence === "number" && Number.isFinite(event.aiConfidence)
-      ? Math.max(0, Math.min(100, event.aiConfidence))
+    typeof rawConfidence === "number" && Number.isFinite(rawConfidence)
+      ? Math.max(0, Math.min(100, rawConfidence))
       : null;
+  const confidenceLabel =
+    event.confidenceLabel ??
+    CONFIDENCE_PRESENTATION[getDefaultConfidenceLevel({ type: event.type, status: event.status })].label;
+  const sourceCategory =
+    event.sourceCategory ?? (event.type === "REPORT" || event.type === "SOS" ? "citizen_stream" : "unverified");
+  const sourceBadgeLabel = event.sourceCategory
+    ? undefined
+    : event.type === "REPORT"
+      ? "Reporte ciudadano"
+      : event.type === "SOS"
+        ? "Solicitud ciudadana"
+        : "Fuente pendiente";
+  const sourceSummary = event.sourceSummary?.trim() || getDefaultSourceSummary(event.type);
+  const whyItMatters = event.whyItMatters?.trim() || getDefaultWhyItMatters(event.severity, event.type);
+  const recommendedAction =
+    event.operatorRecommendedAction?.trim() || event.recommendedAction?.trim() || event.aiRecommendation?.trim();
   const hasDescription = Boolean(event.description?.trim());
-  const hasAiAnalysis = Boolean(event.aiSummary?.trim() || event.aiRecommendation?.trim() || confidence !== null);
+  const hasAiAnalysis = Boolean(event.aiSummary?.trim());
   const hasOperationalData = Boolean(event.locationText?.trim() || coordinates || timestamp);
 
   return (
     <section className="relative max-h-[calc(100dvh-2rem)] min-w-0 overflow-x-hidden overflow-y-auto overscroll-contain rounded-lg border border-cyan-400/20 bg-slate-950/95 shadow-2xl shadow-black/35 backdrop-blur-xl xl:max-h-[calc(100dvh-220px)]">
-      <span className={`absolute inset-y-0 left-0 w-1 ${severity.accent}`} />
+      <span className={`absolute inset-y-0 left-0 w-1 ${severity.accentClassName}`} />
 
       <header className="border-b border-white/10 px-5 pb-5 pt-4 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -193,7 +191,7 @@ export default function EventDetailPanel({ event, onCenter, onClose }: Props) {
 
         <div className="mt-4 flex flex-wrap gap-2">
           <span className={`rounded-md border px-2.5 py-1 text-[0.65rem] font-semibold uppercase ${severity.className}`}>
-            {severity.label}
+            {severity.operatorLabel}
           </span>
           {priorityLabel && (
             <span className={`rounded-md border px-2.5 py-1 text-[0.65rem] font-semibold uppercase ${severity.className}`}>
@@ -203,6 +201,7 @@ export default function EventDetailPanel({ event, onCenter, onClose }: Props) {
           <span className={`rounded-md border px-2.5 py-1 text-[0.65rem] font-semibold uppercase ${status.className}`}>
             {status.label}
           </span>
+          <SourceTypeBadge category={sourceCategory} label={sourceBadgeLabel} variant="operator" />
         </div>
       </header>
 
@@ -238,39 +237,34 @@ export default function EventDetailPanel({ event, onCenter, onClose }: Props) {
         )}
 
         {hasAiAnalysis && (
-          <section className="bg-slate-900/55 px-5 py-5 sm:px-6">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-[0.65rem] font-semibold uppercase text-cyan-300/80">Análisis asistido</p>
-              {confidence !== null && <span className="font-mono text-xs font-semibold text-cyan-200">{Math.round(confidence)}%</span>}
-            </div>
-
+          <section className="bg-slate-900/45 px-5 py-5 sm:px-6">
+            <p className="text-[0.65rem] font-semibold uppercase text-cyan-300/80">Contexto asistido</p>
             {event.aiSummary?.trim() && (
-              <div className="mt-4">
+              <div className="mt-3">
                 <p className="text-[0.65rem] font-semibold uppercase text-slate-500">Síntesis IA</p>
                 <p className="mt-2 break-words text-sm leading-6 text-slate-300">{event.aiSummary}</p>
               </div>
             )}
-
-            {event.aiRecommendation?.trim() && (
-              <div className="mt-4 border-l-2 border-cyan-400/50 pl-3">
-                <p className="text-[0.65rem] font-semibold uppercase text-slate-500">Recomendación IA</p>
-                <p className="mt-2 break-words text-sm leading-6 text-slate-100">{event.aiRecommendation}</p>
-              </div>
-            )}
-
-            {confidence !== null && (
-              <div className="mt-4">
-                <div className="mb-2 flex items-center justify-between text-[0.65rem] font-semibold uppercase text-slate-500">
-                  <span>Confianza IA</span>
-                  <span>{Math.round(confidence)} de 100</span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
-                  <div className="h-full rounded-full bg-cyan-400" style={{ width: `${confidence}%` }} />
-                </div>
-              </div>
-            )}
           </section>
         )}
+
+        <section className="grid gap-3 px-5 py-5 sm:px-6">
+          <ConfidenceBlock
+            score={confidence}
+            label={confidenceLabel}
+            sourceSummary={sourceSummary}
+            lastUpdatedLabel={event.lastUpdatedLabel}
+            whyItMatters={whyItMatters}
+            variant="operator"
+          />
+          <RecommendedActionBlock
+            action={recommendedAction}
+            severity={event.severity}
+            type={event.type}
+            status={event.status}
+            variant="operator"
+          />
+        </section>
       </div>
 
       <footer className="border-t border-white/10 px-5 py-4 sm:px-6">

@@ -1,5 +1,13 @@
 "use client";
 
+import {
+  ALERT_SEVERITY_PRESENTATION,
+  CONFIDENCE_PRESENTATION,
+  getDefaultConfidenceLevel,
+  getDefaultSourceSummary,
+} from "@/config/argusDesignSystem";
+import ConfidenceBlock from "@/components/ui/ConfidenceBlock";
+import RecommendedActionBlock from "@/components/ui/RecommendedActionBlock";
 import type { CrisisEvent } from "@/types/crisis";
 
 interface Props {
@@ -19,44 +27,6 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
-}
-
-function severityLabel(severity: CrisisEvent["severity"]) {
-  switch (severity) {
-    case "LOW":
-      return "Baja";
-    case "MEDIUM":
-      return "Media";
-    case "HIGH":
-      return "Alta";
-    default:
-      return "Crítica";
-  }
-}
-
-function severityStyles(severity: CrisisEvent["severity"]) {
-  switch (severity) {
-    case "LOW":
-      return {
-        accent: "bg-cyan-400",
-        badge: "border-cyan-300/25 bg-cyan-400/10 text-cyan-200",
-      };
-    case "MEDIUM":
-      return {
-        accent: "bg-amber-300",
-        badge: "border-amber-300/25 bg-amber-400/10 text-amber-200",
-      };
-    case "HIGH":
-      return {
-        accent: "bg-orange-400",
-        badge: "border-orange-300/25 bg-orange-400/10 text-orange-200",
-      };
-    default:
-      return {
-        accent: "bg-red-500",
-        badge: "border-red-300/30 bg-red-500/15 text-red-100",
-      };
-  }
 }
 
 function eventTypeLabel(type: CrisisEvent["type"]) {
@@ -107,40 +77,64 @@ export default function NearbyEventsSheet({ events, latitude, longitude, onSelec
       <div className="mr-40 overflow-hidden 2xl:mr-0">
         <div className="flex snap-x snap-mandatory gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {nearbyEvents.map(({ event, distance }) => {
-            const severity = severityStyles(event.severity);
+            const severity = ALERT_SEVERITY_PRESENTATION[event.severity];
             const formattedDistance = distance < 1 ? `${Math.round(distance * 1000)} m` : `${distance.toFixed(1)} km`;
+            const confidence = event.confidence ?? event.aiConfidence;
+            const confidenceLabel =
+              event.confidenceLabel ??
+              CONFIDENCE_PRESENTATION[getDefaultConfidenceLevel({ type: event.type, status: event.status })].label;
+            const sourceSummary = event.sourceSummary?.trim() || getDefaultSourceSummary(event.type);
+            const recommendedAction = event.recommendedAction?.trim();
 
             return (
               <button
                 key={event.id}
                 type="button"
                 onClick={() => onSelect(event)}
-                className="group relative min-h-28 min-w-full snap-start overflow-hidden rounded-lg border border-white/10 bg-slate-900/90 px-3.5 py-3 text-left transition hover:border-cyan-300/35 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-cyan-300/70 sm:min-w-[260px] sm:max-w-[300px]"
+                className="group relative min-h-40 min-w-full snap-start overflow-hidden rounded-lg border border-white/10 bg-slate-900/90 px-3.5 py-3 text-left transition hover:border-cyan-300/35 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-cyan-300/70 sm:min-w-[290px] sm:max-w-[320px]"
                 aria-label={`Ver ${event.title}, ${formattedDistance}`}
               >
-                <span className={`absolute inset-y-0 left-0 w-1 ${severity.accent}`} />
+                <span className={`absolute inset-y-0 left-0 w-1 ${severity.accentClassName}`} />
 
                 <div className="flex items-center justify-between gap-3">
-                  <span className={`rounded-md border px-2 py-1 text-[0.6rem] font-bold uppercase ${severity.badge}`}>
-                    {eventTypeLabel(event.type)} · {severityLabel(event.severity)}
+                  <span className={`rounded-md border px-2 py-1 text-[0.6rem] font-bold uppercase ${severity.className}`}>
+                    {eventTypeLabel(event.type)} · {severity.citizenLabel}
                   </span>
                   <span className="shrink-0 font-mono text-xs font-semibold text-white">{formattedDistance}</span>
                 </div>
 
                 <p className="mt-2 truncate text-sm font-semibold text-white">{event.title}</p>
 
-                <div className="mt-2 flex items-center justify-between gap-3 border-t border-white/8 pt-2">
+                <div className="mt-2 flex items-center justify-between gap-3">
                   <span className="truncate text-xs text-slate-400">{event.category}</span>
                   <span className="shrink-0 text-[0.62rem] font-semibold uppercase text-cyan-300">
                     {statusLabel(event.status)}
                   </span>
+                </div>
+
+                <div className="mt-2 border-t border-white/8 pt-2">
+                  <ConfidenceBlock
+                    score={confidence}
+                    label={confidenceLabel}
+                    sourceSummary={sourceSummary}
+                    compact
+                  />
+                  <div className="mt-2">
+                    <RecommendedActionBlock
+                      action={recommendedAction}
+                      severity={event.severity}
+                      type={event.type}
+                      status={event.status}
+                      compact
+                    />
+                  </div>
                 </div>
               </button>
             );
           })}
 
           {nearbyEvents.length === 0 && (
-            <div className="flex min-h-28 min-w-full items-center rounded-lg border border-dashed border-white/10 bg-slate-900/60 px-4 text-sm text-slate-400">
+            <div className="flex min-h-40 min-w-full items-center rounded-lg border border-dashed border-white/10 bg-slate-900/60 px-4 text-sm text-slate-400">
               Sin eventos activos en el perímetro.
             </div>
           )}

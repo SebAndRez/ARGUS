@@ -23,6 +23,14 @@ export interface CrisisEvent {
   aiRecommendation?: string | null;
   aiSummary?: string | null;
   aiConfidence?: number | null;
+  confidence?: number | null;
+  confidenceLabel?: string | null;
+  sourceCategory?: string | null;
+  sourceSummary?: string | null;
+  lastUpdatedLabel?: string | null;
+  whyItMatters?: string | null;
+  recommendedAction?: string | null;
+  operatorRecommendedAction?: string | null;
   falseReportRisk?: number | null;
   restrictedMode?: boolean;
   author?: string;
