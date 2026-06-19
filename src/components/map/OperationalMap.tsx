@@ -6,8 +6,10 @@ import type { CrisisEvent } from "@/types/crisis";
 import type { UserLocationStatus } from "@/types/crisis";
 import type { VisualSource } from "@/types/visualSource";
 import type { RiskProjection } from "@/types/weatherRisk";
+import type { ArgusRoute, BaseMapType, RouteType } from "@/types/map";
 import IncidentMarker from "@/components/map/IncidentMarker";
 import RiskProjectionOverlay from "@/components/map/RiskProjectionOverlay";
+import RouteLayerOverlay from "@/components/map/RouteLayerOverlay";
 import UserLocationMarker from "@/components/map/UserLocationMarker";
 import VisualSourceMarker from "@/components/map/VisualSourceMarker";
 
@@ -19,7 +21,12 @@ interface MapLayerSettings {
   resolved: boolean;
   user: boolean;
   visualSources?: boolean;
+  officialSources?: boolean;
+  publicCameras?: boolean;
   weatherRisk?: boolean;
+  terrestrialRoutes?: boolean;
+  airRoutes?: boolean;
+  maritimeRoutes?: boolean;
 }
 
 interface Props {
@@ -37,6 +44,8 @@ interface Props {
   onVisualSourceSelect?: (source: VisualSource) => void;
   riskProjections?: RiskProjection[];
   onRiskProjectionSelect?: (projection: RiskProjection) => void;
+  routes?: ArgusRoute[];
+  baseMapType?: BaseMapType;
   centerOnSelected?: boolean;
 }
 
@@ -64,6 +73,8 @@ export default function OperationalMap({
   onVisualSourceSelect,
   riskProjections = [],
   onRiskProjectionSelect,
+  routes = [],
+  baseMapType = "tactical",
   centerOnSelected = true,
 }: Props) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -78,9 +89,40 @@ export default function OperationalMap({
     () => events.filter((event) => isEventVisible(event, layerSettings)),
     [events, layerSettings]
   );
-  const visibleVisualSources = useMemo(
-    () => (layerSettings.visualSources ? visualSources : []),
-    [layerSettings.visualSources, visualSources]
+  const visibleVisualSources = useMemo(() => {
+    if (!layerSettings.visualSources) return [];
+
+    return visualSources.filter((source) => {
+      const isOfficial =
+        source.category === "governmental_osint" ||
+        source.category === "institutional_camera";
+      const isPublicCamera =
+        source.category === "open_public_camera" ||
+        source.category === "commercial_webcam" ||
+        source.category === "media_stream" ||
+        source.category === "citizen_stream";
+
+      if (isOfficial && layerSettings.officialSources === false) return false;
+      if (isPublicCamera && layerSettings.publicCameras === false) return false;
+      return true;
+    });
+  }, [
+    layerSettings.officialSources,
+    layerSettings.publicCameras,
+    layerSettings.visualSources,
+    visualSources,
+  ]);
+  const visibleRouteTypes = useMemo<Partial<Record<RouteType, boolean>>>(
+    () => ({
+      terrestrial: Boolean(layerSettings.terrestrialRoutes),
+      air: Boolean(layerSettings.airRoutes),
+      maritime: Boolean(layerSettings.maritimeRoutes),
+    }),
+    [
+      layerSettings.airRoutes,
+      layerSettings.maritimeRoutes,
+      layerSettings.terrestrialRoutes,
+    ]
   );
 
   useEffect(() => {
@@ -236,12 +278,20 @@ export default function OperationalMap({
   }, [location.latitude, location.longitude, mapReady, selectedEventId]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-[32px] border border-white/10 bg-slate-950/50 shadow-2xl shadow-black/40">
+    <div
+      className={`argus-map-${baseMapType} relative h-full w-full overflow-hidden rounded-lg border border-white/10 bg-slate-950/50 shadow-2xl shadow-black/40`}
+    >
       <div ref={mapContainerRef} className="argus-leaflet-map h-full w-full" />
       <RiskProjectionOverlay
         projections={riskProjections}
         visible={Boolean(layerSettings.weatherRisk)}
         onProjectionSelect={onRiskProjectionSelect}
+        map={mapReady ? mapRef.current : null}
+        leaflet={mapReady ? leafletRef.current : null}
+      />
+      <RouteLayerOverlay
+        routes={routes}
+        visibleTypes={visibleRouteTypes}
         map={mapReady ? mapRef.current : null}
         leaflet={mapReady ? leafletRef.current : null}
       />

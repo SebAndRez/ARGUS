@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import OperationalMap from "@/components/map/OperationalMap";
-import MapHUD from "@/components/map/MapHUD";
+import ArgusOperationalHUD from "@/components/map/ArgusOperationalHUD";
 import MapLayerControls from "@/components/map/MapLayerControls";
 import EventDetailPanel from "@/components/map/EventDetailPanel";
 import VisualSourcePopup from "@/components/map/VisualSourcePopup";
@@ -15,6 +15,7 @@ import HelpRequestModal from "@/components/app/HelpRequestModal";
 import { useSession } from "@/hooks/useSession";
 import { useUserLocation } from "@/hooks/useUserLocation";
 import { demoVisualSources } from "@/data/demoVisualSources";
+import { demoRoutes } from "@/data/demoRoutes";
 import {
   demoRiskProjections,
   demoWeatherObservations,
@@ -30,6 +31,7 @@ import type {
 } from "@/types/crisis";
 import type { VisualSource } from "@/types/visualSource";
 import type { RiskProjection } from "@/types/weatherRisk";
+import type { BaseMapType } from "@/types/map";
 
 const initialLayers = {
   reports: true,
@@ -39,7 +41,12 @@ const initialLayers = {
   resolved: true,
   user: true,
   visualSources: true,
+  officialSources: true,
+  publicCameras: true,
   weatherRisk: true,
+  terrestrialRoutes: true,
+  airRoutes: true,
+  maritimeRoutes: true,
 };
 
 const initialEventState: CrisisEvent[] = [];
@@ -52,6 +59,7 @@ export default function AppPage() {
   );
   const [events, setEvents] = useState<CrisisEvent[]>(initialEventState);
   const [layerSettings, setLayerSettings] = useState(initialLayers);
+  const [baseMapType, setBaseMapType] = useState<BaseMapType>("tactical");
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -102,12 +110,19 @@ export default function AppPage() {
     }));
   };
 
-  const gpsStatus = useMemo(() => {
-    if (location.status === "loading") return "Buscando GPS";
-    if (location.status === "granted") return "GPS activo";
-    if (location.status === "denied" || location.status === "error") return "GPS denegado";
-    return "GPS no disponible";
+  const gpsStatus = useMemo<"active" | "inactive" | "unknown">(() => {
+    if (location.status === "granted") return "active";
+    if (location.status === "loading" || location.status === "idle") return "unknown";
+    return "inactive";
   }, [location.status]);
+  const activeLayerCount = useMemo(
+    () => Object.values(layerSettings).filter(Boolean).length,
+    [layerSettings]
+  );
+  const criticalCount = useMemo(
+    () => events.filter((event) => event.severity === "CRITICAL" && event.status !== "RESOLVED").length,
+    [events]
+  );
 
   useEffect(() => {
     async function loadEvents() {
@@ -199,39 +214,39 @@ export default function AppPage() {
         onVisualSourceSelect={selectVisualSource}
         riskProjections={demoRiskProjections}
         onRiskProjectionSelect={selectRiskProjection}
+        routes={demoRoutes}
+        baseMapType={baseMapType}
       />
 
-      <MapHUD gpsStatus={gpsStatus} />
+      <div className="pointer-events-auto fixed left-1/2 top-3 z-40 w-[calc(100%-1.5rem)] max-w-6xl -translate-x-1/2">
+        <ArgusOperationalHUD
+          mode="citizen"
+          role="civil"
+          coordinates={{ latitude: location.latitude, longitude: location.longitude }}
+          gpsStatus={gpsStatus}
+          systemStatus={errorMessage ? "degraded" : "online"}
+          activeLayerCount={activeLayerCount}
+          eventCount={events.length}
+          criticalCount={criticalCount}
+        />
+      </div>
       <WindLayerLegend
         observation={demoWeatherObservations[0] ?? null}
         selectedProjection={selectedRiskProjection}
         visible={layerSettings.weatherRisk}
       />
 
-      <div className="pointer-events-auto fixed right-4 top-28 z-40 w-[min(320px,calc(100%-2rem))] md:w-[320px]">
-        <MapLayerControls layers={layerSettings} onToggle={toggleLayer} />
+      <div className="pointer-events-auto fixed right-3 top-40 z-40 w-[min(310px,calc(100%-1.5rem))] md:right-4 md:top-32 md:w-[310px]">
+        <MapLayerControls
+          layers={layerSettings}
+          onToggle={toggleLayer}
+          baseMapType={baseMapType}
+          onBaseMapChange={setBaseMapType}
+        />
       </div>
-
-      <div className="pointer-events-none fixed left-4 top-20 z-40 hidden max-w-xs rounded-3xl border border-cyan-400/20 bg-slate-950/85 p-4 text-sm text-slate-200 backdrop-blur-xl shadow-2xl shadow-black/40 md:block">
-        <p className="text-[0.68rem] uppercase tracking-[0.36em] text-cyan-300/85">Modo ciudadano</p>
-        <p className="mt-3 text-base font-semibold text-white">Interfaz táctica móvil.</p>
-        <p className="mt-2 text-xs text-slate-400">Explora incidentes, marca SOS y mantén el control del perímetro.</p>
-      </div>
-
-      {location.status === "fallback" && (
-        <div className="pointer-events-none fixed top-20 left-1/2 z-40 flex w-[calc(100%-2rem)] -translate-x-1/2 items-center justify-center rounded-3xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-center text-sm text-red-100 backdrop-blur-xl shadow-lg shadow-red-900/20 md:w-[min(520px,calc(100%-3rem))]">
-          GPS no disponible, usando ubicación demo.
-        </div>
-      )}
-
-      {!sessionLoading && !sessionUser && (
-        <div className="fixed left-4 top-4 z-40 rounded-3xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 backdrop-blur-xl shadow-lg shadow-amber-900/20">
-          Inicia sesión para enviar reportes y SOS.
-        </div>
-      )}
 
       {errorMessage && (
-        <div className="fixed left-4 top-24 z-40 rounded-3xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-100 backdrop-blur-xl shadow-lg shadow-red-900/20">
+        <div className="fixed left-4 top-40 z-40 max-w-sm border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-100 backdrop-blur-xl shadow-lg shadow-red-900/20 md:top-32">
           {errorMessage}
         </div>
       )}

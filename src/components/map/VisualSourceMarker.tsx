@@ -22,15 +22,27 @@ const categoryStyles: Record<VisualSource["category"], string> = {
 
 export default function VisualSourceMarker({ source, isSelected = false }: Props) {
   const isOffline = source.status === "offline";
+  const defaultLabel =
+    source.category === "governmental_osint" || source.category === "institutional_camera"
+      ? "GOV"
+      : source.category === "argus_verified_sensor"
+        ? "ARG"
+        : source.category === "unverified_source"
+          ? "?"
+          : "C";
+  const markerLabel = (source.markerLabel || source.shortCode || source.logoText || defaultLabel)
+    .trim()
+    .toUpperCase()
+    .slice(0, 3);
 
   return (
     <div
-      className={`relative flex h-10 w-10 items-center justify-center rounded-lg border-2 ${
+      className={`relative flex h-10 w-10 items-center justify-center rounded-full border-2 ${
         isOffline ? "border-slate-400/60 bg-slate-600 text-slate-100" : categoryStyles[source.category]
       } ${isSelected ? "scale-110 ring-2 ring-white/90 ring-offset-2 ring-offset-slate-950" : ""}`}
     >
-      <span className="text-[0.58rem] font-black tracking-normal" aria-hidden="true">
-        CAM
+      <span className="font-mono text-[0.58rem] font-black tracking-normal" aria-hidden="true">
+        {markerLabel}
       </span>
       <span
         className={`absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border border-slate-950 ${

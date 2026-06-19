@@ -1,8 +1,26 @@
 # ARGUS GRID - Product Direction
 
-## Civic Calm Interface
+ARGUS GRID es una plataforma web/PWA de inteligencia operacional civil, crisis, seguridad ciudadana y coordinación geoespacial. El mapa es el producto principal.
 
-ARGUS debe sentirse como un mapa de emergencia claro, tranquilo y confiable. La interfaz civil prioriza lenguaje simple, botones grandes y una respuesta directa a seis preguntas:
+ARGUS significa **Adaptive Response & Geospatial Unified System**.
+
+El sistema apoya análisis, alertas, reportes, SOS y coordinación. No implementa targeting, armas, reconocimiento facial, seguimiento ofensivo ni sanciones automáticas.
+
+## A. Civic Calm Interface
+
+ARGUS debe ser simple para civiles y profundo para operadores.
+
+Principios:
+
+- lenguaje cotidiano y acciones claras;
+- botones grandes y flujos previsibles;
+- diseño "a prueba de abuelos", comprensible para personas con poca experiencia digital;
+- mapa limpio, con capas activadas solo cuando aportan valor;
+- color acompañado siempre por texto y contexto;
+- información técnica disponible sin dominar la primera lectura;
+- evitar alarmismo, certeza falsa y saturación visual.
+
+Cada alerta importante debe responder:
 
 1. Qué está pasando.
 2. Qué tan confiable es.
@@ -11,173 +29,285 @@ ARGUS debe sentirse como un mapa de emergencia claro, tranquilo y confiable. La 
 5. Por qué importa.
 6. Qué hacer ahora.
 
-La información técnica existe, pero no domina la primera lectura.
+## B. Modo civil y modo operador
 
-## Civil y operador
+### Civil
 
-- **Modo civil:** explica la situación, la distancia, la confianza y la acción recomendada con lenguaje cotidiano.
-- **Modo operador:** conserva severidad, estado, fuente, coordenadas, análisis asistido y contexto técnico.
-- **Regla de accesibilidad:** no depender solo del color. Usar siempre texto, indicador visual y contexto.
-- **Regla de densidad:** el mapa parte limpio. Las capas especializadas se activan cuando aportan valor.
+- qué ocurre cerca;
+- qué debe hacer ahora;
+- SOS siempre accesible;
+- creación de reportes según estado de cuenta;
+- verificación ciudadana segura;
+- confianza, fuente y actualización en lenguaje simple;
+- cámaras, clima y rutas sin sobrecarga técnica.
 
-## Confianza
+### Operador
+
+- prioridad y severidad;
+- ciclo de vida y señales de verificación;
+- fuentes y confianza;
+- cámaras y OSINT;
+- rutas terrestres, aéreas y marítimas;
+- clima, viento y zonas estimadas de riesgo;
+- timeline, auditoría y coordinación de respuesta;
+- acciones administrativas separadas del modo civil.
+
+`/app` prioriza la experiencia civil. `/dashboard` prioriza comando y operación. Ambos comparten HUD, mapa, taxonomía visual y componentes fundamentales.
+
+## C. Roles institucionales futuros
+
+Roles previstos:
+
+- civil;
+- policía;
+- bomberos;
+- EMS / salud;
+- municipalidad;
+- policía marítima;
+- operador;
+- analista;
+- admin.
+
+La validación institucional futura puede considerar placa o código, correo institucional, unidad, región, documento y aprobación administrativa. Ningún rol sensible debe habilitarse solo por declaración del usuario.
+
+## D. Motor de confianza
 
 ARGUS cruza señales y expresa confianza; no promete certeza del 100%.
 
-La confianza debe considerar progresivamente:
+Cada dato debe comunicar:
 
-- tipo y reputación de la fuente;
-- coincidencia entre fuentes;
-- cercanía temporal y geográfica;
-- validación institucional u operador;
-- calidad de ubicación y metadata disponible.
+- nivel de confianza;
+- fuente;
+- última actualización;
+- relevancia operacional;
+- contradicciones o límites conocidos.
 
-La UI resume el resultado como **Alta**, **Media** o **Baja**, explica la fuente y, cuando exista, indica por qué la señal importa.
+Modelo orientativo futuro:
 
-## Acción recomendada
+| Puntaje | Referencia |
+| --- | --- |
+| 100 | Fuente oficial primaria más confirmación cruzada |
+| 80 | Fuente oficial o agregador altamente confiable |
+| 60 | Medio confiable u OSINT validado |
+| 40 | Reporte ciudadano o señal de red social |
+| 20 | Reporte aislado sin contraste |
 
-Cada incidente debe ofrecer una respuesta clara:
+La confianza futura debe considerar reputación de fuente, coincidencia entre señales, proximidad temporal/geográfica, validación institucional y calidad de ubicación. La IA puede sugerir; no sanciona ni decide automáticamente.
 
-- civil: qué hacer ahora sin lenguaje técnico;
-- operador: siguiente acción operacional sugerida;
-- fallback seguro: mantener distancia, seguir instrucciones oficiales y usar SOS ante peligro inmediato.
+## E. Acción recomendada
 
-Las recomendaciones apoyan decisiones humanas. No sancionan ni ejecutan acciones automáticamente.
+Cada alerta relevante debe responder **¿Qué hago ahora?**
 
-## Taxonomía visual
+Ejemplo ante incendio o humo:
 
-| Uso | Color | Significado |
-| --- | --- | --- |
-| Fuente gubernamental o institucional OSINT | Rojo institucional | Gobierno, policía, bomberos, meteorología, municipalidad, EMS |
-| Fuente abierta pública o comercial | Morado | Cámara pública, EarthCam u otra webcam comercial |
-| Fuente verificada ARGUS | Cian | Sensor propio o señal validada por ARGUS |
-| Fuente pendiente o baja confianza | Ámbar | Sin confirmar, incompleta o bajo revisión |
-| Estado normal u operativo | Verde | Seguro, validado u operativo |
-| Fuente offline o histórica | Gris | Sin conexión, histórica o no verificada |
+- cierre ventanas si está cerca;
+- evite el humo y no se acerque;
+- mantenga ubicación activa si necesita asistencia;
+- siga instrucciones oficiales;
+- use SOS ante peligro inmediato.
 
-El rojo institucional debe incluir badge o etiqueta de fuente para no confundirse con el rojo de severidad crítica.
+Modo operador:
 
-## Fuentes visuales
+- validar con otra fuente;
+- revisar prioridad y ubicación;
+- coordinar respuesta;
+- actualizar estado;
+- registrar evidencia y cierre.
 
-Las fuentes visuales futuras incluyen:
+## F. Ciclo operativo de alerta
 
-- cámaras públicas geolocalizadas;
-- webcams comerciales o abiertas;
-- streams institucionales y gubernamentales;
-- streams ciudadanos verificados;
-- sensores visuales propios de ARGUS.
+Ciclo principal:
 
-Metadata prevista:
+`nueva → en verificación → confirmada → en respuesta → resuelta → archivada`
 
-- nombre y categoría;
-- URL de fuente y URL embebible;
-- permiso de embed;
-- ubicación y coordenadas;
-- precisión: exact, venue, city, country o unknown;
-- confianza y última actualización;
-- clima o viento asociado;
-- relación con alertas cercanas.
+Ciclo alternativo:
 
-## Experiencia de stream
+`nueva → sospechosa → descartada / falsa`
 
-- Si el embed está permitido: video en vivo silenciado por defecto.
-- Para audio o experiencia completa: abrir la fuente externa.
-- Si el embed está restringido: mostrar **STREAM RESTRINGIDO** y una acción **Abrir fuente externa**.
-- La metadata técnica se mantiene compacta y disponible para operadores.
+Base MVP actual:
 
-No se implementará scraping ni integración real con EarthCam en esta etapa.
+- `new`;
+- `verifying`;
+- `confirmed`;
+- `responding`;
+- `resolved`;
+- `expired`;
+- `dismissed`.
 
-## Roadmap geoespacial
-
-- capas OSINT, rutas, cámaras y viento;
-- clima, dirección del viento y pluma estimada de humo o nube tóxica;
-- relación espacial entre cámaras, alertas y rutas seguras;
-- tablero compartido y anotaciones operacionales;
-- modo crisis con jerarquía visual reforzada;
-- colaboración entre civiles, operadores e instituciones.
-
-Estas capacidades se incorporarán por etapas, con fuentes explícitas, revisión humana y límites claros de confianza.
-
-## Visual Sources Foundation
-
-La primera base local de fuentes visuales usa marcadores geolocalizados y datos demo:
-
-- morado para cámaras públicas, abiertas o comerciales;
-- rojo institucional para gobierno y organismos oficiales;
-- cian para sensores ARGUS verificados;
-- ámbar para fuentes pendientes;
-- gris para fuentes offline o históricas.
-
-El marcador de fuente usa forma e identificación de cámara para diferenciar el rojo institucional de una alerta crítica.
-
-Al seleccionar una fuente:
-
-- se abre un popup simple con nombre, estado y ubicación;
-- un embed permitido se muestra sin autoplay ni audio;
-- el audio y la experiencia completa requieren abrir la fuente original;
-- una fuente restringida muestra **STREAM RESTRINGIDO** y un enlace externo;
-- la metadata interna queda fuera de la vista civil principal.
-
-Esta base no realiza scraping, no consume una API EarthCam ni analiza video. Los datos son locales y preparan la arquitectura para integraciones futuras revisadas fuente por fuente.
-
-## Weather, Wind and Risk Projection Foundation
-
-La primera capa de clima, viento y riesgo usa observaciones y peligros demo locales. No consume servicios meteorológicos externos ni ejecuta un modelo de dispersión científica.
-
-Convención de dirección:
-
-- `windFromDeg` indica desde dónde viene el viento;
-- `windToDeg` indica hacia dónde podría desplazarse humo, gas o contaminantes;
-- `windToDeg = (windFromDeg + 180) % 360`.
-
-La UI representa una **Zona estimada de riesgo** mediante un sector geográfico de baja opacidad. Es una aproximación visual para apoyar lectura y coordinación, no una zona exacta ni una predicción garantizada.
-
-Cada proyección debe comunicar:
-
-- fuente y actualización de la observación;
-- dirección y velocidad del viento;
-- confianza estimada;
-- explicación breve;
-- acción recomendada conservadora;
-- condición demo o nivel de incertidumbre.
-
-Evolución prevista:
-
-- integración con observaciones meteorológicas oficiales y sensores reales;
-- contraste con cámaras y fuentes OSINT geolocalizadas;
-- modelos serios de dispersión atmosférica y validación operacional;
-- revisión humana antes de publicar alertas de alto impacto.
-
-Esta capa no reemplaza instrucciones oficiales, evaluación en terreno ni herramientas científicas especializadas.
-
-## Alert Lifecycle and Verification Foundation
-
-ARGUS trata cada alerta como un objeto vivo. La base visual demo usa este ciclo simplificado:
-
-`new → verifying → confirmed → responding → resolved`
-
-También contempla:
-
-- `expired` cuando la alerta pierde vigencia;
-- `dismissed` cuando fue descartada;
-- reactivación desde `expired` hacia `verifying` cuando una persona indica **Sigo viendo esto**.
-
-La verificación ciudadana ofrece respuestas simples:
+Verificación ciudadana:
 
 - **Sigo viendo esto**;
 - **Ya no ocurre**;
 - **No puedo verificar**;
-- **Reactivar alerta** cuando corresponde.
+- **Reactivar alerta** cuando una alerta expiró.
 
-Estas señales ajustan localmente contadores, confianza, prioridad y recomendaciones. Una sola respuesta ciudadana no confirma, resuelve, descarta ni sanciona automáticamente.
+Una señal ciudadana no confirma, descarta, resuelve ni sanciona por sí sola. La base actual es local/demo y todavía no persiste verificaciones, reputación ni auditoría.
 
-La interfaz debe comunicar:
+## G. Fuentes visuales y cámaras
 
-- qué está pasando;
-- estado actual del ciclo;
-- confianza y prioridad estimadas;
-- por qué importa;
-- qué hacer ahora;
-- si existen señales recientes de que continúa o terminó.
+Taxonomía:
 
-En esta fase no existe persistencia real para las verificaciones, reputación ciudadana, sanciones, clustering masivo ni notificaciones push. La evolución futura incorporará backend, auditoría, agrupación geoespacial, reputación de fuentes y revisión humana para decisiones de alto impacto.
+- morado: cámara pública, open source o comercial tipo EarthCam;
+- rojo institucional: fuente gubernamental u OSINT oficial;
+- cian: sensor ARGUS o fuente verificada;
+- ámbar: pendiente o no confirmada;
+- gris: offline o histórica.
+
+Experiencia:
+
+- marcador circular con etiqueta corta;
+- video embebido solo si está permitido;
+- reproducción silenciada por defecto;
+- audio y experiencia completa en la fuente externa;
+- fallback **STREAM RESTRINGIDO** cuando no existe permiso de embed;
+- metadata interna compacta y UI civil simple.
+
+No se realiza scraping, reconocimiento facial, tracking de personas ni descarga automática de logos.
+
+## H. Geolocalización de streams
+
+Una fuente puede ubicarse por evento, recinto, ciudad o país.
+
+`locationPrecision`:
+
+- `exact`;
+- `venue`;
+- `city`;
+- `country`;
+- `unknown`.
+
+Es preferible una aproximación segura a una exactitud falsa o riesgosa. Ejemplos:
+
+- White House: etiqueta `WH` o `GOV`, ubicación aproximada a recinto/ciudad;
+- G7 o evento en Versalles: recinto/ciudad cuando no exista una coordenada pública exacta.
+
+La UI debe mostrar precisión y confianza de ubicación.
+
+## I. Clima, viento y riesgo
+
+Convención:
+
+- `windFromDeg`: desde dónde viene el viento;
+- `windToDeg`: hacia dónde podría moverse humo, gas o contaminantes;
+- `windToDeg = (windFromDeg + 180) % 360`.
+
+La capa actual genera una **Zona estimada de riesgo** de baja opacidad. Es una aproximación visual demo, no una predicción científica ni una nube exacta.
+
+Evolución futura:
+
+- observaciones meteorológicas oficiales;
+- sensores y cámaras geolocalizadas;
+- humo, incendios y posible dispersión química;
+- modelos serios de dispersión atmosférica;
+- revisión humana y comunicación de incertidumbre.
+
+Nunca reemplaza instrucciones oficiales ni evaluación en terreno.
+
+## J. Capas, mapas y rutas
+
+Tipos de mapa:
+
+- táctico: OpenStreetMap con tratamiento visual oscuro;
+- calles: OpenStreetMap con lectura convencional;
+- claro: OpenStreetMap con tratamiento visual de alto contraste;
+- satélite: reservado hasta disponer de proveedor autorizado.
+
+Capas actuales/demo:
+
+- reportes, SOS, alertas, críticos y resueltos;
+- mi ubicación;
+- fuentes visuales;
+- fuentes oficiales;
+- cámaras públicas;
+- clima y riesgo;
+- rutas terrestres;
+- rutas aéreas;
+- rutas marítimas.
+
+Las rutas son ilustrativas, de baja opacidad y no representan tráfico, corredores autorizados ni navegación real. El roadmap contempla logística e infraestructura crítica.
+
+## K. Fuentes futuras de datos
+
+No implementar integraciones hasta crear el módulo de ingesta y revisar términos, límites y licencias.
+
+### Tier 1 - MVP
+
+- USGS Earthquake GeoJSON / FDSN: terremotos;
+- GDACS: alertas globales de desastre;
+- NASA FIRMS: incendios y focos térmicos;
+- MET Norway API: clima por coordenada;
+- NOAA Tsunami feeds: tsunamis;
+- ReliefWeb API: crisis humanitaria;
+- GDELT: señales geopolíticas y noticias;
+- OpenStreetMap data: base geográfica.
+
+### Tier 2
+
+- Copernicus GloFAS / GFM: inundaciones;
+- HDX HAPI: datasets humanitarios;
+- OpenAQ: calidad del aire;
+- NASA EONET: eventos naturales;
+- ACLED: conflicto y protestas bajo sus términos.
+
+### Tier 3 - Referencia o pago
+
+- Liveuamap: referencia visual futura para conflicto/guerra; integración pagada;
+- AccuWeather: servicio comercial, no base open/free ideal;
+- AP, Reuters y Bloomberg: fuentes confiables, no destinadas a scraping o uso intensivo gratuito.
+
+Para terremotos, USGS es la fuente base prevista. Para conflicto, Liveuamap puede servir como referencia visual futura, no como integración inmediata.
+
+## L. Arquitectura futura de ingesta
+
+```text
+[USGS / GDACS / NASA FIRMS / NOAA / MET Norway / ReliefWeb / HDX / GDELT / OpenAQ]
+    → adaptadores por fuente
+    → normalizador ARGUS
+    → event_type
+    → severity
+    → source_confidence
+    → location / radius
+    → affected_population
+    → timestamp
+    → verification_status
+    → recommended_action
+    → mapa / alertas / dashboard / IA / timeline
+```
+
+La normalización debe conservar atribución, timestamp original, licencia, precisión geográfica y nivel de confianza.
+
+## M. Roadmap
+
+- paneles colapsables;
+- control mejorado de mi ubicación;
+- salto a capitales y ciudades;
+- tablero compartido;
+- anotaciones manuales;
+- modo crisis;
+- alertas predictivas con incertidumbre;
+- clustering y stress tests;
+- persistencia de verificaciones;
+- reputación;
+- auditoría;
+- notificaciones reales;
+- ingesta real de fuentes;
+- timeline operacional;
+- logística e infraestructura crítica.
+
+## Estado actual
+
+La implementación actual incluye:
+
+- mapa Leaflet táctico;
+- HUD común civil/comando;
+- selector de mapa sin API keys;
+- eventos, SOS y reportes;
+- detalle de evento y verificación local;
+- fuentes visuales demo;
+- popup de fuentes;
+- clima, viento y zona estimada de riesgo;
+- rutas demo terrestres, aéreas y marítimas;
+- dashboard operativo local;
+- Prisma/SQLite y autenticación demo existentes.
+
+Las cámaras, clima, rutas, confianza y verificaciones de esta fase son fundaciones locales/demo. No existe todavía ingesta externa, persistencia completa, reputación real, clustering masivo ni notificaciones productivas.

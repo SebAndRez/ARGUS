@@ -1,23 +1,37 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import OperationalMap from "@/components/map/OperationalMap";
-import DashboardTopBar from "@/components/dashboard/DashboardTopBar";
+import ArgusOperationalHUD from "@/components/map/ArgusOperationalHUD";
 import DashboardCommandPanel from "@/components/dashboard/DashboardCommandPanel";
 import EventDetailPanel from "@/components/map/EventDetailPanel";
+import VisualSourcePopup from "@/components/map/VisualSourcePopup";
 import DashboardUsersPanel from "@/components/dashboard/DashboardUsersPanel";
 import AuditLogPanel from "@/components/dashboard/AuditLogPanel";
+import type { MapLayerState } from "@/components/map/MapLayerControls";
 import { useUserLocation } from "@/hooks/useUserLocation";
 import { useSession } from "@/hooks/useSession";
+import { demoVisualSources } from "@/data/demoVisualSources";
+import { demoRiskProjections } from "@/data/demoWeatherRisk";
+import { demoRoutes } from "@/data/demoRoutes";
 import type { CrisisEvent } from "@/types/crisis";
+import type { VisualSource } from "@/types/visualSource";
+import type { BaseMapType } from "@/types/map";
 
-const initialLayers = {
+const initialLayers: MapLayerState = {
   reports: true,
   sos: true,
   alerts: true,
   critical: true,
   resolved: true,
   user: true,
+  visualSources: true,
+  officialSources: true,
+  publicCameras: true,
+  weatherRisk: true,
+  terrestrialRoutes: true,
+  airRoutes: true,
+  maritimeRoutes: true,
 };
 
 interface UserListItem {
@@ -45,7 +59,9 @@ export default function DashboardPage() {
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<CrisisEvent | null>(null);
+  const [selectedVisualSource, setSelectedVisualSource] = useState<VisualSource | null>(null);
   const [layerSettings, setLayerSettings] = useState(initialLayers);
+  const [baseMapType, setBaseMapType] = useState<BaseMapType>("tactical");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [sanctionTarget, setSanctionTarget] = useState<string>("");
   const [sanctionType, setSanctionType] = useState<typeof SANCTION_TYPES[number]>("WARNING");
@@ -55,12 +71,33 @@ export default function DashboardPage() {
   const { user: sessionUser, loading: sessionLoading } = useSession();
   const authorized = Boolean(sessionUser && ["OPERATOR", "ADMIN"].includes(sessionUser.role));
 
-  const gpsStatus = useMemo(() => {
-    if (location.status === "loading") return "Buscando GPS";
-    if (location.status === "granted") return "GPS activo";
-    if (location.status === "denied" || location.status === "error") return "GPS denegado";
-    return "GPS no disponible";
+  const gpsStatus = useMemo<"active" | "inactive" | "unknown">(() => {
+    if (location.status === "granted") return "active";
+    if (location.status === "loading" || location.status === "idle") return "unknown";
+    return "inactive";
   }, [location.status]);
+  const activeLayerCount = useMemo(
+    () => Object.values(layerSettings).filter(Boolean).length,
+    [layerSettings]
+  );
+  const activeEventCount = useMemo(
+    () => events.filter((event) => event.status !== "RESOLVED").length,
+    [events]
+  );
+  const criticalCount = useMemo(
+    () => events.filter((event) => event.severity === "CRITICAL" && event.status !== "RESOLVED").length,
+    [events]
+  );
+
+  const selectEvent = useCallback((event: CrisisEvent) => {
+    setSelectedVisualSource(null);
+    setSelectedEvent(event);
+  }, []);
+
+  const selectVisualSource = useCallback((source: VisualSource) => {
+    setSelectedEvent(null);
+    setSelectedVisualSource(source);
+  }, []);
 
   useEffect(() => {
     async function loadEvents() {
@@ -150,18 +187,24 @@ export default function DashboardPage() {
     }
   }
 
-  const toggleLayer = (key: keyof typeof initialLayers) => {
+  const toggleLayer = (key: keyof MapLayerState) => {
     setLayerSettings((current) => ({ ...current, [key]: !current[key] }));
   };
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
-      <DashboardTopBar events={events} gpsStatus={gpsStatus} />
-      {location.status === "fallback" && (
-        <div className="mx-4 mt-4 rounded-3xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-100 backdrop-blur-xl xl:mx-8">
-          GPS no disponible, usando ubicación demo.
-        </div>
-      )}
+      <header className="sticky top-0 z-30 border-b border-white/10 bg-slate-950/92 px-4 py-3 backdrop-blur-xl xl:px-8">
+        <ArgusOperationalHUD
+          mode="command"
+          role={sessionUser?.role === "ADMIN" ? "admin" : "operator"}
+          coordinates={{ latitude: location.latitude, longitude: location.longitude }}
+          gpsStatus={gpsStatus}
+          systemStatus="online"
+          activeLayerCount={activeLayerCount}
+          eventCount={activeEventCount}
+          criticalCount={criticalCount}
+        />
+      </header>
 
       {statusMessage && (
         <div className="mx-4 mt-4 rounded-3xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100 backdrop-blur-xl xl:mx-8">
@@ -169,19 +212,32 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <main className="grid min-h-[calc(100vh-190px)] min-w-0 gap-6 px-4 pb-8 pt-6 xl:h-[calc(100dvh-190px)] xl:min-h-0 xl:grid-cols-[320px_minmax(0,1fr)_420px] xl:px-8">
+      <main className="grid min-h-[calc(100vh-170px)] min-w-0 gap-5 px-4 pb-8 pt-5 xl:h-[calc(100dvh-170px)] xl:min-h-0 xl:grid-cols-[320px_minmax(0,1fr)_420px] xl:px-8">
         <div className="min-h-0 min-w-0 xl:h-full xl:overflow-y-auto xl:pr-1">
-          <DashboardCommandPanel events={events} layers={layerSettings} onToggleLayer={toggleLayer} onSelectEvent={setSelectedEvent} />
+          <DashboardCommandPanel
+            events={events}
+            layers={layerSettings}
+            onToggleLayer={toggleLayer}
+            baseMapType={baseMapType}
+            onBaseMapChange={setBaseMapType}
+            onSelectEvent={selectEvent}
+          />
         </div>
 
-        <div className="relative h-[55vh] min-h-[420px] min-w-0 overflow-hidden rounded-[36px] border border-white/10 bg-slate-950/70 shadow-2xl shadow-black/40 sm:h-[600px] xl:h-full xl:min-h-0">
+        <div className="relative h-[55vh] min-h-[420px] min-w-0 overflow-hidden rounded-lg border border-white/10 bg-slate-950/70 shadow-2xl shadow-black/40 sm:h-[600px] xl:h-full xl:min-h-0">
           <OperationalMap
             events={events}
             selectedEventId={selectedEvent?.id}
             location={{ latitude: location.latitude, longitude: location.longitude }}
             locationStatus={location.status}
             layerSettings={layerSettings}
-            onEventSelect={setSelectedEvent}
+            onEventSelect={selectEvent}
+            visualSources={demoVisualSources}
+            selectedVisualSourceId={selectedVisualSource?.id}
+            onVisualSourceSelect={selectVisualSource}
+            riskProjections={demoRiskProjections}
+            routes={demoRoutes}
+            baseMapType={baseMapType}
           />
         </div>
 
@@ -266,6 +322,11 @@ export default function DashboardPage() {
           Necesitas iniciar sesión como operador o administrador para controlar reportes y sanciones.
         </div>
       )}
+
+      <VisualSourcePopup
+        source={selectedVisualSource}
+        onClose={() => setSelectedVisualSource(null)}
+      />
     </div>
   );
 }

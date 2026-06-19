@@ -29,6 +29,9 @@ export interface VisualSource {
   isMutedPreview?: boolean;
   description?: string;
   lastUpdatedLabel?: string;
+  shortCode?: string;
+  logoText?: string;
+  markerLabel?: string;
   internalNotes?: string;
   tags?: string[];
 }
