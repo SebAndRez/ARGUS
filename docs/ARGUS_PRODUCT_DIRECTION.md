@@ -306,6 +306,41 @@ Evolución necesaria para volumen productivo:
 
 La normalización debe conservar atribución, timestamp original, licencia, precisión geográfica y nivel de confianza.
 
+## Data Ingestion Foundation
+
+USGS Earthquake es la primera fuente externa real conectada a ARGUS.
+
+La integración inicial:
+
+- consulta el feed oficial USGS M4.5+ del último día mediante una API interna;
+- no requiere API key;
+- aplica timeout y manejo explícito de errores;
+- normaliza GeoJSON a `ArgusNormalizedEvent`;
+- conserva identificador externo, fuente, magnitud, profundidad, ubicación, fecha y URL oficial;
+- asigna severidad y confianza con reglas transparentes;
+- agrega explicación y acción recomendada;
+- se activa bajo demanda desde la capa **Sismos USGS**;
+- permanece separada de reportes ciudadanos y reportes demo.
+
+USGS se considera fuente oficial primaria para terremotos. Su alta confianza no elimina la necesidad de comunicar fecha, ubicación, magnitud, profundidad y límites de interpretación.
+
+Todas las fuentes futuras deben pasar por el mismo principio:
+
+```text
+fuente externa
+    → adaptador de acceso
+    → validación de formato
+    → normalizador ARGUS
+    → evento con fuente, confianza, fecha, ubicación, severidad y acción
+    → mapa y paneles
+```
+
+El registro maestro clasifica fuentes Tier 1, Tier 2 y Tier 3, incluyendo estado, prioridad, confiabilidad y modalidad de acceso. Solo USGS está activo en esta fase.
+
+Liveuamap queda como referencia visual y posible integración pagada futura, no como API gratuita principal. AP, Reuters, Bloomberg, AccuWeather y cualquier servicio comercial requieren acuerdos y licencias apropiadas.
+
+ARGUS no realiza scraping. Las integraciones deben respetar términos, atribución, límites de uso y licencias de cada proveedor. Todavía no existen base de datos de ingesta, jobs automáticos, reintentos programados, deduplicación entre fuentes ni monitoreo productivo.
+
 ## M. Roadmap
 
 - paneles colapsables;
@@ -337,6 +372,8 @@ La implementación actual incluye:
 - popup de fuentes;
 - clima, viento y zona estimada de riesgo;
 - rutas demo terrestres, aéreas y marítimas;
+- registro maestro de fuentes externas;
+- ingesta bajo demanda de sismos USGS M4.5+;
 - dashboard operativo local;
 - Prisma/SQLite y autenticación demo existentes.
 

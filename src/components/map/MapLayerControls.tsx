@@ -12,6 +12,7 @@ import type {
 export interface MapLayerState {
   reports: boolean;
   demoReports?: boolean;
+  usgsEarthquakes?: boolean;
   sos: boolean;
   alerts: boolean;
   critical: boolean;
@@ -50,7 +51,7 @@ const layerGroups: Array<{
 }> = [
   {
     label: "Alertas y eventos",
-    keys: ["reports", "demoReports", "sos", "alerts", "critical", "resolved"],
+    keys: ["reports", "demoReports", "usgsEarthquakes", "sos", "alerts", "critical", "resolved"],
   },
   {
     label: "Fuentes y contexto",
@@ -65,6 +66,7 @@ const layerGroups: Array<{
 const labels: Record<keyof MapLayerState, string> = {
   reports: "Reportes",
   demoReports: "Reportes demo",
+  usgsEarthquakes: "Sismos USGS",
   sos: "SOS",
   alerts: "Alertas",
   critical: "Críticos",

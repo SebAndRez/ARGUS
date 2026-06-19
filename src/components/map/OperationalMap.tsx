@@ -7,8 +7,10 @@ import type { UserLocationStatus } from "@/types/crisis";
 import type { VisualSource } from "@/types/visualSource";
 import type { RiskProjection } from "@/types/weatherRisk";
 import type { ArgusRoute, BaseMapType, RouteType } from "@/types/map";
+import type { ArgusNormalizedEvent } from "@/types/ingestion";
 import { clusterEventsByGrid } from "@/lib/simpleEventClustering";
 import EventClusterMarker from "@/components/map/EventClusterMarker";
+import ExternalEventMarker from "@/components/map/ExternalEventMarker";
 import IncidentMarker from "@/components/map/IncidentMarker";
 import RiskProjectionOverlay from "@/components/map/RiskProjectionOverlay";
 import RouteLayerOverlay from "@/components/map/RouteLayerOverlay";
@@ -18,6 +20,7 @@ import VisualSourceMarker from "@/components/map/VisualSourceMarker";
 interface MapLayerSettings {
   reports: boolean;
   demoReports?: boolean;
+  usgsEarthquakes?: boolean;
   sos: boolean;
   alerts: boolean;
   critical: boolean;
@@ -35,6 +38,7 @@ interface MapLayerSettings {
 interface Props {
   events: CrisisEvent[];
   demoEvents?: CrisisEvent[];
+  externalEvents?: ArgusNormalizedEvent[];
   selectedEventId?: string;
   location: {
     latitude: number;
@@ -43,6 +47,8 @@ interface Props {
   locationStatus: UserLocationStatus;
   layerSettings: MapLayerSettings;
   onEventSelect?: (event: CrisisEvent) => void;
+  selectedExternalEventId?: string;
+  onExternalEventSelect?: (event: ArgusNormalizedEvent) => void;
   visualSources?: VisualSource[];
   selectedVisualSourceId?: string;
   onVisualSourceSelect?: (source: VisualSource) => void;
@@ -68,11 +74,14 @@ const isEventVisible = (event: CrisisEvent, layers: MapLayerSettings) => {
 export default function OperationalMap({
   events,
   demoEvents = [],
+  externalEvents = [],
   selectedEventId,
   location,
   locationStatus,
   layerSettings,
   onEventSelect,
+  selectedExternalEventId,
+  onExternalEventSelect,
   visualSources = [],
   selectedVisualSourceId,
   onVisualSourceSelect,
@@ -87,6 +96,7 @@ export default function OperationalMap({
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const eventLayerRef = useRef<any>(null);
   const demoEventLayerRef = useRef<any>(null);
+  const externalEventLayerRef = useRef<any>(null);
   const visualSourceLayerRef = useRef<any>(null);
   const userLayerRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -159,6 +169,7 @@ export default function OperationalMap({
 
       eventLayerRef.current = L.layerGroup().addTo(map);
       demoEventLayerRef.current = L.layerGroup().addTo(map);
+      externalEventLayerRef.current = L.layerGroup().addTo(map);
       visualSourceLayerRef.current = L.layerGroup().addTo(map);
       userLayerRef.current = L.layerGroup().addTo(map);
       mapRef.current = map;
@@ -177,6 +188,7 @@ export default function OperationalMap({
       }
       eventLayerRef.current = null;
       demoEventLayerRef.current = null;
+      externalEventLayerRef.current = null;
       visualSourceLayerRef.current = null;
       userLayerRef.current = null;
     };
@@ -188,11 +200,13 @@ export default function OperationalMap({
     const map = mapRef.current;
     const eventLayer = eventLayerRef.current;
     const demoEventLayer = demoEventLayerRef.current;
+    const externalEventLayer = externalEventLayerRef.current;
     const visualSourceLayer = visualSourceLayerRef.current;
     const userLayer = userLayerRef.current;
 
     eventLayer?.clearLayers();
     demoEventLayer?.clearLayers();
+    externalEventLayer?.clearLayers();
     visualSourceLayer?.clearLayers();
     userLayer?.clearLayers();
 
@@ -253,6 +267,41 @@ export default function OperationalMap({
       });
     });
 
+    if (layerSettings.usgsEarthquakes) {
+      externalEvents.forEach((event) => {
+        const latitude = Number(event.latitude);
+        const longitude = Number(event.longitude);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
+        const markerIcon = L.divIcon({
+          html: renderToStaticMarkup(
+            <ExternalEventMarker
+              event={event}
+              isSelected={event.id === selectedExternalEventId}
+            />
+          ),
+          className: "leaflet-div-icon bg-transparent p-0",
+          iconSize: [44, 44],
+          iconAnchor: [22, 22],
+        });
+
+        const marker = L.marker([latitude, longitude], {
+          icon: markerIcon,
+          title: event.title,
+        }).addTo(externalEventLayer);
+
+        marker.bindTooltip(
+          `${event.title} · ${event.sourceName} · confianza ${event.confidence}%`,
+          {
+            direction: "top",
+            offset: [0, -18],
+            opacity: 0.95,
+          }
+        );
+        marker.on("click", () => onExternalEventSelect?.(event));
+      });
+    }
+
     visibleVisualSources.forEach((source) => {
       const lat = Number(source.latitude);
       const lng = Number(source.longitude);
@@ -312,10 +361,13 @@ export default function OperationalMap({
     visibleEvents,
     visibleDemoEvents,
     demoEventClusters,
+    externalEvents,
     visibleVisualSources,
     selectedEventId,
     selectedVisualSourceId,
+    selectedExternalEventId,
     onEventSelect,
+    onExternalEventSelect,
     onVisualSourceSelect,
     layerSettings,
     location,

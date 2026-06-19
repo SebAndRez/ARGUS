@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import OperationalMap from "@/components/map/OperationalMap";
 import ArgusOperationalHUD from "@/components/map/ArgusOperationalHUD";
 import MapLayerControls from "@/components/map/MapLayerControls";
 import EventDetailPanel from "@/components/map/EventDetailPanel";
+import ExternalEventPopup from "@/components/map/ExternalEventPopup";
 import VisualSourcePopup from "@/components/map/VisualSourcePopup";
 import WindLayerLegend from "@/components/map/WindLayerLegend";
 import FloatingSOSButton from "@/components/app/FloatingSOSButton";
@@ -43,10 +44,12 @@ import type {
 import type { VisualSource } from "@/types/visualSource";
 import type { RiskProjection } from "@/types/weatherRisk";
 import type { BaseMapType } from "@/types/map";
+import type { ArgusNormalizedEvent } from "@/types/ingestion";
 
 const initialLayers = {
   reports: true,
   demoReports: false,
+  usgsEarthquakes: false,
   sos: true,
   alerts: true,
   critical: true,
@@ -69,6 +72,8 @@ export default function AppPage() {
   const [selectedRiskProjection, setSelectedRiskProjection] = useState<RiskProjection | null>(
     demoRiskProjections[0] ?? null
   );
+  const [selectedExternalEvent, setSelectedExternalEvent] =
+    useState<ArgusNormalizedEvent | null>(null);
   const [events, setEvents] = useState<CrisisEvent[]>(initialEventState);
   const [demoEvents, setDemoEvents] = useState<CrisisEvent[]>(() => [...demoCrisisEvents]);
   const [layerSettings, setLayerSettings] = useState(initialLayers);
@@ -78,6 +83,12 @@ export default function AppPage() {
   const [demoTypeFilter, setDemoTypeFilter] = useState<DemoTypeFilter>("ALL");
   const [demoLifecycleFilter, setDemoLifecycleFilter] =
     useState<DemoLifecycleFilter>("ALL");
+  const [usgsEvents, setUsgsEvents] = useState<ArgusNormalizedEvent[]>([]);
+  const [usgsStatus, setUsgsStatus] = useState<
+    "idle" | "loading" | "loaded" | "error"
+  >("idle");
+  const [usgsErrorMessage, setUsgsErrorMessage] = useState<string | null>(null);
+  const usgsFetchStartedRef = useRef(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -90,19 +101,29 @@ export default function AppPage() {
   const selectEvent = useCallback((event: CrisisEvent) => {
     setSelectedVisualSource(null);
     setSelectedRiskProjection(null);
+    setSelectedExternalEvent(null);
     setSelectedEvent(event);
   }, []);
 
   const selectVisualSource = useCallback((source: VisualSource) => {
     setSelectedEvent(null);
     setSelectedRiskProjection(null);
+    setSelectedExternalEvent(null);
     setSelectedVisualSource(source);
   }, []);
 
   const selectRiskProjection = useCallback((projection: RiskProjection) => {
     setSelectedEvent(null);
     setSelectedVisualSource(null);
+    setSelectedExternalEvent(null);
     setSelectedRiskProjection(projection);
+  }, []);
+
+  const selectExternalEvent = useCallback((event: ArgusNormalizedEvent) => {
+    setSelectedEvent(null);
+    setSelectedVisualSource(null);
+    setSelectedRiskProjection(null);
+    setSelectedExternalEvent(event);
   }, []);
 
   const handleVerifyAction = useCallback(
@@ -127,6 +148,9 @@ export default function AppPage() {
   );
 
   const toggleLayer = (key: keyof typeof initialLayers) => {
+    if (key === "usgsEarthquakes" && layerSettings.usgsEarthquakes) {
+      setSelectedExternalEvent(null);
+    }
     setLayerSettings((current) => ({
       ...current,
       [key]: !current[key],
@@ -198,6 +222,38 @@ export default function AppPage() {
     loadEvents();
   }, []);
 
+  useEffect(() => {
+    if (!layerSettings.usgsEarthquakes || usgsFetchStartedRef.current) return;
+
+    usgsFetchStartedRef.current = true;
+    setUsgsStatus("loading");
+    setUsgsErrorMessage(null);
+
+    async function loadUsgsEarthquakes() {
+      try {
+        const response = await fetch("/api/ingest/usgs-earthquakes", {
+          cache: "no-store",
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || "No fue posible cargar sismos USGS.");
+        }
+
+        setUsgsEvents(Array.isArray(payload.events) ? payload.events : []);
+        setUsgsStatus("loaded");
+      } catch (error) {
+        setUsgsStatus("error");
+        setUsgsErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "No fue posible cargar sismos USGS."
+        );
+      }
+    }
+
+    loadUsgsEarthquakes();
+  }, [layerSettings.usgsEarthquakes]);
+
   async function createReport(payload: {
     category: string;
     title: string;
@@ -254,11 +310,14 @@ export default function AppPage() {
       <OperationalMap
         events={events}
         demoEvents={filteredDemoEvents}
+        externalEvents={usgsEvents}
         selectedEventId={selectedEvent?.id}
         location={{ latitude: location.latitude, longitude: location.longitude }}
         locationStatus={location.status}
         layerSettings={layerSettings}
         onEventSelect={selectEvent}
+        selectedExternalEventId={selectedExternalEvent?.id}
+        onExternalEventSelect={selectExternalEvent}
         visualSources={demoVisualSources}
         selectedVisualSourceId={selectedVisualSource?.id}
         onVisualSourceSelect={selectVisualSource}
@@ -308,6 +367,18 @@ export default function AppPage() {
       {errorMessage && (
         <div className="fixed left-4 top-40 z-40 max-w-sm border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-100 backdrop-blur-xl shadow-lg shadow-red-900/20 md:top-32">
           {errorMessage}
+        </div>
+      )}
+
+      {layerSettings.usgsEarthquakes && usgsStatus === "loading" && (
+        <div className="fixed left-4 top-40 z-40 border border-orange-300/20 bg-slate-950/90 px-4 py-3 text-sm text-orange-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-32">
+          Consultando sismos USGS...
+        </div>
+      )}
+
+      {layerSettings.usgsEarthquakes && usgsStatus === "error" && usgsErrorMessage && (
+        <div className="fixed left-4 top-40 z-40 max-w-sm border border-amber-300/25 bg-slate-950/92 px-4 py-3 text-sm text-amber-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-32">
+          Sismos USGS no disponibles: {usgsErrorMessage}
         </div>
       )}
 
@@ -365,6 +436,10 @@ export default function AppPage() {
       )}
 
       <VisualSourcePopup source={selectedVisualSource} onClose={() => setSelectedVisualSource(null)} />
+      <ExternalEventPopup
+        event={selectedExternalEvent}
+        onClose={() => setSelectedExternalEvent(null)}
+      />
 
       <ReportModal
         open={isReportOpen}
