@@ -55,6 +55,17 @@ export interface ArgusNormalizedEvent {
   isExternal: true;
 }
 
+export interface ArgusIngestionSourceResponse {
+  cached: boolean;
+  fetchedAt: string;
+  expiresAt: string;
+  sourceId: ArgusExternalSourceId;
+  sourceName: string;
+  sourceUpdatedAt: string | null;
+  count: number;
+  events: ArgusNormalizedEvent[];
+}
+
 export interface UsgsEarthquakeFeature {
   type: "Feature";
   id: string;

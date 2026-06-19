@@ -46,7 +46,10 @@ import type {
 import type { VisualSource } from "@/types/visualSource";
 import type { RiskProjection } from "@/types/weatherRisk";
 import type { BaseMapType } from "@/types/map";
-import type { ArgusNormalizedEvent } from "@/types/ingestion";
+import type {
+  ArgusIngestionSourceResponse,
+  ArgusNormalizedEvent,
+} from "@/types/ingestion";
 
 const initialLayers = {
   reports: true,
@@ -91,6 +94,9 @@ export default function AppPage() {
   >("idle");
   const [usgsErrorMessage, setUsgsErrorMessage] = useState<string | null>(null);
   const [usgsUpdatedAt, setUsgsUpdatedAt] = useState<string | null>(null);
+  const [usgsExpiresAt, setUsgsExpiresAt] = useState<string | null>(null);
+  const [usgsCached, setUsgsCached] = useState(false);
+  const [usgsRetryVersion, setUsgsRetryVersion] = useState(0);
   const usgsFetchStartedRef = useRef(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -210,6 +216,16 @@ export default function AppPage() {
       timeZoneName: "short",
     }).format(updatedAt)}`;
   }, [usgsUpdatedAt]);
+  const usgsExpiresLabel = useMemo(() => {
+    if (!usgsExpiresAt) return null;
+    const expiresAt = new Date(usgsExpiresAt);
+    if (Number.isNaN(expiresAt.getTime())) return null;
+
+    return new Intl.DateTimeFormat("es-CL", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(expiresAt);
+  }, [usgsExpiresAt]);
   const officialSourceCount = useMemo(
     () =>
       demoVisualSources.filter((source) =>
@@ -253,7 +269,9 @@ export default function AppPage() {
             : usgsStatus === "error"
               ? "Sin conexion con USGS"
               : usgsStatus === "loaded"
-                ? usgsUpdatedLabel ?? "Actualizacion recibida"
+                ? `${usgsCached ? "Caché" : "Red"} · ${
+                    usgsUpdatedLabel ?? "actualización recibida"
+                  }${usgsExpiresLabel ? ` · vence ${usgsExpiresLabel}` : ""}`
                 : "Disponible bajo demanda",
         status:
           usgsStatus === "loaded"
@@ -328,6 +346,8 @@ export default function AppPage() {
       officialSourceCount,
       publicCameraCount,
       usgsEvents.length,
+      usgsCached,
+      usgsExpiresLabel,
       usgsStatus,
       usgsUpdatedLabel,
     ]
@@ -370,15 +390,21 @@ export default function AppPage() {
         const response = await fetch("/api/ingest/usgs-earthquakes", {
           cache: "no-store",
         });
-        const payload = await response.json();
+        const payload = (await response.json()) as Partial<
+          ArgusIngestionSourceResponse
+        > & { error?: string };
         if (!response.ok) {
           throw new Error(payload.error || "No fue posible cargar sismos USGS.");
         }
 
         setUsgsEvents(Array.isArray(payload.events) ? payload.events : []);
         setUsgsUpdatedAt(
-          typeof payload.generatedAt === "string" ? payload.generatedAt : null
+          typeof payload.fetchedAt === "string" ? payload.fetchedAt : null
         );
+        setUsgsExpiresAt(
+          typeof payload.expiresAt === "string" ? payload.expiresAt : null
+        );
+        setUsgsCached(payload.cached === true);
         setUsgsStatus("loaded");
       } catch (error) {
         setUsgsStatus("error");
@@ -391,7 +417,14 @@ export default function AppPage() {
     }
 
     loadUsgsEarthquakes();
-  }, [layerSettings.usgsEarthquakes]);
+  }, [layerSettings.usgsEarthquakes, usgsRetryVersion]);
+
+  const retryUsgsEarthquakes = () => {
+    usgsFetchStartedRef.current = false;
+    setUsgsStatus("idle");
+    setUsgsErrorMessage(null);
+    setUsgsRetryVersion((current) => current + 1);
+  };
 
   async function createReport(payload: {
     category: string;
@@ -519,7 +552,14 @@ export default function AppPage() {
 
       {layerSettings.usgsEarthquakes && usgsStatus === "error" && usgsErrorMessage && (
         <div className="fixed left-4 top-40 z-40 max-w-sm border border-amber-300/25 bg-slate-950/92 px-4 py-3 text-sm text-amber-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-32">
-          Sismos USGS no disponibles: {usgsErrorMessage}
+          <p>Sismos USGS no disponibles: {usgsErrorMessage}</p>
+          <button
+            type="button"
+            onClick={retryUsgsEarthquakes}
+            className="mt-3 border border-amber-200/30 bg-amber-400/10 px-3 py-2 text-xs font-semibold uppercase text-amber-100 transition hover:bg-amber-400/20"
+          >
+            Reintentar
+          </button>
         </div>
       )}
 

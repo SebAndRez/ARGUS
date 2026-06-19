@@ -341,6 +341,32 @@ Liveuamap queda como referencia visual y posible integración pagada futura, no 
 
 ARGUS no realiza scraping. Las integraciones deben respetar términos, atribución, límites de uso y licencias de cada proveedor. Todavía no existen base de datos de ingesta, jobs automáticos, reintentos programados, deduplicación entre fuentes ni monitoreo productivo.
 
+## Source Reliability, Cache and Health
+
+La ingesta externa debe exponer no solo eventos, sino también el estado operativo de cada fuente.
+
+La integración USGS actual incorpora:
+
+- caché temporal server-side en memoria del runtime;
+- TTL de 60 segundos para evitar consultas repetidas innecesarias;
+- metadata `cached`, `fetchedAt` y `expiresAt` en cada respuesta;
+- deduplicación por `sourceId + externalId`, conservando la versión más reciente;
+- endpoint `/api/ingest/status` para consultar registro, estado, confiabilidad, modalidad de acceso y metadata de caché sin llamar servicios externos;
+- estado visible en `/app`, incluyendo origen red/caché, última actualización y reintento manual ante error.
+
+El caché actual es local a cada instancia Node y se pierde al reiniciar o reemplazar el proceso. Es una protección de corto plazo, no una capa de persistencia ni una garantía compartida entre instancias.
+
+La deduplicación actual opera dentro del lote normalizado de cada fuente. La correlación de un mismo incidente entre proveedores diferentes sigue pendiente.
+
+Evolución futura:
+
+- persistencia de eventos y metadata de fuente en base de datos;
+- jobs programados con límites y ventanas por proveedor;
+- monitoreo de latencia, disponibilidad y errores;
+- políticas de reintento con backoff;
+- auditoría de consultas, cambios y deduplicación;
+- salud agregada por fuente e instancia.
+
 ## M. Roadmap
 
 - paneles colapsables;
