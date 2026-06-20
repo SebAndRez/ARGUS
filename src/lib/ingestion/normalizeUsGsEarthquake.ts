@@ -1,4 +1,11 @@
 import { getArgusSource } from "@/config/argusSourceRegistry";
+import {
+  classifySeismicEvent,
+  estimateMercalliFromMagnitude,
+  formatMagnitudeLabel,
+  formatMagnitudePhrase,
+  formatMercalliLabel,
+} from "@/lib/seismicLabels";
 import type {
   ArgusIngestionSeverity,
   ArgusNormalizedEvent,
@@ -42,17 +49,32 @@ export function normalizeUsGsEarthquake(
 
   const place = feature.properties.place?.trim() || "ubicación no especificada";
   const source = getArgusSource("usgs_earthquake");
+  const magnitudeType = feature.properties.magType?.trim() || null;
+  const officialMmi =
+    typeof feature.properties.mmi === "number"
+      ? feature.properties.mmi
+      : typeof feature.properties.cdi === "number"
+        ? feature.properties.cdi
+        : null;
+  const classification = classifySeismicEvent(magnitude, officialMmi);
+  const magnitudeLabel = formatMagnitudeLabel(magnitude, magnitudeType);
+  const magnitudePhrase = formatMagnitudePhrase(magnitude, magnitudeType);
   const depthLabel = Number.isFinite(depthKm)
-    ? ` Profundidad aproximada: ${depthKm.toFixed(1)} km.`
-    : "";
+    ? `Profundidad: ${depthKm.toFixed(1)} km.`
+    : "Profundidad no informada.";
+  const estimatedMmi = estimateMercalliFromMagnitude(
+    magnitude,
+    Number.isFinite(depthKm) ? depthKm : null
+  );
+  const mercalliLabel = formatMercalliLabel(officialMmi, estimatedMmi);
 
   return {
     id: `usgs-earthquake-${feature.id}`,
     sourceId: "usgs_earthquake",
     sourceName: source?.name ?? "USGS Earthquake",
     externalId: feature.id,
-    title: `Sismo M${magnitude.toFixed(1)} · ${place}`,
-    description: `Evento sísmico publicado por USGS.${depthLabel}`,
+    title: `${classification} · ${magnitudeLabel} · ${place}`,
+    description: `${classification} de ${magnitudePhrase} en ${place}. ${depthLabel} ${mercalliLabel}.`,
     category: "earthquake",
     severity: getSeverity(magnitude),
     confidence: source?.reliabilityScore ?? 98,
@@ -62,10 +84,12 @@ export function normalizeUsGsEarthquake(
     updatedAt: toIsoDate(feature.properties.updated),
     url: feature.properties.url ?? null,
     rawMagnitude: magnitude,
+    rawMagnitudeType: magnitudeType,
     rawDepthKm: Number.isFinite(depthKm) ? depthKm : null,
+    rawOfficialMmi: officialMmi,
     locationName: place,
     recommendedAction: RECOMMENDED_ACTION,
-    whyItMatters: `Magnitud ${magnitude.toFixed(1)} cerca de ${place}.${depthLabel}`,
+    whyItMatters: `${classification} en ${place}. ${magnitudeLabel}. ${depthLabel} ${mercalliLabel}.`,
     isExternal: true,
   };
 }

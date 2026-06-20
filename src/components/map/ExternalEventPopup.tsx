@@ -2,6 +2,15 @@
 
 import type { ArgusNormalizedEvent } from "@/types/ingestion";
 import type { ArgusCorrelatedIncident } from "@/types/correlation";
+import { formatLocalAndUtcTime } from "@/lib/formatDateTime";
+import { formatNasaFirmsConfidence } from "@/lib/nasaFirmsLabels";
+import {
+  classifySeismicEvent,
+  estimateMercalliFromMagnitude,
+  formatMagnitudeLabel,
+  formatMagnitudePhrase,
+  formatMercalliLabel,
+} from "@/lib/seismicLabels";
 
 interface Props {
   event: ArgusNormalizedEvent | null;
@@ -28,15 +37,6 @@ const categoryLabels: Partial<Record<ArgusNormalizedEvent["category"], string>> 
   thermal_anomaly: "Foco térmico",
 };
 
-function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Fecha no disponible";
-  return date.toLocaleString("es-CL", {
-    dateStyle: "short",
-    timeStyle: "short",
-  });
-}
-
 export default function ExternalEventPopup({
   event,
   onClose,
@@ -47,6 +47,52 @@ export default function ExternalEventPopup({
   const isGdacs = event.sourceId === "gdacs";
   const isNoaa = event.sourceId === "noaa_tsunami";
   const isFirms = event.sourceId === "nasa_firms";
+  const isSeismic =
+    event.category === "earthquake" &&
+    typeof event.rawMagnitude === "number";
+  const eventTime = formatLocalAndUtcTime(event.occurredAt);
+  const estimatedMmi = isSeismic
+    ? estimateMercalliFromMagnitude(event.rawMagnitude!, event.rawDepthKm)
+    : null;
+  const seismicClassification = isSeismic
+    ? classifySeismicEvent(event.rawMagnitude!, event.rawOfficialMmi)
+    : null;
+  const seismicMagnitudeLabel = isSeismic
+    ? formatMagnitudeLabel(event.rawMagnitude!, event.rawMagnitudeType)
+    : null;
+  const seismicMagnitudePhrase = isSeismic
+    ? formatMagnitudePhrase(event.rawMagnitude!, event.rawMagnitudeType)
+    : null;
+  const seismicMercalliLabel = isSeismic
+    ? formatMercalliLabel(event.rawOfficialMmi, estimatedMmi)
+    : null;
+  const firmsSensor = event.instrument || "NASA FIRMS";
+  const firmsConfidence = formatNasaFirmsConfidence(
+    event.rawConfidence,
+    event.confidence
+  );
+  const humanWhyItMatters = isFirms
+    ? `${firmsSensor} detectó una anomalía térmica el ${eventTime.combinedLabel}, con confianza ${firmsConfidence}${
+        typeof event.rawFrp === "number"
+          ? ` y FRP ${event.rawFrp.toFixed(2)} MW`
+          : ""
+      }.`
+    : isSeismic &&
+        seismicClassification &&
+        seismicMagnitudePhrase &&
+        seismicMercalliLabel
+      ? `${seismicClassification} de ${seismicMagnitudePhrase} en ${
+          event.locationName || "ubicación no especificada"
+        }. ${
+          typeof event.rawDepthKm === "number"
+            ? `Profundidad: ${event.rawDepthKm.toFixed(2)} km.`
+            : "Profundidad no informada."
+        } ${seismicMercalliLabel}.`
+      : isNoaa
+        ? `Mensaje ${(event.rawMessageType ?? "no especificado").toUpperCase()} para ${
+            event.locationName || "zona no especificada"
+          }, actualizado ${eventTime.combinedLabel}.`
+      : event.whyItMatters;
   const sourceShortName = isGdacs
     ? "GDACS"
     : isNoaa
@@ -83,7 +129,7 @@ export default function ExternalEventPopup({
               {event.title}
             </h2>
             <p className="mt-1 text-xs text-slate-400">
-              Publicado {formatDate(event.occurredAt)} · confianza {event.confidence}%
+              Publicado {eventTime.combinedLabel} · confianza {event.confidence}%
             </p>
           </div>
           <button
@@ -97,7 +143,7 @@ export default function ExternalEventPopup({
         </header>
 
         <div className="grid gap-4 p-5">
-          {isGdacs || isNoaa || isFirms ? (
+          {(isGdacs && !isSeismic) || isNoaa || isFirms ? (
             <div className="grid grid-cols-2 gap-3">
               <div className="border border-white/10 bg-slate-900/65 p-3">
                 <p className="text-[0.6rem] font-semibold uppercase text-slate-500">Tipo</p>
@@ -117,8 +163,8 @@ export default function ExternalEventPopup({
                   {isNoaa
                     ? event.rawMessageType ?? "unknown"
                     : isFirms
-                      ? event.instrument ?? event.satellite ?? "satelital"
-                    : event.rawAlertLevel ?? "unknown"}
+                      ? event.instrument ?? "NASA FIRMS"
+                      : severityLabels[event.severity]}
                 </p>
               </div>
             </div>
@@ -127,7 +173,7 @@ export default function ExternalEventPopup({
               <div className="border border-white/10 bg-slate-900/65 p-3">
                 <p className="text-[0.6rem] font-semibold uppercase text-slate-500">Magnitud</p>
                 <p className="mt-1 font-mono text-lg font-bold text-orange-200">
-                  {event.rawMagnitude?.toFixed(1) ?? "N/D"}
+                  {seismicMagnitudeLabel?.replace(/^Magnitud\s+/, "") ?? "N/D"}
                 </p>
               </div>
               <div className="border border-white/10 bg-slate-900/65 p-3">
@@ -168,6 +214,23 @@ export default function ExternalEventPopup({
               </div>
             )}
 
+          {isSeismic && seismicMercalliLabel && (
+            <div className="border border-white/10 bg-slate-900/55 p-4">
+              <p className="text-[0.62rem] font-semibold uppercase text-slate-500">
+                Intensidad Mercalli
+              </p>
+              <p className="mt-2 text-sm text-slate-200">
+                {seismicMercalliLabel}
+              </p>
+              {!event.rawOfficialMmi && (
+                <p className="mt-1 text-xs leading-5 text-slate-400">
+                  Aproximación ARGUS basada en magnitud y profundidad; no es un
+                  dato oficial ni una medición local de daños.
+                </p>
+              )}
+            </div>
+          )}
+
           {event.locationName && (
             <div className="border border-white/10 bg-slate-900/55 p-4">
               <p className="text-[0.62rem] font-semibold uppercase text-slate-500">
@@ -179,12 +242,14 @@ export default function ExternalEventPopup({
 
           <p className="text-sm leading-6 text-slate-300">{event.description}</p>
 
-          {event.whyItMatters && (
+          {humanWhyItMatters && (
             <div className="border border-white/10 bg-slate-900/55 p-4">
               <p className="text-[0.62rem] font-semibold uppercase text-slate-500">
                 Por qué importa
               </p>
-              <p className="mt-2 text-sm leading-6 text-slate-200">{event.whyItMatters}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-200">
+                {humanWhyItMatters}
+              </p>
             </div>
           )}
 

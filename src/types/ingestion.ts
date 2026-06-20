@@ -56,9 +56,12 @@ export interface ArgusNormalizedEvent {
   updatedAt?: string | null;
   url?: string | null;
   rawMagnitude?: number | null;
+  rawMagnitudeType?: string | null;
   rawDepthKm?: number | null;
+  rawOfficialMmi?: number | null;
   rawAlertLevel?: ArgusExternalAlertLevel | null;
   rawMessageType?: string | null;
+  rawConfidence?: string | null;
   rawFrp?: number | null;
   rawBrightness?: number | null;
   satellite?: string | null;
@@ -86,6 +89,9 @@ export interface UsgsEarthquakeFeature {
   id: string;
   properties: {
     mag?: number | null;
+    magType?: string | null;
+    mmi?: number | null;
+    cdi?: number | null;
     place?: string | null;
     time?: number | null;
     updated?: number | null;

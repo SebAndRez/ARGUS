@@ -1,4 +1,6 @@
 import { getArgusSource } from "@/config/argusSourceRegistry";
+import { parseFirmsAcquisitionDateTime } from "@/lib/formatDateTime";
+import { formatNasaFirmsConfidence } from "@/lib/nasaFirmsLabels";
 import type {
   ArgusIngestionSeverity,
   ArgusNormalizedEvent,
@@ -65,17 +67,6 @@ function finiteNumber(value?: string) {
   return Number.isFinite(number) ? number : null;
 }
 
-function parseAcquisitionTime(dateValue: string, timeValue: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) return null;
-  const paddedTime = timeValue.trim().padStart(4, "0");
-  if (!/^\d{4}$/.test(paddedTime)) return null;
-
-  const date = new Date(
-    `${dateValue}T${paddedTime.slice(0, 2)}:${paddedTime.slice(2)}:00Z`
-  );
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
 function normalizeConfidence(value?: string) {
   const normalized = value?.trim().toLowerCase();
   if (!normalized) return 65;
@@ -112,7 +103,7 @@ export function normalizeNasaFirms(
 ): ArgusNormalizedEvent | null {
   const latitude = finiteNumber(row.latitude);
   const longitude = finiteNumber(row.longitude);
-  const occurredAt = parseAcquisitionTime(row.acq_date, row.acq_time);
+  const occurredAt = parseFirmsAcquisitionDateTime(row.acq_date, row.acq_time);
   if (latitude === null || longitude === null || !occurredAt) return null;
 
   const confidence = normalizeConfidence(row.confidence);
@@ -122,8 +113,11 @@ export function normalizeNasaFirms(
   const satellite = row.satellite?.trim() || null;
   const instrument = row.instrument?.trim() || null;
   const source = getArgusSource("nasa_firms");
-  const sensorLabel = [satellite, instrument].filter(Boolean).join(" / ");
-  const confidenceLabel = row.confidence?.trim() || `${confidence}%`;
+  const sensorLabel = instrument || "NASA FIRMS";
+  const confidenceLabel = formatNasaFirmsConfidence(
+    row.confidence,
+    confidence
+  );
   const externalId = [
     satellite ?? "sat",
     instrument ?? "sensor",
@@ -150,11 +144,12 @@ export function normalizeNasaFirms(
     updatedAt: occurredAt,
     rawFrp: frp,
     rawBrightness: brightness,
+    rawConfidence: row.confidence?.trim() || null,
     satellite,
     instrument,
     dayNight: row.daynight?.trim() || null,
     recommendedAction: RECOMMENDED_ACTION,
-    whyItMatters: `${sensorLabel || "Sensor satelital"} detectó una anomalía térmica el ${row.acq_date} a las ${row.acq_time.padStart(4, "0")} UTC, con confianza ${confidenceLabel}${frp !== null ? ` y FRP ${frp} MW` : ""}.`,
+    whyItMatters: `${sensorLabel} detectó una anomalía térmica con confianza ${confidenceLabel}${frp !== null ? ` y FRP ${frp} MW` : ""}.`,
     isExternal: true,
   };
 }

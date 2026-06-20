@@ -1,4 +1,11 @@
 import { getArgusSource } from "@/config/argusSourceRegistry";
+import {
+  classifySeismicEvent,
+  estimateMercalliFromMagnitude,
+  formatMagnitudeLabel,
+  formatMagnitudePhrase,
+  formatMercalliLabel,
+} from "@/lib/seismicLabels";
 import type {
   ArgusExternalAlertLevel,
   ArgusIngestionCategory,
@@ -139,11 +146,31 @@ function getSeverity(level: ArgusExternalAlertLevel): ArgusIngestionSeverity {
 
 function getMagnitude(item: GdacsRssItem) {
   if (item.eventType !== "EQ") return null;
-  const match = `${item.title} ${item.description}`.match(/magnitude\s*:?\s*(\d+(?:\.\d+)?)/i);
+  const text = `${item.title} ${item.description}`;
+  const match =
+    text.match(/magnitude\s*:?\s*(\d+(?:\.\d+)?)/i) ??
+    text.match(/\b(\d+(?:\.\d+)?)\s*M\b/i);
   if (!match) return null;
   const magnitude = Number(match[1]);
   return Number.isFinite(magnitude) ? magnitude : null;
 }
+
+function getDepthKm(item: GdacsRssItem) {
+  if (item.eventType !== "EQ") return null;
+  const match = `${item.title} ${item.description}`.match(
+    /(?:depth|profundidad)\s*:?\s*(\d+(?:\.\d+)?)\s*km/i
+  );
+  if (!match) return null;
+  const depth = Number(match[1]);
+  return Number.isFinite(depth) ? depth : null;
+}
+
+const ALERT_LEVEL_LABELS: Record<ArgusExternalAlertLevel, string> = {
+  green: "atención baja",
+  orange: "atención alta",
+  red: "atención crítica",
+  unknown: "atención no especificada",
+};
 
 export function normalizeGdacsAlert(
   item: GdacsRssItem
@@ -169,14 +196,46 @@ export function normalizeGdacsAlert(
   const alertLevel = getAlertLevel(item.alertLevel);
   const locationName = item.country || "ubicación no especificada";
   const categoryLabel = CATEGORY_LABELS[category] ?? "desastre";
+  const magnitude = getMagnitude(item);
+  const depthKm = getDepthKm(item);
+  const isEarthquake = category === "earthquake" && magnitude !== null;
+  const classification = isEarthquake
+    ? classifySeismicEvent(magnitude)
+    : null;
+  const magnitudeLabel = isEarthquake
+    ? formatMagnitudeLabel(magnitude)
+    : null;
+  const magnitudePhrase = isEarthquake
+    ? formatMagnitudePhrase(magnitude)
+    : null;
+  const mercalliLabel = isEarthquake
+    ? formatMercalliLabel(
+        null,
+        estimateMercalliFromMagnitude(magnitude, depthKm)
+      )
+    : null;
+  const seismicDescription =
+    isEarthquake && classification && magnitudePhrase && mercalliLabel
+      ? `${classification} de ${magnitudePhrase} en ${locationName}. ${
+          depthKm !== null
+            ? `Profundidad: ${depthKm.toFixed(1)} km.`
+            : "Profundidad no informada."
+        } ${mercalliLabel}.`
+      : null;
 
   return {
     id: `gdacs-${externalId}`,
     sourceId: "gdacs",
     sourceName: source?.name ?? "GDACS Global Disaster Alerts",
     externalId,
-    title: item.title,
-    description: item.description || `Alerta GDACS de ${categoryLabel}.`,
+    title:
+      isEarthquake && classification && magnitudeLabel
+        ? `${classification} · ${magnitudeLabel} · ${locationName}`
+        : item.title,
+    description:
+      seismicDescription ||
+      item.description ||
+      `Alerta GDACS de ${categoryLabel}.`,
     category,
     severity: getSeverity(alertLevel),
     confidence: source?.reliabilityScore ?? 94,
@@ -185,11 +244,15 @@ export function normalizeGdacsAlert(
     occurredAt,
     updatedAt: parseDate(item.dateModified),
     url: item.link || null,
-    rawMagnitude: getMagnitude(item),
+    rawMagnitude: magnitude,
+    rawMagnitudeType: null,
+    rawDepthKm: depthKm,
     rawAlertLevel: alertLevel,
     locationName,
     recommendedAction: RECOMMENDED_ACTION,
-    whyItMatters: `${categoryLabel} con alerta GDACS ${alertLevel.toUpperCase()} en ${locationName}.`,
+    whyItMatters:
+      seismicDescription ||
+      `${categoryLabel} con ${ALERT_LEVEL_LABELS[alertLevel]} GDACS en ${locationName}.`,
     isExternal: true,
   };
 }
