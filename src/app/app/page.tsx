@@ -63,6 +63,7 @@ const initialLayers = {
   usgsEarthquakes: false,
   gdacsAlerts: false,
   noaaTsunami: false,
+  nasaFirms: false,
   sos: true,
   alerts: true,
   critical: true,
@@ -126,6 +127,16 @@ export default function AppPage() {
   const [noaaCached, setNoaaCached] = useState(false);
   const [noaaRetryVersion, setNoaaRetryVersion] = useState(0);
   const noaaFetchStartedRef = useRef(false);
+  const [nasaEvents, setNasaEvents] = useState<ArgusNormalizedEvent[]>([]);
+  const [nasaStatus, setNasaStatus] = useState<
+    "idle" | "loading" | "loaded" | "error"
+  >("idle");
+  const [nasaErrorMessage, setNasaErrorMessage] = useState<string | null>(null);
+  const [nasaCached, setNasaCached] = useState(false);
+  const [nasaConfigured, setNasaConfigured] = useState<boolean | null>(null);
+  const [nasaConfigError, setNasaConfigError] = useState(false);
+  const [nasaRetryVersion, setNasaRetryVersion] = useState(0);
+  const nasaFetchStartedRef = useRef(false);
   const [metWeather, setMetWeather] = useState<WeatherObservation | null>(null);
   const [metStatus, setMetStatus] = useState<
     "idle" | "loading" | "loaded" | "error"
@@ -210,6 +221,13 @@ export default function AppPage() {
       key === "noaaTsunami" &&
       layerSettings.noaaTsunami &&
       selectedExternalEvent?.sourceId === "noaa_tsunami"
+    ) {
+      setSelectedExternalEvent(null);
+    }
+    if (
+      key === "nasaFirms" &&
+      layerSettings.nasaFirms &&
+      selectedExternalEvent?.sourceId === "nasa_firms"
     ) {
       setSelectedExternalEvent(null);
     }
@@ -332,9 +350,13 @@ export default function AppPage() {
       ).length,
     [noaaEvents]
   );
+  const visibleNasaEvents = useMemo(
+    () => nasaEvents.slice(0, 250),
+    [nasaEvents]
+  );
   const externalEvents = useMemo(
-    () => [...usgsEvents, ...gdacsEvents, ...noaaEvents],
-    [gdacsEvents, noaaEvents, usgsEvents]
+    () => [...usgsEvents, ...gdacsEvents, ...noaaEvents, ...visibleNasaEvents],
+    [gdacsEvents, noaaEvents, usgsEvents, visibleNasaEvents]
   );
   const externalCorrelations = useMemo(
     () => correlateExternalEvents(externalEvents),
@@ -445,6 +467,31 @@ export default function AppPage() {
               ? "error"
               : noaaStatus,
       },
+      nasaFirms: {
+        count: nasaEvents.length,
+        detail:
+          nasaConfigured === null
+            ? nasaConfigError
+              ? "No se pudo verificar NASA_FIRMS_MAP_KEY"
+              : "Verificando configuración..."
+            : !nasaConfigured
+              ? "Requiere NASA_FIRMS_MAP_KEY"
+              : nasaStatus === "loading"
+                ? "Consultando focos térmicos..."
+                : nasaStatus === "error"
+                  ? "NASA FIRMS no disponible"
+                  : nasaStatus === "loaded"
+                    ? `${nasaCached ? "Caché" : "Red"} · ${visibleNasaEvents.length}/${nasaEvents.length} en mapa`
+                    : "Chile · VIIRS · 1 día",
+        status:
+          nasaStatus === "loaded"
+            ? "ready"
+            : nasaStatus === "error"
+              ? "error"
+              : nasaStatus,
+        disabled: nasaConfigured !== true,
+        disabledLabel: nasaConfigured === false ? "KEY" : "...",
+      },
       sos: {
         count: events.filter((event) => event.type === "SOS").length,
         detail: "Solicitudes de ayuda",
@@ -527,6 +574,11 @@ export default function AppPage() {
       layerSettings.demoReports,
       metCached,
       metStatus,
+      nasaCached,
+      nasaConfigError,
+      nasaConfigured,
+      nasaEvents.length,
+      nasaStatus,
       noaaCached,
       noaaEvents.length,
       noaaExpiresLabel,
@@ -540,8 +592,34 @@ export default function AppPage() {
       usgsExpiresLabel,
       usgsStatus,
       usgsUpdatedLabel,
+      visibleNasaEvents.length,
     ]
   );
+
+  useEffect(() => {
+    async function loadSourceStatus() {
+      try {
+        const response = await fetch("/api/ingest/status", {
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("Estado de fuentes no disponible.");
+        const payload = await response.json();
+        const nasaSource = Array.isArray(payload.sources)
+          ? payload.sources.find(
+              (source: { sourceId?: string }) =>
+                source.sourceId === "nasa_firms"
+            )
+          : null;
+        setNasaConfigured(nasaSource?.configured === true);
+        setNasaConfigError(false);
+      } catch {
+        setNasaConfigured(null);
+        setNasaConfigError(true);
+      }
+    }
+
+    loadSourceStatus();
+  }, []);
 
   useEffect(() => {
     async function loadEvents() {
@@ -713,6 +791,57 @@ export default function AppPage() {
   };
 
   useEffect(() => {
+    if (
+      !layerSettings.nasaFirms ||
+      nasaConfigured !== true ||
+      nasaFetchStartedRef.current
+    ) {
+      return;
+    }
+
+    nasaFetchStartedRef.current = true;
+    setNasaStatus("loading");
+    setNasaErrorMessage(null);
+
+    async function loadNasaFirms() {
+      try {
+        const response = await fetch("/api/ingest/nasa-firms", {
+          cache: "no-store",
+        });
+        const payload = (await response.json()) as Partial<
+          ArgusIngestionSourceResponse
+        > & { error?: string; disabled?: boolean; reason?: string };
+        if (!response.ok) {
+          if (payload.disabled) setNasaConfigured(false);
+          throw new Error(
+            payload.error || payload.reason || "No fue posible cargar NASA FIRMS."
+          );
+        }
+
+        setNasaEvents(Array.isArray(payload.events) ? payload.events : []);
+        setNasaCached(payload.cached === true);
+        setNasaStatus("loaded");
+      } catch (error) {
+        setNasaStatus("error");
+        setNasaErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "No fue posible cargar NASA FIRMS."
+        );
+      }
+    }
+
+    loadNasaFirms();
+  }, [layerSettings.nasaFirms, nasaConfigured, nasaRetryVersion]);
+
+  const retryNasaFirms = () => {
+    nasaFetchStartedRef.current = false;
+    setNasaStatus("idle");
+    setNasaErrorMessage(null);
+    setNasaRetryVersion((current) => current + 1);
+  };
+
+  useEffect(() => {
     if (!layerSettings.weatherRisk) return;
 
     const latitude = Number(location.latitude);
@@ -865,6 +994,9 @@ export default function AppPage() {
         visible={layerSettings.weatherRisk}
         fallbackActive={metStatus !== "loaded"}
         cached={metCached}
+        thermalEventCount={
+          layerSettings.nasaFirms ? nasaEvents.length : 0
+        }
       />
 
       <div className="pointer-events-auto fixed right-3 top-40 z-40 w-[min(310px,calc(100%-1.5rem))] md:right-4 md:top-32 md:w-[310px]">
@@ -965,6 +1097,25 @@ export default function AppPage() {
             type="button"
             onClick={retryMetWeather}
             className="mt-3 border border-amber-200/30 bg-amber-400/10 px-3 py-2 text-xs font-semibold uppercase text-amber-100 transition hover:bg-amber-400/20"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {layerSettings.nasaFirms && nasaStatus === "loading" && (
+        <div className="fixed left-4 top-[26rem] z-40 border border-orange-300/20 bg-slate-950/90 px-4 py-3 text-sm text-orange-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-96">
+          Consultando focos térmicos NASA FIRMS...
+        </div>
+      )}
+
+      {layerSettings.nasaFirms && nasaStatus === "error" && nasaErrorMessage && (
+        <div className="fixed left-4 top-[26rem] z-40 max-w-sm border border-orange-300/25 bg-slate-950/92 px-4 py-3 text-sm text-orange-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-96">
+          <p>NASA FIRMS no disponible: {nasaErrorMessage}</p>
+          <button
+            type="button"
+            onClick={retryNasaFirms}
+            className="mt-3 border border-orange-200/30 bg-orange-400/10 px-3 py-2 text-xs font-semibold uppercase text-orange-100 transition hover:bg-orange-400/20"
           >
             Reintentar
           </button>

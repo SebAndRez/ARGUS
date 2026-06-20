@@ -25,6 +25,7 @@ const categoryLabels: Partial<Record<ArgusNormalizedEvent["category"], string>> 
   wildfire: "Incendio forestal",
   unknown: "Desastre",
   tsunami: "Tsunami",
+  thermal_anomaly: "Foco térmico",
 };
 
 function formatDate(value: string) {
@@ -45,7 +46,14 @@ export default function ExternalEventPopup({
 
   const isGdacs = event.sourceId === "gdacs";
   const isNoaa = event.sourceId === "noaa_tsunami";
-  const sourceShortName = isGdacs ? "GDACS" : isNoaa ? "NOAA" : "USGS";
+  const isFirms = event.sourceId === "nasa_firms";
+  const sourceShortName = isGdacs
+    ? "GDACS"
+    : isNoaa
+      ? "NOAA"
+      : isFirms
+        ? "NASA FIRMS"
+        : "USGS";
 
   return (
     <div
@@ -89,7 +97,7 @@ export default function ExternalEventPopup({
         </header>
 
         <div className="grid gap-4 p-5">
-          {isGdacs || isNoaa ? (
+          {isGdacs || isNoaa || isFirms ? (
             <div className="grid grid-cols-2 gap-3">
               <div className="border border-white/10 bg-slate-900/65 p-3">
                 <p className="text-[0.6rem] font-semibold uppercase text-slate-500">Tipo</p>
@@ -99,11 +107,17 @@ export default function ExternalEventPopup({
               </div>
               <div className="border border-white/10 bg-slate-900/65 p-3">
                 <p className="text-[0.6rem] font-semibold uppercase text-slate-500">
-                  {isNoaa ? "Mensaje NOAA" : "Alerta GDACS"}
+                  {isNoaa
+                    ? "Mensaje NOAA"
+                    : isFirms
+                      ? "Detección térmica"
+                      : "Alerta GDACS"}
                 </p>
                 <p className="mt-1 font-mono text-sm font-bold uppercase text-slate-200">
                   {isNoaa
                     ? event.rawMessageType ?? "unknown"
+                    : isFirms
+                      ? event.instrument ?? event.satellite ?? "satelital"
                     : event.rawAlertLevel ?? "unknown"}
                 </p>
               </div>
@@ -126,6 +140,33 @@ export default function ExternalEventPopup({
               </div>
             </div>
           )}
+
+          {isFirms &&
+            (typeof event.rawFrp === "number" ||
+              typeof event.rawBrightness === "number") && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="border border-white/10 bg-slate-900/65 p-3">
+                  <p className="text-[0.6rem] font-semibold uppercase text-slate-500">
+                    FRP
+                  </p>
+                  <p className="mt-1 font-mono text-sm font-bold text-orange-200">
+                    {typeof event.rawFrp === "number"
+                      ? `${event.rawFrp.toFixed(1)} MW`
+                      : "N/D"}
+                  </p>
+                </div>
+                <div className="border border-white/10 bg-slate-900/65 p-3">
+                  <p className="text-[0.6rem] font-semibold uppercase text-slate-500">
+                    Brillo térmico
+                  </p>
+                  <p className="mt-1 font-mono text-sm font-bold text-slate-200">
+                    {typeof event.rawBrightness === "number"
+                      ? event.rawBrightness.toFixed(1)
+                      : "N/D"}
+                  </p>
+                </div>
+              </div>
+            )}
 
           {event.locationName && (
             <div className="border border-white/10 bg-slate-900/55 p-4">

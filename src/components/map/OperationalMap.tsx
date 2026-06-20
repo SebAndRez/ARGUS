@@ -23,6 +23,7 @@ interface MapLayerSettings {
   usgsEarthquakes?: boolean;
   gdacsAlerts?: boolean;
   noaaTsunami?: boolean;
+  nasaFirms?: boolean;
   sos: boolean;
   alerts: boolean;
   critical: boolean;
@@ -274,7 +275,8 @@ export default function OperationalMap({
         (event) =>
           (event.sourceId === "usgs_earthquake" && layerSettings.usgsEarthquakes) ||
           (event.sourceId === "gdacs" && layerSettings.gdacsAlerts) ||
-          (event.sourceId === "noaa_tsunami" && layerSettings.noaaTsunami)
+          (event.sourceId === "noaa_tsunami" && layerSettings.noaaTsunami) ||
+          (event.sourceId === "nasa_firms" && layerSettings.nasaFirms)
       )
       .forEach((event) => {
         const latitude =

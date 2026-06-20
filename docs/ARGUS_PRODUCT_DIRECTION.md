@@ -308,7 +308,7 @@ La normalización debe conservar atribución, timestamp original, licencia, prec
 
 ## Data Ingestion Foundation
 
-USGS Earthquake, GDACS, NOAA Tsunami y MET Norway son las primeras fuentes externas reales conectadas a ARGUS.
+USGS Earthquake, GDACS, NOAA Tsunami y MET Norway son fuentes externas reales conectadas a ARGUS. NASA FIRMS queda activa cuando el operador configura una MAP_KEY.
 
 La integración inicial:
 
@@ -330,6 +330,8 @@ NOAA Tsunami aporta los feeds Atom oficiales del National Tsunami Warning Center
 
 MET Norway Locationforecast aporta pronóstico meteorológico por coordenada. ARGUS usa un User-Agent identificable, normaliza el primer punto horario utilizable y conserva temperatura, humedad, presión, viento, ráfaga, condición y hora de pronóstico cuando están disponibles.
 
+NASA FIRMS aporta focos térmicos MODIS/VIIRS mediante su API Area CSV. La integración requiere una `NASA_FIRMS_MAP_KEY` gratuita y no intenta obtenerla automáticamente.
+
 Todas las fuentes futuras deben pasar por el mismo principio:
 
 ```text
@@ -341,7 +343,7 @@ fuente externa
     → mapa y paneles
 ```
 
-El registro maestro clasifica fuentes Tier 1, Tier 2 y Tier 3, incluyendo estado, prioridad, confiabilidad y modalidad de acceso. USGS, GDACS, NOAA Tsunami y MET Norway están activos en esta fase.
+El registro maestro clasifica fuentes Tier 1, Tier 2 y Tier 3, incluyendo estado, prioridad, confiabilidad y modalidad de acceso. USGS, GDACS, NOAA Tsunami y MET Norway están activos; NASA FIRMS está activa si existe configuración.
 
 Liveuamap queda como referencia visual y posible integración pagada futura, no como API gratuita principal. AP, Reuters, Bloomberg, AccuWeather y cualquier servicio comercial requieren acuerdos y licencias apropiadas.
 
@@ -396,6 +398,28 @@ La integración MET Norway incorpora:
 - estado de red/caché y reintento visible en `/app`.
 
 MET Norway se usa como observación/pronóstico real de viento para la leyenda y apoyo a recomendaciones. Los polígonos actuales de clima/riesgo continúan siendo estimaciones demo y no constituyen un modelo científico de dispersión.
+
+La base NASA FIRMS incorpora:
+
+- variable `NASA_FIRMS_MAP_KEY` documentada en `.env.example`;
+- estado `active_if_configured` y señal `configured` en `/api/ingest/status`;
+- consulta Area CSV con bbox Chile por defecto, fuente `VIIRS_SNPP_NRT` y un día;
+- parámetros opcionales `bbox`, `days` y `source` con validación conservadora;
+- caché server-side de 15 minutos por fuente, bbox y rango temporal;
+- parser CSV local sin dependencia adicional;
+- normalización de coordenadas, fecha/hora, satélite, instrumento, confianza, FRP y brillo térmico;
+- capa **NASA FIRMS** apagada por defecto y deshabilitada con mensaje `requiere MAP_KEY` cuando falta configuración;
+- límite visual de 250 marcadores recientes para evitar saturar el mapa.
+
+Un foco térmico no equivale necesariamente a un incendio confirmado. Puede representar actividad industrial, quema controlada, reflejos u otras anomalías. La interfaz mantiene esa distinción y no recalcula una pluma de humo real.
+
+Evolución futura FIRMS:
+
+- correlación FIRMS + MET Norway + reportes ciudadanos;
+- contraste con viento, humedad y observaciones locales;
+- persistencia y seguimiento de focos recurrentes;
+- agrupación espacial y temporal validada;
+- modelos de humo o propagación solo con metodología científica apropiada.
 
 Evolución meteorológica futura:
 
@@ -476,6 +500,7 @@ La implementación actual incluye:
 - ingesta bajo demanda de alertas globales GDACS;
 - ingesta bajo demanda de boletines NOAA Tsunami NTWC/PTWC;
 - ingesta de viento y clima MET Norway por coordenada;
+- scaffold NASA FIRMS configurable para focos térmicos MODIS/VIIRS;
 - dashboard operativo local;
 - Prisma/SQLite y autenticación demo existentes.
 

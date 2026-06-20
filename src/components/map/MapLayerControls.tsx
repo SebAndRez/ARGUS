@@ -16,6 +16,7 @@ export interface MapLayerState {
   usgsEarthquakes?: boolean;
   gdacsAlerts?: boolean;
   noaaTsunami?: boolean;
+  nasaFirms?: boolean;
   sos: boolean;
   alerts: boolean;
   critical: boolean;
@@ -37,6 +38,8 @@ export interface LayerDisplayMeta {
   detail?: string;
   status?: LayerDisplayStatus;
   emphasis?: boolean;
+  disabled?: boolean;
+  disabledLabel?: string;
 }
 
 interface Props<TLayers extends MapLayerState> {
@@ -79,6 +82,7 @@ const layerGroups: Array<{
       "usgsEarthquakes",
       "gdacsAlerts",
       "noaaTsunami",
+      "nasaFirms",
       "sos",
       "alerts",
       "critical",
@@ -101,6 +105,7 @@ const labels: Record<keyof MapLayerState, string> = {
   usgsEarthquakes: "Sismos USGS",
   gdacsAlerts: "GDACS Desastres",
   noaaTsunami: "NOAA Tsunami",
+  nasaFirms: "NASA FIRMS",
   sos: "SOS",
   alerts: "Alertas",
   critical: "Críticos",
@@ -179,6 +184,11 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
       enabled: Boolean(layers.noaaTsunami),
       available: Object.prototype.hasOwnProperty.call(layers, "noaaTsunami"),
     },
+    {
+      label: "FIRMS",
+      enabled: Boolean(layers.nasaFirms),
+      available: Object.prototype.hasOwnProperty.call(layers, "nasaFirms"),
+    },
   ].filter((item) => item.available);
 
   return (
@@ -246,13 +256,17 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
                 const enabled = Boolean(layers[key]);
                 const meta = layerMeta?.[key as keyof MapLayerState];
                 const emphasized = Boolean(meta?.emphasis && !enabled);
+                const disabled = Boolean(meta?.disabled);
                 return (
                   <button
                     key={key}
                     type="button"
+                    disabled={disabled}
                     onClick={() => onToggle(key)}
                     className={`flex min-h-11 items-center justify-between gap-3 border px-3 py-2 text-left text-xs transition ${
-                      enabled
+                      disabled
+                        ? "cursor-not-allowed border-white/5 bg-white/[0.02] text-slate-600"
+                        : enabled
                         ? "border-cyan-400/20 bg-cyan-500/8 text-slate-100"
                         : emphasized
                           ? "border-violet-300/30 bg-violet-500/10 text-violet-100 hover:bg-violet-500/15"
@@ -282,12 +296,14 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
                       )}
                       <span
                         className={`inline-flex h-5 min-w-8 items-center justify-center rounded-full border px-1.5 text-[0.55rem] font-bold ${
-                          enabled
+                          disabled
+                            ? "border-white/8 bg-slate-950/70 text-slate-600"
+                            : enabled
                             ? "border-cyan-300/30 bg-cyan-400/15 text-cyan-200"
                             : "border-white/10 bg-slate-950/70 text-slate-500"
                         }`}
                       >
-                        {enabled ? "ON" : "OFF"}
+                        {disabled ? meta?.disabledLabel ?? "N/D" : enabled ? "ON" : "OFF"}
                       </span>
                     </span>
                   </button>

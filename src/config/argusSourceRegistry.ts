@@ -4,7 +4,12 @@ import type {
 } from "@/types/ingestion";
 
 export type ArgusSourceTier = 1 | 2 | 3;
-export type ArgusSourceStatus = "planned" | "active" | "disabled" | "reference";
+export type ArgusSourceStatus =
+  | "planned"
+  | "active"
+  | "active_if_configured"
+  | "disabled"
+  | "reference";
 export type ArgusSourceAccessType =
   | "free"
   | "free_with_terms"
@@ -48,7 +53,18 @@ export const ARGUS_SOURCE_REGISTRY: ArgusSourceRegistryEntry[] = [
     notes:
       "Fuente global institucional de alertas de desastre con semáforo Green, Orange y Red.",
   },
-  { id: "nasa_firms", name: "NASA FIRMS", category: "wildfire", tier: 1, priority: 90, status: "planned", reliabilityScore: 94, accessType: "free_with_terms", notes: "Focos térmicos e incendios." },
+  {
+    id: "nasa_firms",
+    name: "NASA FIRMS",
+    category: "thermal_anomaly",
+    tier: 1,
+    priority: 92,
+    status: "active_if_configured",
+    reliabilityScore: 94,
+    accessType: "api_key",
+    notes:
+      "Focos térmicos MODIS/VIIRS; requiere una MAP_KEY gratuita configurada por el operador.",
+  },
   {
     id: "met_norway",
     name: "MET Norway Locationforecast",

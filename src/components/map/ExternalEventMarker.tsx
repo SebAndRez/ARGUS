@@ -28,6 +28,7 @@ const categoryCodes: Partial<Record<ArgusNormalizedEvent["category"], string>> =
   wildfire: "WF",
   unknown: "GD",
   tsunami: "TSU",
+  thermal_anomaly: "FIR",
 };
 
 export default function ExternalEventMarker({
@@ -36,13 +37,20 @@ export default function ExternalEventMarker({
 }: Props) {
   const isGdacs = event.sourceId === "gdacs";
   const isNoaa = event.sourceId === "noaa_tsunami";
+  const isFirms = event.sourceId === "nasa_firms";
   const markerLabel =
-    isGdacs || isNoaa
+    isGdacs || isNoaa || isFirms
       ? categoryCodes[event.category] ?? "EXT"
       : typeof event.rawMagnitude === "number"
         ? event.rawMagnitude.toFixed(1)
         : "EQ";
-  const sourceLabel = isGdacs ? "GDACS" : isNoaa ? "NOAA" : "USGS";
+  const sourceLabel = isGdacs
+    ? "GDACS"
+    : isNoaa
+      ? "NOAA"
+      : isFirms
+        ? "NASA"
+        : "USGS";
   const presentationClass = isGdacs
     ? gdacsAlertClasses[event.rawAlertLevel ?? "unknown"]
     : severityClasses[event.severity];
@@ -61,7 +69,9 @@ export default function ExternalEventMarker({
             ? "border-blue-200/50 bg-blue-700"
             : isNoaa
               ? "border-sky-200/50 bg-sky-700"
-              : "border-red-200/50 bg-red-700"
+              : isFirms
+                ? "border-orange-200/50 bg-orange-700"
+                : "border-red-200/50 bg-red-700"
         }`}
       >
         {sourceLabel}

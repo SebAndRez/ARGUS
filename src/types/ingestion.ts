@@ -20,6 +20,7 @@ export type ArgusIngestionCategory =
   | "earthquake"
   | "disaster"
   | "disaster_alerts"
+  | "thermal_anomaly"
   | "wildfire"
   | "weather"
   | "tsunami"
@@ -58,6 +59,11 @@ export interface ArgusNormalizedEvent {
   rawDepthKm?: number | null;
   rawAlertLevel?: ArgusExternalAlertLevel | null;
   rawMessageType?: string | null;
+  rawFrp?: number | null;
+  rawBrightness?: number | null;
+  satellite?: string | null;
+  instrument?: string | null;
+  dayNight?: string | null;
   locationName?: string | null;
   recommendedAction?: string | null;
   whyItMatters?: string | null;
@@ -133,4 +139,22 @@ export interface NoaaTsunamiAtomEntry {
   link: string;
   latitude: number | null;
   longitude: number | null;
+}
+
+export interface NasaFirmsCsvRow {
+  latitude: string;
+  longitude: string;
+  bright_ti4?: string;
+  brightness?: string;
+  scan?: string;
+  track?: string;
+  acq_date: string;
+  acq_time: string;
+  satellite?: string;
+  instrument?: string;
+  confidence?: string;
+  version?: string;
+  bright_ti5?: string;
+  frp?: string;
+  daynight?: string;
 }

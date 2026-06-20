@@ -9,6 +9,7 @@ interface Props {
   visible: boolean;
   fallbackActive?: boolean;
   cached?: boolean;
+  thermalEventCount?: number;
 }
 
 export default function WindLayerLegend({
@@ -17,6 +18,7 @@ export default function WindLayerLegend({
   visible,
   fallbackActive = false,
   cached = false,
+  thermalEventCount = 0,
 }: Props) {
   if (!visible || !observation) return null;
 
@@ -107,6 +109,11 @@ export default function WindLayerLegend({
       <p className="mt-4 border-t border-white/10 pt-3 text-[0.65rem] leading-4 text-slate-500">
         El viento puede ser real; la zona de riesgo sigue siendo una estimación demo, no exacta.
       </p>
+      {thermalEventCount > 0 && (
+        <p className="mt-2 border border-orange-300/15 bg-orange-400/8 px-2.5 py-2 text-[0.62rem] leading-4 text-orange-100/80">
+          {thermalEventCount} focos térmicos detectados; la proyección de humo sigue siendo estimada.
+        </p>
+      )}
     </aside>
   );
 }
