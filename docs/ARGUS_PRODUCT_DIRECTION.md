@@ -384,11 +384,29 @@ NOAA Tsunami no incorpora un modelo de propagación, tiempo de llegada, inundaci
 
 El caché actual es local a cada instancia Node y se pierde al reiniciar o reemplazar el proceso. Es una protección de corto plazo, no una capa de persistencia ni una garantía compartida entre instancias.
 
-La deduplicación actual opera dentro del lote normalizado de cada fuente. La correlación de un mismo incidente entre proveedores diferentes sigue pendiente.
+La deduplicación actual opera dentro del lote normalizado de cada fuente. La deduplicación global y persistente entre proveedores sigue pendiente.
 
-La correlación futura deberá identificar, por ejemplo, cuándo un terremoto USGS y una alerta GDACS representan el mismo incidente sin perder atribución, timestamps ni diferencias de severidad.
+## Cross-source Correlation Foundation
 
-Una correlación futura podrá relacionar terremotos USGS de magnitud relevante, especialmente eventos M6.5 o superiores cercanos a costa, con boletines NOAA y zonas costeras. Esa relación deberá ser explícita, auditable y no inferir una amenaza de tsunami sin confirmación oficial.
+ARGUS incorpora una base local y determinista de correlación entre eventos externos. Una correlación no representa certeza, fusión oficial de registros ni una conclusión de IA. Es una señal de apoyo para comparar fuentes.
+
+Reglas iniciales:
+
+- USGS + GDACS: posible mismo terremoto o confirmación cruzada cuando ambos eventos son sísmicos, ocurren dentro de 12 horas y están separados por un máximo de 300 km;
+- USGS + NOAA: posible riesgo tsunami asociado cuando existe un terremoto USGS M6.5+ y un boletín NOAA dentro de 24 horas;
+- GDACS + NOAA: posible riesgo costero relacionado cuando una alerta sísmica o tsunami de GDACS coincide temporalmente con un boletín NOAA;
+- cuando NOAA no incluye coordenadas, la correlación se limita a tiempo y categoría, reduce su confianza y lo declara en la explicación.
+
+La interfaz muestra las principales correlaciones, fuentes involucradas, confianza calculada, explicación y acción recomendada. Los textos usan expresiones como **posible relación**, **confirmación cruzada** y **riesgo asociado** para evitar prometer identidad o causalidad.
+
+Evolución futura de correlación:
+
+- persistencia y versionado de correlaciones;
+- deduplicación global entre fuentes;
+- auditoría de reglas, umbrales y decisiones;
+- correlación con zonas costeras e infraestructura;
+- síntesis asistida por IA con fuentes citadas y revisión humana;
+- evaluación histórica de falsos positivos y falsos negativos.
 
 Evolución futura:
 

@@ -1,10 +1,12 @@
 "use client";
 
 import type { ArgusNormalizedEvent } from "@/types/ingestion";
+import type { ArgusCorrelatedIncident } from "@/types/correlation";
 
 interface Props {
   event: ArgusNormalizedEvent | null;
   onClose: () => void;
+  correlations?: ArgusCorrelatedIncident[];
 }
 
 const severityLabels: Record<ArgusNormalizedEvent["severity"], string> = {
@@ -34,7 +36,11 @@ function formatDate(value: string) {
   });
 }
 
-export default function ExternalEventPopup({ event, onClose }: Props) {
+export default function ExternalEventPopup({
+  event,
+  onClose,
+  correlations = [],
+}: Props) {
   if (!event) return null;
 
   const isGdacs = event.sourceId === "gdacs";
@@ -148,6 +154,53 @@ export default function ExternalEventPopup({ event, onClose }: Props) {
               </p>
               <p className="mt-2 text-sm leading-6 text-slate-100">{event.recommendedAction}</p>
             </div>
+          )}
+
+          {correlations.length > 0 && (
+            <section className="border border-cyan-300/20 bg-cyan-400/8 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[0.62rem] font-semibold uppercase text-cyan-200">
+                  Fuentes relacionadas
+                </p>
+                <span className="font-mono text-[0.65rem] font-bold text-cyan-100">
+                  {correlations.length}
+                </span>
+              </div>
+              <div className="mt-3 grid gap-3">
+                {correlations.slice(0, 3).map((correlation) => (
+                  <div
+                    key={correlation.id}
+                    className="border-t border-cyan-200/10 pt-3 first:border-t-0 first:pt-0"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-white">
+                        {correlation.sourceIds
+                          .map((sourceId) =>
+                            sourceId === "usgs_earthquake"
+                              ? "USGS"
+                              : sourceId === "noaa_tsunami"
+                                ? "NOAA"
+                                : sourceId.toUpperCase()
+                          )
+                          .join(" + ")}
+                      </span>
+                      <span className="font-mono text-[0.65rem] text-emerald-300">
+                        {correlation.confidence}% confianza
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs font-semibold text-cyan-100">
+                      {correlation.title}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-slate-300">
+                      {correlation.explanation}
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-slate-200">
+                      {correlation.recommendedAction}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
           )}
 
           {event.url && (

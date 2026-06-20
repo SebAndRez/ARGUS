@@ -63,6 +63,7 @@ export function normalizeUsGsEarthquake(
     url: feature.properties.url ?? null,
     rawMagnitude: magnitude,
     rawDepthKm: Number.isFinite(depthKm) ? depthKm : null,
+    locationName: place,
     recommendedAction: RECOMMENDED_ACTION,
     whyItMatters: `Magnitud ${magnitude.toFixed(1)} cerca de ${place}.${depthLabel}`,
     isExternal: true,

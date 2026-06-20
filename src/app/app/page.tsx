@@ -8,6 +8,7 @@ import MapLayerControls, {
 } from "@/components/map/MapLayerControls";
 import EventDetailPanel from "@/components/map/EventDetailPanel";
 import ExternalEventPopup from "@/components/map/ExternalEventPopup";
+import ExternalCorrelationsPanel from "@/components/map/ExternalCorrelationsPanel";
 import VisualSourcePopup from "@/components/map/VisualSourcePopup";
 import WindLayerLegend from "@/components/map/WindLayerLegend";
 import FloatingSOSButton from "@/components/app/FloatingSOSButton";
@@ -50,6 +51,7 @@ import type {
   ArgusIngestionSourceResponse,
   ArgusNormalizedEvent,
 } from "@/types/ingestion";
+import { correlateExternalEvents } from "@/lib/ingestion/correlateExternalEvents";
 
 const initialLayers = {
   reports: true,
@@ -323,6 +325,21 @@ export default function AppPage() {
     () => [...usgsEvents, ...gdacsEvents, ...noaaEvents],
     [gdacsEvents, noaaEvents, usgsEvents]
   );
+  const externalCorrelations = useMemo(
+    () => correlateExternalEvents(externalEvents),
+    [externalEvents]
+  );
+  const selectedExternalCorrelations = useMemo(() => {
+    if (!selectedExternalEvent) return [];
+
+    return externalCorrelations.filter(
+      (correlation) =>
+        correlation.primaryEvent.id === selectedExternalEvent.id ||
+        correlation.relatedEvents.some(
+          (event) => event.id === selectedExternalEvent.id
+        )
+    );
+  }, [externalCorrelations, selectedExternalEvent]);
   const officialSourceCount = useMemo(
     () =>
       demoVisualSources.filter((source) =>
@@ -767,6 +784,12 @@ export default function AppPage() {
           onBaseMapChange={setBaseMapType}
           layerMeta={layerMeta}
           showActiveSummary
+          supplementalPanel={
+            <ExternalCorrelationsPanel
+              correlations={externalCorrelations}
+              onSelectEvent={selectExternalEvent}
+            />
+          }
           demoFilters={{
             severity: demoSeverityFilter,
             type: demoTypeFilter,
@@ -900,6 +923,7 @@ export default function AppPage() {
       <ExternalEventPopup
         event={selectedExternalEvent}
         onClose={() => setSelectedExternalEvent(null)}
+        correlations={selectedExternalCorrelations}
       />
 
       <ReportModal

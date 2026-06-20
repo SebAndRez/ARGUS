@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import MapLegend from "@/components/map/MapLegend";
 import DemoEventFilterControls from "@/components/map/DemoEventFilterControls";
 import type { BaseMapType } from "@/types/map";
@@ -46,6 +47,7 @@ interface Props<TLayers extends MapLayerState> {
   showLegend?: boolean;
   showActiveSummary?: boolean;
   layerMeta?: Partial<Record<keyof MapLayerState, LayerDisplayMeta>>;
+  supplementalPanel?: ReactNode;
   demoFilters?: {
     severity: DemoSeverityFilter;
     type: DemoTypeFilter;
@@ -132,6 +134,7 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
   showLegend = true,
   showActiveSummary = false,
   layerMeta,
+  supplementalPanel,
   demoFilters,
 }: Props<TLayers>) {
   const currentBaseMapLabel = baseMapOptions.find(
@@ -327,6 +330,8 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
           </div>
         </section>
       )}
+
+      {supplementalPanel}
 
       {showLegend && <div className="mt-4"><MapLegend /></div>}
     </div>
