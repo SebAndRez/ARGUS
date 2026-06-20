@@ -502,6 +502,6 @@ La implementación actual incluye:
 - ingesta de viento y clima MET Norway por coordenada;
 - scaffold NASA FIRMS configurable para focos térmicos MODIS/VIIRS;
 - dashboard operativo local;
-- Prisma/SQLite y autenticación demo existentes.
+- Prisma con Supabase PostgreSQL y autenticación demo existentes.
 
 Las cámaras, clima, rutas, confianza y verificaciones de esta fase son fundaciones locales/demo. No existe todavía ingesta externa, persistencia completa, reputación real, clustering masivo ni notificaciones productivas.
