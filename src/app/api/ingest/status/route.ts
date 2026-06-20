@@ -5,6 +5,7 @@ import { getSourceCacheMetadata } from "@/lib/ingestion/sourceCache";
 const CACHE_KEYS = {
   usgs_earthquake: "ingestion:usgs_earthquake",
   gdacs: "ingestion:gdacs",
+  noaa_tsunami: "ingestion:noaa_tsunami",
 } as const;
 
 export const dynamic = "force-dynamic";

@@ -48,8 +48,8 @@ export interface ArgusNormalizedEvent {
   category: ArgusIngestionCategory;
   severity: ArgusIngestionSeverity;
   confidence: number;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
   radiusKm?: number | null;
   occurredAt: string;
   updatedAt?: string | null;
@@ -57,6 +57,7 @@ export interface ArgusNormalizedEvent {
   rawMagnitude?: number | null;
   rawDepthKm?: number | null;
   rawAlertLevel?: ArgusExternalAlertLevel | null;
+  rawMessageType?: string | null;
   locationName?: string | null;
   recommendedAction?: string | null;
   whyItMatters?: string | null;
@@ -118,6 +119,18 @@ export interface GdacsRssItem {
   alertLevel: string;
   eventId: string;
   country: string;
+  latitude: number | null;
+  longitude: number | null;
+}
+
+export interface NoaaTsunamiAtomEntry {
+  feedId: string;
+  feedTitle: string;
+  id: string;
+  title: string;
+  updated: string;
+  summary: string;
+  link: string;
   latitude: number | null;
   longitude: number | null;
 }

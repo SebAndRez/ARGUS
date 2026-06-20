@@ -27,6 +27,7 @@ const categoryCodes: Partial<Record<ArgusNormalizedEvent["category"], string>> =
   drought: "DR",
   wildfire: "WF",
   unknown: "GD",
+  tsunami: "TSU",
 };
 
 export default function ExternalEventMarker({
@@ -34,12 +35,14 @@ export default function ExternalEventMarker({
   isSelected = false,
 }: Props) {
   const isGdacs = event.sourceId === "gdacs";
-  const markerLabel = isGdacs
-    ? categoryCodes[event.category] ?? "GD"
-    : typeof event.rawMagnitude === "number"
-      ? event.rawMagnitude.toFixed(1)
-      : "EQ";
-  const sourceLabel = isGdacs ? "GDACS" : "USGS";
+  const isNoaa = event.sourceId === "noaa_tsunami";
+  const markerLabel =
+    isGdacs || isNoaa
+      ? categoryCodes[event.category] ?? "EXT"
+      : typeof event.rawMagnitude === "number"
+        ? event.rawMagnitude.toFixed(1)
+        : "EQ";
+  const sourceLabel = isGdacs ? "GDACS" : isNoaa ? "NOAA" : "USGS";
   const presentationClass = isGdacs
     ? gdacsAlertClasses[event.rawAlertLevel ?? "unknown"]
     : severityClasses[event.severity];
@@ -56,7 +59,9 @@ export default function ExternalEventMarker({
         className={`absolute -bottom-2 rounded-sm border px-1 py-0.5 text-[0.42rem] font-black leading-none text-white ${
           isGdacs
             ? "border-blue-200/50 bg-blue-700"
-            : "border-red-200/50 bg-red-700"
+            : isNoaa
+              ? "border-sky-200/50 bg-sky-700"
+              : "border-red-200/50 bg-red-700"
         }`}
       >
         {sourceLabel}

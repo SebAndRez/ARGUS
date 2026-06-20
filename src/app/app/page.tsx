@@ -56,6 +56,7 @@ const initialLayers = {
   demoReports: false,
   usgsEarthquakes: false,
   gdacsAlerts: false,
+  noaaTsunami: false,
   sos: true,
   alerts: true,
   critical: true,
@@ -109,6 +110,16 @@ export default function AppPage() {
   const [gdacsCached, setGdacsCached] = useState(false);
   const [gdacsRetryVersion, setGdacsRetryVersion] = useState(0);
   const gdacsFetchStartedRef = useRef(false);
+  const [noaaEvents, setNoaaEvents] = useState<ArgusNormalizedEvent[]>([]);
+  const [noaaStatus, setNoaaStatus] = useState<
+    "idle" | "loading" | "loaded" | "error"
+  >("idle");
+  const [noaaErrorMessage, setNoaaErrorMessage] = useState<string | null>(null);
+  const [noaaUpdatedAt, setNoaaUpdatedAt] = useState<string | null>(null);
+  const [noaaExpiresAt, setNoaaExpiresAt] = useState<string | null>(null);
+  const [noaaCached, setNoaaCached] = useState(false);
+  const [noaaRetryVersion, setNoaaRetryVersion] = useState(0);
+  const noaaFetchStartedRef = useRef(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -179,6 +190,13 @@ export default function AppPage() {
       key === "gdacsAlerts" &&
       layerSettings.gdacsAlerts &&
       selectedExternalEvent?.sourceId === "gdacs"
+    ) {
+      setSelectedExternalEvent(null);
+    }
+    if (
+      key === "noaaTsunami" &&
+      layerSettings.noaaTsunami &&
+      selectedExternalEvent?.sourceId === "noaa_tsunami"
     ) {
       setSelectedExternalEvent(null);
     }
@@ -269,9 +287,41 @@ export default function AppPage() {
       minute: "2-digit",
     }).format(expiresAt);
   }, [gdacsExpiresAt]);
+  const noaaUpdatedLabel = useMemo(() => {
+    if (!noaaUpdatedAt) return null;
+    const updatedAt = new Date(noaaUpdatedAt);
+    if (Number.isNaN(updatedAt.getTime())) return "Actualización recibida";
+
+    return `Actualizado ${new Intl.DateTimeFormat("es-CL", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZoneName: "short",
+    }).format(updatedAt)}`;
+  }, [noaaUpdatedAt]);
+  const noaaExpiresLabel = useMemo(() => {
+    if (!noaaExpiresAt) return null;
+    const expiresAt = new Date(noaaExpiresAt);
+    if (Number.isNaN(expiresAt.getTime())) return null;
+
+    return new Intl.DateTimeFormat("es-CL", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(expiresAt);
+  }, [noaaExpiresAt]);
+  const noaaMappedCount = useMemo(
+    () =>
+      noaaEvents.filter(
+        (event) =>
+          typeof event.latitude === "number" &&
+          Number.isFinite(event.latitude) &&
+          typeof event.longitude === "number" &&
+          Number.isFinite(event.longitude)
+      ).length,
+    [noaaEvents]
+  );
   const externalEvents = useMemo(
-    () => [...usgsEvents, ...gdacsEvents],
-    [gdacsEvents, usgsEvents]
+    () => [...usgsEvents, ...gdacsEvents, ...noaaEvents],
+    [gdacsEvents, noaaEvents, usgsEvents]
   );
   const officialSourceCount = useMemo(
     () =>
@@ -346,6 +396,25 @@ export default function AppPage() {
               ? "error"
               : gdacsStatus,
       },
+      noaaTsunami: {
+        count: noaaEvents.length,
+        detail:
+          noaaStatus === "loading"
+            ? "Consultando NTWC y PTWC..."
+            : noaaStatus === "error"
+              ? "Sin conexión con NOAA"
+              : noaaStatus === "loaded"
+                ? `${noaaCached ? "Caché" : "Red"} · ${noaaMappedCount}/${noaaEvents.length} en mapa · ${
+                    noaaUpdatedLabel ?? "actualización recibida"
+                  }${noaaExpiresLabel ? ` · vence ${noaaExpiresLabel}` : ""}`
+                : "Boletines costeros bajo demanda",
+        status:
+          noaaStatus === "loaded"
+            ? "ready"
+            : noaaStatus === "error"
+              ? "error"
+              : noaaStatus,
+      },
       sos: {
         count: events.filter((event) => event.type === "SOS").length,
         detail: "Solicitudes de ayuda",
@@ -414,6 +483,12 @@ export default function AppPage() {
       gdacsUpdatedLabel,
       gpsStatus,
       layerSettings.demoReports,
+      noaaCached,
+      noaaEvents.length,
+      noaaExpiresLabel,
+      noaaMappedCount,
+      noaaStatus,
+      noaaUpdatedLabel,
       officialSourceCount,
       publicCameraCount,
       usgsEvents.length,
@@ -543,6 +618,54 @@ export default function AppPage() {
     setGdacsStatus("idle");
     setGdacsErrorMessage(null);
     setGdacsRetryVersion((current) => current + 1);
+  };
+
+  useEffect(() => {
+    if (!layerSettings.noaaTsunami || noaaFetchStartedRef.current) return;
+
+    noaaFetchStartedRef.current = true;
+    setNoaaStatus("loading");
+    setNoaaErrorMessage(null);
+
+    async function loadNoaaTsunami() {
+      try {
+        const response = await fetch("/api/ingest/noaa-tsunami", {
+          cache: "no-store",
+        });
+        const payload = (await response.json()) as Partial<
+          ArgusIngestionSourceResponse
+        > & { error?: string };
+        if (!response.ok) {
+          throw new Error(payload.error || "No fue posible cargar NOAA Tsunami.");
+        }
+
+        setNoaaEvents(Array.isArray(payload.events) ? payload.events : []);
+        setNoaaUpdatedAt(
+          typeof payload.fetchedAt === "string" ? payload.fetchedAt : null
+        );
+        setNoaaExpiresAt(
+          typeof payload.expiresAt === "string" ? payload.expiresAt : null
+        );
+        setNoaaCached(payload.cached === true);
+        setNoaaStatus("loaded");
+      } catch (error) {
+        setNoaaStatus("error");
+        setNoaaErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "No fue posible cargar NOAA Tsunami."
+        );
+      }
+    }
+
+    loadNoaaTsunami();
+  }, [layerSettings.noaaTsunami, noaaRetryVersion]);
+
+  const retryNoaaTsunami = () => {
+    noaaFetchStartedRef.current = false;
+    setNoaaStatus("idle");
+    setNoaaErrorMessage(null);
+    setNoaaRetryVersion((current) => current + 1);
   };
 
   async function createReport(payload: {
@@ -695,6 +818,25 @@ export default function AppPage() {
             type="button"
             onClick={retryGdacsAlerts}
             className="mt-3 border border-blue-200/30 bg-blue-400/10 px-3 py-2 text-xs font-semibold uppercase text-blue-100 transition hover:bg-blue-400/20"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {layerSettings.noaaTsunami && noaaStatus === "loading" && (
+        <div className="fixed left-4 top-72 z-40 border border-sky-300/20 bg-slate-950/90 px-4 py-3 text-sm text-sky-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-64">
+          Consultando boletines NOAA Tsunami...
+        </div>
+      )}
+
+      {layerSettings.noaaTsunami && noaaStatus === "error" && noaaErrorMessage && (
+        <div className="fixed left-4 top-72 z-40 max-w-sm border border-sky-300/25 bg-slate-950/92 px-4 py-3 text-sm text-sky-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-64">
+          <p>NOAA Tsunami no disponible: {noaaErrorMessage}</p>
+          <button
+            type="button"
+            onClick={retryNoaaTsunami}
+            className="mt-3 border border-sky-200/30 bg-sky-400/10 px-3 py-2 text-xs font-semibold uppercase text-sky-100 transition hover:bg-sky-400/20"
           >
             Reintentar
           </button>

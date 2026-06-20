@@ -22,6 +22,7 @@ interface MapLayerSettings {
   demoReports?: boolean;
   usgsEarthquakes?: boolean;
   gdacsAlerts?: boolean;
+  noaaTsunami?: boolean;
   sos: boolean;
   alerts: boolean;
   critical: boolean;
@@ -272,11 +273,14 @@ export default function OperationalMap({
       .filter(
         (event) =>
           (event.sourceId === "usgs_earthquake" && layerSettings.usgsEarthquakes) ||
-          (event.sourceId === "gdacs" && layerSettings.gdacsAlerts)
+          (event.sourceId === "gdacs" && layerSettings.gdacsAlerts) ||
+          (event.sourceId === "noaa_tsunami" && layerSettings.noaaTsunami)
       )
       .forEach((event) => {
-        const latitude = Number(event.latitude);
-        const longitude = Number(event.longitude);
+        const latitude =
+          typeof event.latitude === "number" ? event.latitude : Number.NaN;
+        const longitude =
+          typeof event.longitude === "number" ? event.longitude : Number.NaN;
         if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
 
         const markerIcon = L.divIcon({

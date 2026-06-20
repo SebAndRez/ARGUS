@@ -308,7 +308,7 @@ La normalización debe conservar atribución, timestamp original, licencia, prec
 
 ## Data Ingestion Foundation
 
-USGS Earthquake y GDACS son las primeras fuentes externas reales conectadas a ARGUS.
+USGS Earthquake, GDACS y NOAA Tsunami son las primeras fuentes externas reales conectadas a ARGUS.
 
 La integración inicial:
 
@@ -326,6 +326,8 @@ USGS se considera fuente oficial primaria para terremotos. Su alta confianza no 
 
 GDACS funciona como semáforo global institucional de desastres. ARGUS consume su RSS público, conserva el nivel Green, Orange o Red y normaliza alertas georreferenciadas de terremotos, inundaciones, ciclones, volcanes, sequías e incendios forestales.
 
+NOAA Tsunami aporta los feeds Atom oficiales del National Tsunami Warning Center (NTWC) y Pacific Tsunami Warning Center (PTWC). ARGUS conserva el tipo de mensaje, región afectada, actualización, enlace oficial y coordenadas únicamente cuando el boletín las publica explícitamente.
+
 Todas las fuentes futuras deben pasar por el mismo principio:
 
 ```text
@@ -337,7 +339,7 @@ fuente externa
     → mapa y paneles
 ```
 
-El registro maestro clasifica fuentes Tier 1, Tier 2 y Tier 3, incluyendo estado, prioridad, confiabilidad y modalidad de acceso. USGS y GDACS están activos en esta fase.
+El registro maestro clasifica fuentes Tier 1, Tier 2 y Tier 3, incluyendo estado, prioridad, confiabilidad y modalidad de acceso. USGS, GDACS y NOAA Tsunami están activos en esta fase.
 
 Liveuamap queda como referencia visual y posible integración pagada futura, no como API gratuita principal. AP, Reuters, Bloomberg, AccuWeather y cualquier servicio comercial requieren acuerdos y licencias apropiadas.
 
@@ -368,11 +370,25 @@ La integración GDACS incorpora:
 
 El RSS puede contener eventos actualizados fuera de la ventana nominal, texto variable, codificación heredada o items sin coordenadas. La normalización es conservadora y no reemplaza el reporte oficial enlazado.
 
+La integración NOAA Tsunami incorpora:
+
+- consulta concurrente de los feeds Atom NTWC y PTWC;
+- normalización de Warning, Advisory, Watch, Threat e Information;
+- caché server-side de 5 minutos;
+- deduplicación por `sourceId + externalId`;
+- capa opcional **NOAA Tsunami**, apagada por defecto;
+- conteo separado de boletines totales y boletines con coordenadas renderizables;
+- descarte exclusivo del marcador cuando el boletín no contiene un punto explícito, manteniendo el mensaje en el estado de fuente.
+
+NOAA Tsunami no incorpora un modelo de propagación, tiempo de llegada, inundación costera ni predicción propia. ARGUS muestra el boletín institucional y remite a sus instrucciones oficiales.
+
 El caché actual es local a cada instancia Node y se pierde al reiniciar o reemplazar el proceso. Es una protección de corto plazo, no una capa de persistencia ni una garantía compartida entre instancias.
 
 La deduplicación actual opera dentro del lote normalizado de cada fuente. La correlación de un mismo incidente entre proveedores diferentes sigue pendiente.
 
 La correlación futura deberá identificar, por ejemplo, cuándo un terremoto USGS y una alerta GDACS representan el mismo incidente sin perder atribución, timestamps ni diferencias de severidad.
+
+Una correlación futura podrá relacionar terremotos USGS de magnitud relevante, especialmente eventos M6.5 o superiores cercanos a costa, con boletines NOAA y zonas costeras. Esa relación deberá ser explícita, auditable y no inferir una amenaza de tsunami sin confirmación oficial.
 
 Evolución futura:
 
@@ -417,6 +433,7 @@ La implementación actual incluye:
 - registro maestro de fuentes externas;
 - ingesta bajo demanda de sismos USGS M4.5+;
 - ingesta bajo demanda de alertas globales GDACS;
+- ingesta bajo demanda de boletines NOAA Tsunami NTWC/PTWC;
 - dashboard operativo local;
 - Prisma/SQLite y autenticación demo existentes.
 

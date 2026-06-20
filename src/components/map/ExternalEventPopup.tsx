@@ -22,6 +22,7 @@ const categoryLabels: Partial<Record<ArgusNormalizedEvent["category"], string>> 
   drought: "Sequía",
   wildfire: "Incendio forestal",
   unknown: "Desastre",
+  tsunami: "Tsunami",
 };
 
 function formatDate(value: string) {
@@ -37,7 +38,8 @@ export default function ExternalEventPopup({ event, onClose }: Props) {
   if (!event) return null;
 
   const isGdacs = event.sourceId === "gdacs";
-  const sourceShortName = isGdacs ? "GDACS" : "USGS";
+  const isNoaa = event.sourceId === "noaa_tsunami";
+  const sourceShortName = isGdacs ? "GDACS" : isNoaa ? "NOAA" : "USGS";
 
   return (
     <div
@@ -81,7 +83,7 @@ export default function ExternalEventPopup({ event, onClose }: Props) {
         </header>
 
         <div className="grid gap-4 p-5">
-          {isGdacs ? (
+          {isGdacs || isNoaa ? (
             <div className="grid grid-cols-2 gap-3">
               <div className="border border-white/10 bg-slate-900/65 p-3">
                 <p className="text-[0.6rem] font-semibold uppercase text-slate-500">Tipo</p>
@@ -90,9 +92,13 @@ export default function ExternalEventPopup({ event, onClose }: Props) {
                 </p>
               </div>
               <div className="border border-white/10 bg-slate-900/65 p-3">
-                <p className="text-[0.6rem] font-semibold uppercase text-slate-500">Alerta GDACS</p>
+                <p className="text-[0.6rem] font-semibold uppercase text-slate-500">
+                  {isNoaa ? "Mensaje NOAA" : "Alerta GDACS"}
+                </p>
                 <p className="mt-1 font-mono text-sm font-bold uppercase text-slate-200">
-                  {event.rawAlertLevel ?? "unknown"}
+                  {isNoaa
+                    ? event.rawMessageType ?? "unknown"
+                    : event.rawAlertLevel ?? "unknown"}
                 </p>
               </div>
             </div>

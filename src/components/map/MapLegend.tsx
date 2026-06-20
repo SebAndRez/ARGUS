@@ -4,6 +4,7 @@ const legendItems = [
   { label: "ARGUS verificado", color: "bg-cyan-400" },
   { label: "Sismo USGS", color: "bg-orange-500 ring-1 ring-red-300/70" },
   { label: "Alerta GDACS", color: "bg-blue-600 ring-1 ring-white/50" },
+  { label: "Tsunami NOAA", color: "bg-sky-500 ring-1 ring-white/60" },
   { label: "Pendiente", color: "bg-amber-300" },
   { label: "Offline", color: "bg-slate-500" },
   { label: "Riesgo estimado", color: "bg-orange-500" },
