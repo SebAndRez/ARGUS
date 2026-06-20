@@ -192,7 +192,7 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
   ].filter((item) => item.available);
 
   return (
-    <div className="argus-tactical-panel max-h-[calc(100dvh-8.5rem)] overflow-y-auto border bg-slate-950/95 p-4 shadow-2xl shadow-black/35 backdrop-blur-xl">
+    <div className="argus-tactical-panel h-full max-h-full overflow-y-auto overscroll-contain border bg-slate-950/95 p-4 shadow-2xl shadow-black/35 backdrop-blur-xl">
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-[0.62rem] font-semibold uppercase tracking-[0.24em] text-cyan-300/80">

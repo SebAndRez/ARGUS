@@ -1,7 +1,7 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import OperationalMap from "@/components/map/OperationalMap";
 import ArgusOperationalHUD from "@/components/map/ArgusOperationalHUD";
 import MapLayerControls, {
   type LayerDisplayMeta,
@@ -56,6 +56,18 @@ import type {
   ArgusNormalizedEvent,
 } from "@/types/ingestion";
 import { correlateExternalEvents } from "@/lib/ingestion/correlateExternalEvents";
+
+const OperationalMap = dynamic(
+  () => import("@/components/map/OperationalMap"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full min-h-80 w-full items-center justify-center bg-slate-950 text-sm text-cyan-100">
+        Cargando mapa operacional...
+      </div>
+    ),
+  }
+);
 
 const initialLayers = {
   reports: true,
@@ -955,7 +967,7 @@ export default function AppPage() {
   }
 
   return (
-    <main className="relative h-screen min-h-screen overflow-hidden bg-slate-950 text-white">
+    <main className="argus-app-shell relative overflow-hidden bg-slate-950 text-white">
       <OperationalMap
         events={events}
         demoEvents={filteredDemoEvents}
@@ -976,7 +988,7 @@ export default function AppPage() {
         baseMapType={baseMapType}
       />
 
-      <div className="pointer-events-auto fixed left-1/2 top-3 z-40 w-[calc(100%-1.5rem)] max-w-6xl -translate-x-1/2">
+      <div className="argus-safe-top pointer-events-auto fixed left-1/2 z-40 w-[calc(100%-1.5rem)] max-w-6xl -translate-x-1/2">
         <ArgusOperationalHUD
           mode="citizen"
           role="civil"
@@ -999,7 +1011,7 @@ export default function AppPage() {
         }
       />
 
-      <div className="pointer-events-auto fixed right-3 top-40 z-40 w-[min(310px,calc(100%-1.5rem))] md:right-4 md:top-32 md:w-[310px]">
+      <div className="argus-layer-panel-shell pointer-events-auto fixed z-[45] w-[310px]">
         <MapLayerControls
           layers={layerSettings}
           onToggle={toggleLayer}
@@ -1134,7 +1146,7 @@ export default function AppPage() {
       <button
         type="button"
         onClick={location.refreshLocation}
-        className="fixed bottom-28 left-4 z-40 rounded-3xl border border-cyan-400/20 bg-slate-900/90 px-4 py-3 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-500/20"
+        className="argus-mobile-location fixed z-40 rounded-3xl border border-cyan-400/20 bg-slate-900/90 px-4 py-3 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-500/20"
       >
         Mi ubicación
       </button>
@@ -1153,7 +1165,7 @@ export default function AppPage() {
 
       {selectedEvent && (
         <div
-          className="fixed inset-0 z-[65] flex items-end justify-center bg-black/60 p-3 backdrop-blur-sm sm:items-center sm:p-6"
+          className="argus-mobile-modal fixed inset-0 z-[65] flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-6"
           role="presentation"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setSelectedEvent(null);

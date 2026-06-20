@@ -103,6 +103,7 @@ export default function OperationalMap({
   const visualSourceLayerRef = useRef<any>(null);
   const userLayerRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
 
   const visibleEvents = useMemo(
     () => events.filter((event) => isEventVisible(event, layerSettings)),
@@ -156,27 +157,42 @@ export default function OperationalMap({
     let isMounted = true;
 
     const initializeMap = async () => {
-      if (!mapContainerRef.current || !isMounted) return;
-      const L = (await import("leaflet")) as typeof import("leaflet");
-      leafletRef.current = L;
+      try {
+        if (!mapContainerRef.current || !isMounted) return;
+        const L = (await import("leaflet")) as typeof import("leaflet");
+        if (!mapContainerRef.current || !isMounted) return;
+        leafletRef.current = L;
 
-      const map = L.map(mapContainerRef.current, {
-        center: DEFAULT_CENTER,
-        zoom: 11.2,
-        zoomControl: true,
-      });
+        const map = L.map(mapContainerRef.current, {
+          center: DEFAULT_CENTER,
+          zoom: 11.2,
+          zoomControl: true,
+        });
 
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "© OpenStreetMap contributors",
-      }).addTo(map);
+        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "© OpenStreetMap contributors",
+        }).addTo(map);
 
-      eventLayerRef.current = L.layerGroup().addTo(map);
-      demoEventLayerRef.current = L.layerGroup().addTo(map);
-      externalEventLayerRef.current = L.layerGroup().addTo(map);
-      visualSourceLayerRef.current = L.layerGroup().addTo(map);
-      userLayerRef.current = L.layerGroup().addTo(map);
-      mapRef.current = map;
-      setMapReady(true);
+        eventLayerRef.current = L.layerGroup().addTo(map);
+        demoEventLayerRef.current = L.layerGroup().addTo(map);
+        externalEventLayerRef.current = L.layerGroup().addTo(map);
+        visualSourceLayerRef.current = L.layerGroup().addTo(map);
+        userLayerRef.current = L.layerGroup().addTo(map);
+        mapRef.current = map;
+        setMapError(null);
+        setMapReady(true);
+
+        window.requestAnimationFrame(() => {
+          if (isMounted && mapRef.current) mapRef.current.invalidateSize(false);
+        });
+      } catch {
+        if (isMounted) {
+          setMapReady(false);
+          setMapError(
+            "El mapa no pudo iniciarse en este navegador. Las alertas y controles siguen disponibles."
+          );
+        }
+      }
     };
 
     if (!mapRef.current) {
@@ -196,6 +212,35 @@ export default function OperationalMap({
       userLayerRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+
+    let frameId: number | null = null;
+    const invalidateMapSize = () => {
+      if (frameId !== null) window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(() => {
+        mapRef.current?.invalidateSize(false);
+        frameId = null;
+      });
+    };
+
+    const container = mapContainerRef.current;
+    const resizeObserver =
+      container && typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(invalidateMapSize)
+        : null;
+    if (container) resizeObserver?.observe(container);
+    window.addEventListener("resize", invalidateMapSize);
+    window.addEventListener("orientationchange", invalidateMapSize);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", invalidateMapSize);
+      window.removeEventListener("orientationchange", invalidateMapSize);
+      if (frameId !== null) window.cancelAnimationFrame(frameId);
+    };
+  }, [mapReady]);
 
   useEffect(() => {
     if (!mapReady || !mapRef.current || !leafletRef.current) return;
@@ -398,9 +443,26 @@ export default function OperationalMap({
 
   return (
     <div
-      className={`argus-map-${baseMapType} relative h-full w-full overflow-hidden rounded-lg border border-white/10 bg-slate-950/50 shadow-2xl shadow-black/40`}
+      className={`argus-map-${baseMapType} relative h-full min-h-80 w-full overflow-hidden rounded-lg border border-white/10 bg-slate-950/50 shadow-2xl shadow-black/40`}
     >
       <div ref={mapContainerRef} className="argus-leaflet-map h-full w-full" />
+      {mapError && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/95 p-6">
+          <div className="max-w-sm border border-amber-300/25 bg-amber-400/10 p-4 text-center">
+            <p className="text-sm font-semibold text-amber-100">
+              Mapa temporalmente no disponible
+            </p>
+            <p className="mt-2 text-xs leading-5 text-slate-300">{mapError}</p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-4 min-h-11 border border-cyan-300/30 bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950"
+            >
+              Reintentar
+            </button>
+          </div>
+        </div>
+      )}
       <RiskProjectionOverlay
         projections={riskProjections}
         visible={Boolean(layerSettings.weatherRisk)}

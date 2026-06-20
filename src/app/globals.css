@@ -19,6 +19,10 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
   min-height: 100vh;
+  min-height: 100svh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  width: 100%;
 }
 
 * {
@@ -35,7 +39,73 @@ select {
 html,
 body,
 #__next {
+  height: 100%;
   min-height: 100%;
+  max-width: 100%;
+}
+
+html {
+  background: var(--background);
+  overflow-x: hidden;
+  overscroll-behavior: none;
+}
+
+.argus-app-shell {
+  height: 100vh;
+  min-height: 100vh;
+  width: 100%;
+}
+
+@supports (height: 100svh) {
+  .argus-app-shell {
+    height: 100svh;
+    min-height: 100svh;
+  }
+}
+
+@supports (height: 100dvh) {
+  .argus-app-shell {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+}
+
+.argus-safe-top {
+  top: max(0.75rem, env(safe-area-inset-top));
+}
+
+.argus-layer-panel-shell {
+  bottom: calc(12.5rem + env(safe-area-inset-bottom));
+  max-height: calc(100vh - 21rem);
+  max-height: calc(100svh - 21rem);
+  right: max(0.75rem, env(safe-area-inset-right));
+  top: calc(8.75rem + env(safe-area-inset-top));
+}
+
+.argus-nearby-sheet {
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
+.argus-mobile-sos {
+  bottom: calc(8rem + env(safe-area-inset-bottom));
+  right: max(1rem, env(safe-area-inset-right));
+}
+
+.argus-mobile-report {
+  bottom: calc(3rem + env(safe-area-inset-bottom));
+  right: max(1rem, env(safe-area-inset-right));
+}
+
+.argus-mobile-location {
+  bottom: calc(7rem + env(safe-area-inset-bottom));
+  left: max(1rem, env(safe-area-inset-left));
+}
+
+.argus-mobile-modal {
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+  padding-top: calc(0.75rem + env(safe-area-inset-top));
 }
 
 .argus-hud {
@@ -74,11 +144,13 @@ body,
 }
 
 .argus-leaflet-map {
+  height: 100%;
   isolation: isolate;
-  min-height: 0;
+  min-height: 18rem;
   min-width: 0;
   overflow: hidden;
   position: relative;
+  width: 100%;
 }
 
 .argus-map-tactical .argus-leaflet-map .leaflet-tile-pane,
@@ -144,4 +216,48 @@ body,
 
 .argus-leaflet-map .argus-route-tooltip::before {
   border-top-color: rgba(34, 211, 238, 0.28);
+}
+
+@media (max-width: 639px) {
+  .argus-layer-panel-shell {
+    bottom: auto;
+    max-height: 38vh;
+    max-height: 38svh;
+    top: calc(8.5rem + env(safe-area-inset-top));
+    width: min(16.25rem, calc(100% - 1rem));
+  }
+
+  .argus-layer-panel-shell .argus-tactical-panel {
+    max-height: inherit;
+    padding: 0.75rem;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .argus-nearby-sheet {
+    max-height: 31vh;
+    max-height: 31svh;
+  }
+
+  .argus-nearby-sheet-scroll {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .argus-layer-panel-shell {
+    bottom: calc(0.75rem + env(safe-area-inset-bottom));
+    max-height: calc(100vh - 8rem);
+    max-height: calc(100svh - 8rem);
+    top: calc(7.25rem + env(safe-area-inset-top));
+  }
+
+  .argus-layer-panel-shell .argus-tactical-panel {
+    max-height: inherit;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .argus-nearby-sheet {
+    max-height: 42vh;
+    max-height: 42svh;
+  }
 }

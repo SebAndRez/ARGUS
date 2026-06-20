@@ -48,7 +48,7 @@ export default function NearbyEventsSheet({
   const displayedDemoCount = Math.min(maxItems, demoVisibleCount ?? 0);
 
   return (
-    <aside className="pointer-events-auto fixed inset-x-0 bottom-0 z-40 mx-auto max-w-5xl rounded-t-lg border border-white/10 bg-slate-950/92 px-4 pb-4 pt-3 backdrop-blur-xl shadow-[0_-18px_48px_rgba(0,0,0,0.42)] sm:px-6">
+    <aside className="argus-nearby-sheet pointer-events-auto fixed inset-x-0 bottom-0 z-40 mx-auto max-w-5xl overflow-hidden rounded-t-lg border border-white/10 bg-slate-950/92 px-4 pb-4 pt-3 backdrop-blur-xl shadow-[0_-18px_48px_rgba(0,0,0,0.42)] sm:px-6">
       <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-600/70 sm:hidden" />
 
       <div className="mr-40 mb-3 flex min-h-7 items-center justify-between gap-3 2xl:mr-0">
@@ -68,7 +68,7 @@ export default function NearbyEventsSheet({
       </div>
 
       <div className="mr-40 overflow-hidden 2xl:mr-0">
-        <div className="flex snap-x snap-mandatory gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="argus-nearby-sheet-scroll flex snap-x snap-mandatory gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {nearbyEvents.map(({ event, distanceKm }) => {
             const severity = ALERT_SEVERITY_PRESENTATION[event.severity];
             const formattedDistance =
