@@ -76,3 +76,29 @@ export function getSourceCacheMetadata(key: string): SourceCacheMetadata {
     expiresAt: entry.expiresAt,
   };
 }
+
+export function getLatestSourceCacheMetadataByPrefix(
+  prefix: string
+): SourceCacheMetadata {
+  const entries = Array.from(sourceCache.entries())
+    .filter(([key]) => key.startsWith(prefix))
+    .sort(
+      ([, left], [, right]) =>
+        Date.parse(right.fetchedAt) - Date.parse(left.fetchedAt)
+    );
+
+  if (entries.length === 0) {
+    return {
+      available: false,
+      fetchedAt: null,
+      expiresAt: null,
+    };
+  }
+
+  const [, latestEntry] = entries[0];
+  return {
+    available: latestEntry.expiresAtMs > Date.now(),
+    fetchedAt: latestEntry.fetchedAt,
+    expiresAt: latestEntry.expiresAt,
+  };
+}

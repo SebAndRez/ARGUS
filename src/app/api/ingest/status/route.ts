@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { ARGUS_SOURCE_REGISTRY } from "@/config/argusSourceRegistry";
-import { getSourceCacheMetadata } from "@/lib/ingestion/sourceCache";
+import {
+  getLatestSourceCacheMetadataByPrefix,
+  getSourceCacheMetadata,
+} from "@/lib/ingestion/sourceCache";
 
 const CACHE_KEYS = {
   usgs_earthquake: "ingestion:usgs_earthquake",
@@ -13,7 +16,12 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const sources = ARGUS_SOURCE_REGISTRY.map((source) => {
     const cacheKey = CACHE_KEYS[source.id as keyof typeof CACHE_KEYS];
-    const cache = cacheKey ? getSourceCacheMetadata(cacheKey) : null;
+    const cache =
+      source.id === "met_norway"
+        ? getLatestSourceCacheMetadataByPrefix("ingestion:met_norway:")
+        : cacheKey
+          ? getSourceCacheMetadata(cacheKey)
+          : null;
 
     return {
       sourceId: source.id,

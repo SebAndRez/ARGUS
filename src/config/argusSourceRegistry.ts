@@ -49,7 +49,18 @@ export const ARGUS_SOURCE_REGISTRY: ArgusSourceRegistryEntry[] = [
       "Fuente global institucional de alertas de desastre con semáforo Green, Orange y Red.",
   },
   { id: "nasa_firms", name: "NASA FIRMS", category: "wildfire", tier: 1, priority: 90, status: "planned", reliabilityScore: 94, accessType: "free_with_terms", notes: "Focos térmicos e incendios." },
-  { id: "met_norway", name: "MET Norway API", category: "weather", tier: 1, priority: 88, status: "planned", reliabilityScore: 92, accessType: "free_with_terms", notes: "Meteorología por coordenada." },
+  {
+    id: "met_norway",
+    name: "MET Norway Locationforecast",
+    category: "weather",
+    tier: 1,
+    priority: 94,
+    status: "active",
+    reliabilityScore: 95,
+    accessType: "free_with_terms",
+    notes:
+      "Pronóstico por coordenadas mediante Locationforecast; requiere User-Agent identificable.",
+  },
   {
     id: "noaa_tsunami",
     name: "NOAA Tsunami",

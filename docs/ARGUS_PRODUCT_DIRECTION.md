@@ -308,7 +308,7 @@ La normalización debe conservar atribución, timestamp original, licencia, prec
 
 ## Data Ingestion Foundation
 
-USGS Earthquake, GDACS y NOAA Tsunami son las primeras fuentes externas reales conectadas a ARGUS.
+USGS Earthquake, GDACS, NOAA Tsunami y MET Norway son las primeras fuentes externas reales conectadas a ARGUS.
 
 La integración inicial:
 
@@ -328,6 +328,8 @@ GDACS funciona como semáforo global institucional de desastres. ARGUS consume s
 
 NOAA Tsunami aporta los feeds Atom oficiales del National Tsunami Warning Center (NTWC) y Pacific Tsunami Warning Center (PTWC). ARGUS conserva el tipo de mensaje, región afectada, actualización, enlace oficial y coordenadas únicamente cuando el boletín las publica explícitamente.
 
+MET Norway Locationforecast aporta pronóstico meteorológico por coordenada. ARGUS usa un User-Agent identificable, normaliza el primer punto horario utilizable y conserva temperatura, humedad, presión, viento, ráfaga, condición y hora de pronóstico cuando están disponibles.
+
 Todas las fuentes futuras deben pasar por el mismo principio:
 
 ```text
@@ -339,7 +341,7 @@ fuente externa
     → mapa y paneles
 ```
 
-El registro maestro clasifica fuentes Tier 1, Tier 2 y Tier 3, incluyendo estado, prioridad, confiabilidad y modalidad de acceso. USGS, GDACS y NOAA Tsunami están activos en esta fase.
+El registro maestro clasifica fuentes Tier 1, Tier 2 y Tier 3, incluyendo estado, prioridad, confiabilidad y modalidad de acceso. USGS, GDACS, NOAA Tsunami y MET Norway están activos en esta fase.
 
 Liveuamap queda como referencia visual y posible integración pagada futura, no como API gratuita principal. AP, Reuters, Bloomberg, AccuWeather y cualquier servicio comercial requieren acuerdos y licencias apropiadas.
 
@@ -381,6 +383,27 @@ La integración NOAA Tsunami incorpora:
 - descarte exclusivo del marcador cuando el boletín no contiene un punto explícito, manteniendo el mensaje en el estado de fuente.
 
 NOAA Tsunami no incorpora un modelo de propagación, tiempo de llegada, inundación costera ni predicción propia. ARGUS muestra el boletín institucional y remite a sus instrucciones oficiales.
+
+La integración MET Norway incorpora:
+
+- consulta de Locationforecast 2.0 Compact por latitud y longitud;
+- User-Agent identificable conforme a los términos del servicio;
+- redondeo de coordenadas a cuatro decimales;
+- caché server-side de 10 minutos por coordenada;
+- normalización de dirección y velocidad del viento, temperatura, humedad, presión, ráfaga y símbolo meteorológico;
+- uso de ubicación GPS cuando está disponible y fallback Santiago cuando no;
+- fallback visual a datos demo si MET Norway falla;
+- estado de red/caché y reintento visible en `/app`.
+
+MET Norway se usa como observación/pronóstico real de viento para la leyenda y apoyo a recomendaciones. Los polígonos actuales de clima/riesgo continúan siendo estimaciones demo y no constituyen un modelo científico de dispersión.
+
+Evolución meteorológica futura:
+
+- fuentes WMO y NOAA NWS según cobertura y términos;
+- OpenAQ para calidad del aire;
+- persistencia y series temporales;
+- modelos de dispersión validados;
+- comparación de pronóstico, observación y sensores locales.
 
 El caché actual es local a cada instancia Node y se pierde al reiniciar o reemplazar el proceso. Es una protección de corto plazo, no una capa de persistencia ni una garantía compartida entre instancias.
 
@@ -452,6 +475,7 @@ La implementación actual incluye:
 - ingesta bajo demanda de sismos USGS M4.5+;
 - ingesta bajo demanda de alertas globales GDACS;
 - ingesta bajo demanda de boletines NOAA Tsunami NTWC/PTWC;
+- ingesta de viento y clima MET Norway por coordenada;
 - dashboard operativo local;
 - Prisma/SQLite y autenticación demo existentes.
 

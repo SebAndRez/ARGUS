@@ -45,7 +45,11 @@ import type {
   SessionUser,
 } from "@/types/crisis";
 import type { VisualSource } from "@/types/visualSource";
-import type { RiskProjection } from "@/types/weatherRisk";
+import type {
+  MetWeatherSourceResponse,
+  RiskProjection,
+  WeatherObservation,
+} from "@/types/weatherRisk";
 import type { BaseMapType } from "@/types/map";
 import type {
   ArgusIngestionSourceResponse,
@@ -122,6 +126,13 @@ export default function AppPage() {
   const [noaaCached, setNoaaCached] = useState(false);
   const [noaaRetryVersion, setNoaaRetryVersion] = useState(0);
   const noaaFetchStartedRef = useRef(false);
+  const [metWeather, setMetWeather] = useState<WeatherObservation | null>(null);
+  const [metStatus, setMetStatus] = useState<
+    "idle" | "loading" | "loaded" | "error"
+  >("idle");
+  const [metErrorMessage, setMetErrorMessage] = useState<string | null>(null);
+  const [metCached, setMetCached] = useState(false);
+  const [metRetryVersion, setMetRetryVersion] = useState(0);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -340,6 +351,8 @@ export default function AppPage() {
         )
     );
   }, [externalCorrelations, selectedExternalEvent]);
+  const activeWeatherObservation =
+    metWeather ?? demoWeatherObservations[0] ?? null;
   const officialSourceCount = useMemo(
     () =>
       demoVisualSources.filter((source) =>
@@ -465,8 +478,20 @@ export default function AppPage() {
       },
       weatherRisk: {
         count: demoRiskProjections.length,
-        detail: "Zonas estimadas, no exactas",
-        status: "ready",
+        detail:
+          metStatus === "loading"
+            ? "Cargando viento MET Norway..."
+            : metStatus === "loaded"
+              ? `${metCached ? "Caché" : "Red"} · viento real · ${demoRiskProjections.length} zonas demo`
+              : metStatus === "error"
+                ? "MET no disponible · fallback demo"
+                : "Zonas demo · MET bajo demanda",
+        status:
+          metStatus === "loaded"
+            ? "ready"
+            : metStatus === "error"
+              ? "error"
+              : metStatus,
       },
       terrestrialRoutes: {
         count: demoRoutes.filter((route) => route.type === "terrestrial").length,
@@ -500,6 +525,8 @@ export default function AppPage() {
       gdacsUpdatedLabel,
       gpsStatus,
       layerSettings.demoReports,
+      metCached,
+      metStatus,
       noaaCached,
       noaaEvents.length,
       noaaExpiresLabel,
@@ -685,6 +712,68 @@ export default function AppPage() {
     setNoaaRetryVersion((current) => current + 1);
   };
 
+  useEffect(() => {
+    if (!layerSettings.weatherRisk) return;
+
+    const latitude = Number(location.latitude);
+    const longitude = Number(location.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
+    const controller = new AbortController();
+    setMetWeather(null);
+    setMetCached(false);
+    setMetStatus("loading");
+    setMetErrorMessage(null);
+
+    async function loadMetWeather() {
+      try {
+        const params = new URLSearchParams({
+          lat: latitude.toFixed(4),
+          lon: longitude.toFixed(4),
+        });
+        const response = await fetch(`/api/ingest/met-weather?${params}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = (await response.json()) as Partial<
+          MetWeatherSourceResponse
+        > & { error?: string };
+        if (!response.ok || !payload.weather) {
+          throw new Error(
+            payload.error || "No fue posible cargar clima MET Norway."
+          );
+        }
+
+        setMetWeather(payload.weather);
+        setMetCached(payload.cached === true);
+        setMetStatus("loaded");
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return;
+        setMetWeather(null);
+        setMetStatus("error");
+        setMetErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "No fue posible cargar clima MET Norway."
+        );
+      }
+    }
+
+    loadMetWeather();
+    return () => controller.abort();
+  }, [
+    layerSettings.weatherRisk,
+    location.latitude,
+    location.longitude,
+    metRetryVersion,
+  ]);
+
+  const retryMetWeather = () => {
+    setMetStatus("idle");
+    setMetErrorMessage(null);
+    setMetRetryVersion((current) => current + 1);
+  };
+
   async function createReport(payload: {
     category: string;
     title: string;
@@ -771,9 +860,11 @@ export default function AppPage() {
         />
       </div>
       <WindLayerLegend
-        observation={demoWeatherObservations[0] ?? null}
+        observation={activeWeatherObservation}
         selectedProjection={selectedRiskProjection}
         visible={layerSettings.weatherRisk}
+        fallbackActive={metStatus !== "loaded"}
+        cached={metCached}
       />
 
       <div className="pointer-events-auto fixed right-3 top-40 z-40 w-[min(310px,calc(100%-1.5rem))] md:right-4 md:top-32 md:w-[310px]">
@@ -860,6 +951,20 @@ export default function AppPage() {
             type="button"
             onClick={retryNoaaTsunami}
             className="mt-3 border border-sky-200/30 bg-sky-400/10 px-3 py-2 text-xs font-semibold uppercase text-sky-100 transition hover:bg-sky-400/20"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {layerSettings.weatherRisk && metStatus === "error" && metErrorMessage && (
+        <div className="fixed left-4 top-[22rem] z-40 max-w-sm border border-amber-300/25 bg-slate-950/92 px-4 py-3 text-sm text-amber-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-80">
+          <p>MET Norway no disponible. Se mantiene el viento demo.</p>
+          <p className="mt-1 text-xs text-amber-100/70">{metErrorMessage}</p>
+          <button
+            type="button"
+            onClick={retryMetWeather}
+            className="mt-3 border border-amber-200/30 bg-amber-400/10 px-3 py-2 text-xs font-semibold uppercase text-amber-100 transition hover:bg-amber-400/20"
           >
             Reintentar
           </button>

@@ -1,5 +1,6 @@
 export type WeatherSourceType =
   | "demo"
+  | "external_forecast"
   | "meteorological_center"
   | "camera_metadata"
   | "sensor"
@@ -18,9 +19,66 @@ export interface WeatherObservation {
   visibilityKm?: number | null;
   windFromDeg: number;
   windFromLabel: string;
+  windToDeg?: number | null;
+  windToLabel?: string | null;
   windSpeedKmh: number;
   gustKmh?: number | null;
+  pressureHpa?: number | null;
+  conditionSymbol?: string | null;
+  forecastAt?: string | null;
   confidence: number;
+}
+
+export interface MetNorwayLocationforecastResponse {
+  type: "Feature";
+  geometry?: {
+    type: "Point";
+    coordinates: [longitude: number, latitude: number, altitude?: number];
+  };
+  properties?: {
+    meta?: {
+      updated_at?: string;
+      units?: Record<string, string>;
+    };
+    timeseries?: Array<{
+      time?: string;
+      data?: {
+        instant?: {
+          details?: {
+            air_temperature?: number;
+            relative_humidity?: number;
+            wind_from_direction?: number;
+            wind_speed?: number;
+            wind_speed_of_gust?: number;
+            air_pressure_at_sea_level?: number;
+          };
+        };
+        next_1_hours?: {
+          summary?: {
+            symbol_code?: string;
+          };
+        };
+        next_6_hours?: {
+          summary?: {
+            symbol_code?: string;
+          };
+        };
+      };
+    }>;
+  };
+}
+
+export interface MetWeatherSourceResponse {
+  sourceId: "met_norway";
+  sourceName: string;
+  cached: boolean;
+  fetchedAt: string;
+  expiresAt: string;
+  location: {
+    latitude: number;
+    longitude: number;
+  };
+  weather: WeatherObservation;
 }
 
 export type HazardKind =
