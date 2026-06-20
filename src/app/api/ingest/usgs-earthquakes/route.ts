@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getArgusSource } from "@/config/argusSourceRegistry";
 import { deduplicateEvents } from "@/lib/ingestion/deduplicateEvents";
 import { normalizeUsGsEarthquake } from "@/lib/ingestion/normalizeUsGsEarthquake";
+import { persistFreshIngestion } from "@/lib/ingestion/persistExternalEvents";
 import {
   getCachedSource,
   setCachedSource,
@@ -58,6 +59,7 @@ export async function GET() {
   }
 
   const controller = new AbortController();
+  const startedAt = Date.now();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
@@ -108,8 +110,16 @@ export async function GET() {
       },
       CACHE_TTL_MS
     );
+    const persistence = await persistFreshIngestion(SOURCE_ID, events, {
+      fetchedAt: cacheEntry.fetchedAt,
+      expiresAt: cacheEntry.expiresAt,
+      startedAt,
+    });
 
-    return NextResponse.json(buildResponse(cacheEntry, false));
+    return NextResponse.json({
+      ...buildResponse(cacheEntry, false),
+      ...persistence,
+    });
   } catch (error) {
     const timedOut = error instanceof Error && error.name === "AbortError";
     return NextResponse.json(

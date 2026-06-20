@@ -27,6 +27,10 @@
 
 ## Mobile layout
 
+- Switch between `Vista mapa`, `Paneles` and `Capas`.
+- Reload and confirm the last selected view is restored when storage is available.
+- Confirm `Vista mapa` keeps SOS, Report and GPS controls visible.
+- Confirm `Capas` opens a vertically scrollable layer panel.
 - Confirm there is no horizontal overflow.
 - Confirm the HUD respects the top safe area.
 - Confirm SOS and Report remain tappable above the bottom safe area.

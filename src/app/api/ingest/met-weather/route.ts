@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getArgusSource } from "@/config/argusSourceRegistry";
 import { normalizeMetWeather } from "@/lib/ingestion/normalizeMetWeather";
+import { recordIngestionRun } from "@/lib/ingestion/persistExternalEvents";
 import {
   getCachedSource,
   setCachedSource,
@@ -85,6 +86,7 @@ export async function GET(request: NextRequest) {
   }
 
   const controller = new AbortController();
+  const startedAt = Date.now();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
@@ -133,6 +135,12 @@ export async function GET(request: NextRequest) {
       { location, weather },
       CACHE_TTL_MS
     );
+    await recordIngestionRun(SOURCE_ID, "success", {
+      count: 1,
+      cached: false,
+      durationMs: Date.now() - startedAt,
+      metadata: { location },
+    });
 
     return NextResponse.json(buildResponse(cacheEntry, false));
   } catch (error) {

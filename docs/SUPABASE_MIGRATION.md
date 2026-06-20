@@ -72,3 +72,21 @@ use `DIRECT_URL`, while normal application queries should use the pooled
 - Automated backups and recovery testing.
 - Advanced audit retention and review.
 - Security policies for administrative and citizen data.
+
+## External event persistence
+
+The incremental migration
+`prisma/migrations/20260620_add_external_events_and_reliefweb/migration.sql`
+adds:
+
+- `ExternalEvent`, deduplicated by `sourceId` and `externalId`.
+- `IngestionRun`, used to track source health and ingestion outcomes.
+- `ExternalEventCorrelation`, reserved for persisted cross-source relations.
+
+The migration was generated with `prisma migrate diff` against `DIRECT_URL`,
+reviewed for destructive operations and applied with `prisma migrate deploy`.
+No shadow database, `migrate dev`, `db push` or reset operation was used.
+
+USGS, GDACS, NOAA Tsunami, NASA FIRMS and ReliefWeb persist fresh normalized
+events. MET Norway records ingestion runs but is not stored as an external
+event.

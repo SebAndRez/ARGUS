@@ -24,6 +24,7 @@ interface MapLayerSettings {
   gdacsAlerts?: boolean;
   noaaTsunami?: boolean;
   nasaFirms?: boolean;
+  reliefWeb?: boolean;
   sos: boolean;
   alerts: boolean;
   critical: boolean;
@@ -60,6 +61,7 @@ interface Props {
   routes?: ArgusRoute[];
   baseMapType?: BaseMapType;
   centerOnSelected?: boolean;
+  centerRequestKey?: number;
 }
 
 const DEFAULT_CENTER: [number, number] = [-33.4489, -70.6693];
@@ -93,6 +95,7 @@ export default function OperationalMap({
   routes = [],
   baseMapType = "tactical",
   centerOnSelected = true,
+  centerRequestKey = 0,
 }: Props) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
@@ -440,6 +443,14 @@ export default function OperationalMap({
       duration: 0.7,
     });
   }, [location.latitude, location.longitude, mapReady, selectedEventId]);
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || centerRequestKey === 0) return;
+    const lat = Number(location.latitude);
+    const lng = Number(location.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    mapRef.current.flyTo([lat, lng], 13, { duration: 0.6 });
+  }, [centerRequestKey, location.latitude, location.longitude, mapReady]);
 
   return (
     <div

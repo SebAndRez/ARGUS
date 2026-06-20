@@ -108,6 +108,23 @@ html {
   padding-top: calc(0.75rem + env(safe-area-inset-top));
 }
 
+.argus-view-toolbar {
+  left: max(0.5rem, env(safe-area-inset-left));
+  scrollbar-width: none;
+}
+
+.argus-view-toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.argus-view-toolbar-command {
+  top: calc(8.75rem + env(safe-area-inset-top));
+}
+
+.argus-view-toolbar-map {
+  top: max(0.5rem, env(safe-area-inset-top));
+}
+
 .argus-hud {
   border-color: rgba(45, 212, 191, 0.18);
   background-image: radial-gradient(circle at top left, rgba(45, 212, 191, 0.08), transparent 36%), radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.05), transparent 28%);
@@ -244,6 +261,9 @@ html {
 }
 
 @media (max-height: 500px) and (orientation: landscape) {
+  .argus-view-toolbar-command {
+    top: calc(6.75rem + env(safe-area-inset-top));
+  }
   .argus-layer-panel-shell {
     bottom: calc(0.75rem + env(safe-area-inset-bottom));
     max-height: calc(100vh - 8rem);

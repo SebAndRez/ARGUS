@@ -5,6 +5,7 @@ import {
   normalizeGdacsAlert,
   parseGdacsRss,
 } from "@/lib/ingestion/normalizeGdacsAlert";
+import { persistFreshIngestion } from "@/lib/ingestion/persistExternalEvents";
 import {
   getCachedSource,
   setCachedSource,
@@ -80,6 +81,7 @@ export async function GET() {
   }
 
   let lastError: unknown = null;
+  const startedAt = Date.now();
 
   for (const feedUrl of GDACS_FEED_URLS) {
     try {
@@ -103,8 +105,16 @@ export async function GET() {
         },
         CACHE_TTL_MS
       );
+      const persistence = await persistFreshIngestion(SOURCE_ID, events, {
+        fetchedAt: cacheEntry.fetchedAt,
+        expiresAt: cacheEntry.expiresAt,
+        startedAt,
+      });
 
-      return NextResponse.json(buildResponse(cacheEntry, false));
+      return NextResponse.json({
+        ...buildResponse(cacheEntry, false),
+        ...persistence,
+      });
     } catch (error) {
       lastError = error;
     }

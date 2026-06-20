@@ -17,6 +17,7 @@ export interface MapLayerState {
   gdacsAlerts?: boolean;
   noaaTsunami?: boolean;
   nasaFirms?: boolean;
+  reliefWeb?: boolean;
   sos: boolean;
   alerts: boolean;
   critical: boolean;
@@ -83,6 +84,7 @@ const layerGroups: Array<{
       "gdacsAlerts",
       "noaaTsunami",
       "nasaFirms",
+      "reliefWeb",
       "sos",
       "alerts",
       "critical",
@@ -106,6 +108,7 @@ const labels: Record<keyof MapLayerState, string> = {
   gdacsAlerts: "GDACS Desastres",
   noaaTsunami: "NOAA Tsunami",
   nasaFirms: "NASA FIRMS",
+  reliefWeb: "ReliefWeb Contexto",
   sos: "SOS",
   alerts: "Alertas",
   critical: "Críticos",
@@ -188,6 +191,11 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
       label: "FIRMS",
       enabled: Boolean(layers.nasaFirms),
       available: Object.prototype.hasOwnProperty.call(layers, "nasaFirms"),
+    },
+    {
+      label: "ReliefWeb",
+      enabled: Boolean(layers.reliefWeb),
+      available: Object.prototype.hasOwnProperty.call(layers, "reliefWeb"),
     },
   ].filter((item) => item.available);
 

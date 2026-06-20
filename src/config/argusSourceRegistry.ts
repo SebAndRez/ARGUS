@@ -14,6 +14,7 @@ export type ArgusSourceAccessType =
   | "free"
   | "free_with_terms"
   | "api_key"
+  | "appname_required"
   | "paid"
   | "manual_reference";
 
@@ -89,7 +90,18 @@ export const ARGUS_SOURCE_REGISTRY: ArgusSourceRegistryEntry[] = [
     notes:
       "Feeds Atom oficiales de los centros NTWC y PTWC para mensajes y alertas de tsunami.",
   },
-  { id: "reliefweb", name: "ReliefWeb API", category: "humanitarian", tier: 1, priority: 78, status: "planned", reliabilityScore: 86, accessType: "free_with_terms", notes: "Crisis y respuesta humanitaria." },
+  {
+    id: "reliefweb",
+    name: "ReliefWeb",
+    category: "humanitarian_context",
+    tier: 1,
+    priority: 88,
+    status: "active_if_configured",
+    reliabilityScore: 92,
+    accessType: "appname_required",
+    notes:
+      "Contexto humanitario curado por OCHA; requiere RELIEFWEB_APP_NAME preaprobado.",
+  },
   { id: "gdelt", name: "GDELT", category: "geopolitical", tier: 1, priority: 72, status: "planned", reliabilityScore: 70, accessType: "free", notes: "Señales geopolíticas y noticias; requiere contraste." },
   { id: "openstreetmap", name: "OpenStreetMap Data", category: "geospatial", tier: 1, priority: 85, status: "planned", reliabilityScore: 88, accessType: "free_with_terms", notes: "Base geográfica y contexto territorial." },
   { id: "copernicus_glofas", name: "Copernicus GloFAS / GFM", category: "flood", tier: 2, priority: 80, status: "planned", reliabilityScore: 91, accessType: "free_with_terms", notes: "Inundaciones y caudales." },

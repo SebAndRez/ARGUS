@@ -25,6 +25,7 @@ export type ArgusIngestionCategory =
   | "weather"
   | "tsunami"
   | "humanitarian"
+  | "humanitarian_context"
   | "geopolitical"
   | "geospatial"
   | "flood"
@@ -68,9 +69,27 @@ export interface ArgusNormalizedEvent {
   instrument?: string | null;
   dayNight?: string | null;
   locationName?: string | null;
+  country?: string | null;
   recommendedAction?: string | null;
   whyItMatters?: string | null;
   isExternal: true;
+}
+
+export interface ReliefWebReportFields {
+  title?: string;
+  url?: string;
+  date?: { created?: string; original?: string };
+  source?: Array<{ name?: string; shortname?: string }>;
+  country?: Array<{ name?: string; shortname?: string; iso3?: string }>;
+  disaster?: Array<{ name?: string; type?: Array<{ name?: string }> }>;
+  format?: Array<{ name?: string }>;
+  body?: string;
+  "body-html"?: string;
+}
+
+export interface ReliefWebReportItem {
+  id: number | string;
+  fields: ReliefWebReportFields;
 }
 
 export interface ArgusIngestionSourceResponse {
@@ -82,6 +101,8 @@ export interface ArgusIngestionSourceResponse {
   sourceUpdatedAt: string | null;
   count: number;
   events: ArgusNormalizedEvent[];
+  persistedCount?: number;
+  ingestionRunId?: string | null;
 }
 
 export interface UsgsEarthquakeFeature {

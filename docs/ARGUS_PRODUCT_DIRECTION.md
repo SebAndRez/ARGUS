@@ -503,5 +503,16 @@ La implementación actual incluye:
 - scaffold NASA FIRMS configurable para focos térmicos MODIS/VIIRS;
 - dashboard operativo local;
 - Prisma con Supabase PostgreSQL y autenticación demo existentes.
+- Persistencia PostgreSQL de eventos externos, corridas de ingesta y base de
+  correlaciones.
+- UX móvil operacional con vistas de mapa limpio, paneles y capas.
+- ReliefWeb como contexto humanitario Tier 1 condicionado a
+  `RELIEFWEB_APP_NAME`.
+
+ReliefWeb aporta reportes de impacto y respuesta humanitaria. Sus documentos
+no siempre incluyen coordenadas confiables, por lo que ARGUS los presenta en
+un panel contextual y no inventa marcadores en el mapa.
+
+Pendiente: automatización de ingestas, RLS, backups, HDX, GDELT y OpenAQ.
 
 Las cámaras, clima, rutas, confianza y verificaciones de esta fase son fundaciones locales/demo. No existe todavía ingesta externa, persistencia completa, reputación real, clustering masivo ni notificaciones productivas.

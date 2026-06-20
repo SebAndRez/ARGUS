@@ -89,3 +89,63 @@ model Sanction {
   createdById String?
   createdAt   DateTime @default(now())
 }
+
+model ExternalEvent {
+  id           String   @id @default(cuid())
+  sourceId     String
+  externalId   String
+  category     String
+  title        String
+  description  String?
+  severity     String?
+  confidence   Int?
+  latitude     Float?
+  longitude    Float?
+  locationName String?
+  country      String?
+  sourceUrl    String?
+  occurredAt   DateTime?
+  fetchedAt    DateTime?
+  lastSeenAt   DateTime?
+  expiresAt    DateTime?
+  raw          Json?
+  normalized   Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([sourceId, externalId])
+  @@index([sourceId])
+  @@index([category])
+  @@index([occurredAt])
+  @@index([severity])
+}
+
+model IngestionRun {
+  id          String    @id @default(cuid())
+  sourceId    String
+  status      String
+  fetchedAt   DateTime  @default(now())
+  completedAt DateTime?
+  count       Int?
+  cached      Boolean   @default(false)
+  error       String?
+  durationMs  Int?
+  metadata    Json?
+
+  @@index([sourceId])
+  @@index([fetchedAt])
+}
+
+model ExternalEventCorrelation {
+  id          String   @id @default(cuid())
+  kind        String
+  confidence  Int?
+  explanation String?
+  sourceIds   Json
+  eventIds    Json
+  createdAt   DateTime @default(now())
+  metadata    Json?
+
+  @@index([kind])
+  @@index([createdAt])
+}

@@ -9,6 +9,7 @@ import MapLayerControls, {
 import EventDetailPanel from "@/components/map/EventDetailPanel";
 import ExternalEventPopup from "@/components/map/ExternalEventPopup";
 import ExternalCorrelationsPanel from "@/components/map/ExternalCorrelationsPanel";
+import ReliefWebContextPanel from "@/components/map/ReliefWebContextPanel";
 import VisualSourcePopup from "@/components/map/VisualSourcePopup";
 import WindLayerLegend from "@/components/map/WindLayerLegend";
 import FloatingSOSButton from "@/components/app/FloatingSOSButton";
@@ -76,6 +77,7 @@ const initialLayers = {
   gdacsAlerts: false,
   noaaTsunami: false,
   nasaFirms: false,
+  reliefWeb: false,
   sos: true,
   alerts: true,
   critical: true,
@@ -93,6 +95,10 @@ const initialLayers = {
 const initialEventState: CrisisEvent[] = [];
 
 export default function AppPage() {
+  const [displayMode, setDisplayMode] = useState<
+    "command" | "map" | "layers"
+  >("command");
+  const [centerRequestKey, setCenterRequestKey] = useState(0);
   const [selectedEvent, setSelectedEvent] = useState<CrisisEvent | null>(null);
   const [selectedVisualSource, setSelectedVisualSource] = useState<VisualSource | null>(null);
   const [selectedRiskProjection, setSelectedRiskProjection] = useState<RiskProjection | null>(
@@ -149,6 +155,21 @@ export default function AppPage() {
   const [nasaConfigError, setNasaConfigError] = useState(false);
   const [nasaRetryVersion, setNasaRetryVersion] = useState(0);
   const nasaFetchStartedRef = useRef(false);
+  const [reliefWebEvents, setReliefWebEvents] = useState<
+    ArgusNormalizedEvent[]
+  >([]);
+  const [reliefWebStatus, setReliefWebStatus] = useState<
+    "idle" | "loading" | "loaded" | "error"
+  >("idle");
+  const [reliefWebErrorMessage, setReliefWebErrorMessage] = useState<
+    string | null
+  >(null);
+  const [reliefWebCached, setReliefWebCached] = useState(false);
+  const [reliefWebConfigured, setReliefWebConfigured] = useState<
+    boolean | null
+  >(null);
+  const [reliefWebRetryVersion, setReliefWebRetryVersion] = useState(0);
+  const reliefWebFetchStartedRef = useRef(false);
   const [metWeather, setMetWeather] = useState<WeatherObservation | null>(null);
   const [metStatus, setMetStatus] = useState<
     "idle" | "loading" | "loaded" | "error"
@@ -164,6 +185,33 @@ export default function AppPage() {
 
   const canReport = Boolean(sessionUser && !["LIMITED", "SUSPENDED", "BANNED"].includes(sessionUser.accountStatus));
   const canSOS = Boolean(sessionUser);
+
+  const changeDisplayMode = useCallback(
+    (mode: "command" | "map" | "layers") => {
+      setDisplayMode(mode);
+      try {
+        window.localStorage.setItem("argus-display-mode", mode);
+      } catch {
+        // Storage can be unavailable in Safari private mode.
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    try {
+      const storedMode = window.localStorage.getItem("argus-display-mode");
+      if (
+        storedMode === "command" ||
+        storedMode === "map" ||
+        storedMode === "layers"
+      ) {
+        setDisplayMode(storedMode);
+      }
+    } catch {
+      setDisplayMode("command");
+    }
+  }, []);
 
   const selectEvent = useCallback((event: CrisisEvent) => {
     setSelectedVisualSource(null);
@@ -374,6 +422,21 @@ export default function AppPage() {
     () => correlateExternalEvents(externalEvents),
     [externalEvents]
   );
+  const relatedReliefWebEventIds = useMemo(
+    () =>
+      reliefWebEvents
+        .filter((reliefEvent) => {
+          const country = reliefEvent.country?.trim().toLowerCase();
+          if (!country || country.length < 3) return false;
+          return externalEvents.some((event) =>
+            [event.country, event.locationName, event.title]
+              .filter(Boolean)
+              .some((value) => value!.toLowerCase().includes(country))
+          );
+        })
+        .map((event) => event.id),
+    [externalEvents, reliefWebEvents]
+  );
   const selectedExternalCorrelations = useMemo(() => {
     if (!selectedExternalEvent) return [];
 
@@ -504,6 +567,29 @@ export default function AppPage() {
         disabled: nasaConfigured !== true,
         disabledLabel: nasaConfigured === false ? "KEY" : "...",
       },
+      reliefWeb: {
+        count: reliefWebEvents.length,
+        detail:
+          reliefWebConfigured === null
+            ? "Verificando configuración..."
+            : !reliefWebConfigured
+              ? "Requiere RELIEFWEB_APP_NAME"
+              : reliefWebStatus === "loading"
+                ? "Consultando contexto humanitario..."
+                : reliefWebStatus === "error"
+                  ? "ReliefWeb no disponible"
+                  : reliefWebStatus === "loaded"
+                    ? `${reliefWebCached ? "Caché" : "Red / persistido"} · ${reliefWebEvents.length} reportes`
+                    : "Contexto humanitario bajo demanda",
+        status:
+          reliefWebStatus === "loaded"
+            ? "ready"
+            : reliefWebStatus === "error"
+              ? "error"
+              : reliefWebStatus,
+        disabled: reliefWebConfigured !== true,
+        disabledLabel: reliefWebConfigured === false ? "APP" : "...",
+      },
       sos: {
         count: events.filter((event) => event.type === "SOS").length,
         detail: "Solicitudes de ayuda",
@@ -599,6 +685,10 @@ export default function AppPage() {
       noaaUpdatedLabel,
       officialSourceCount,
       publicCameraCount,
+      reliefWebCached,
+      reliefWebConfigured,
+      reliefWebEvents.length,
+      reliefWebStatus,
       usgsEvents.length,
       usgsCached,
       usgsExpiresLabel,
@@ -622,10 +712,18 @@ export default function AppPage() {
                 source.sourceId === "nasa_firms"
             )
           : null;
+        const reliefWebSource = Array.isArray(payload.sources)
+          ? payload.sources.find(
+              (source: { sourceId?: string }) =>
+                source.sourceId === "reliefweb"
+            )
+          : null;
         setNasaConfigured(nasaSource?.configured === true);
+        setReliefWebConfigured(reliefWebSource?.configured === true);
         setNasaConfigError(false);
       } catch {
         setNasaConfigured(null);
+        setReliefWebConfigured(null);
         setNasaConfigError(true);
       }
     }
@@ -854,6 +952,65 @@ export default function AppPage() {
   };
 
   useEffect(() => {
+    if (
+      !layerSettings.reliefWeb ||
+      reliefWebConfigured !== true ||
+      reliefWebFetchStartedRef.current
+    ) {
+      return;
+    }
+
+    reliefWebFetchStartedRef.current = true;
+    setReliefWebStatus("loading");
+    setReliefWebErrorMessage(null);
+
+    async function loadReliefWeb() {
+      try {
+        const response = await fetch("/api/ingest/reliefweb-reports?limit=10", {
+          cache: "no-store",
+        });
+        const payload = (await response.json()) as Partial<
+          ArgusIngestionSourceResponse
+        > & { error?: string; disabled?: boolean; reason?: string };
+        if (!response.ok) {
+          if (payload.disabled) setReliefWebConfigured(false);
+          throw new Error(
+            payload.error ||
+              payload.reason ||
+              "No fue posible cargar ReliefWeb."
+          );
+        }
+
+        setReliefWebEvents(
+          Array.isArray(payload.events) ? payload.events : []
+        );
+        setReliefWebCached(payload.cached === true);
+        setReliefWebStatus("loaded");
+      } catch (error) {
+        setReliefWebStatus("error");
+        setReliefWebErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "No fue posible cargar ReliefWeb."
+        );
+      }
+    }
+
+    loadReliefWeb();
+  }, [
+    layerSettings.reliefWeb,
+    reliefWebConfigured,
+    reliefWebRetryVersion,
+  ]);
+
+  const retryReliefWeb = () => {
+    reliefWebFetchStartedRef.current = false;
+    setReliefWebStatus("idle");
+    setReliefWebErrorMessage(null);
+    setReliefWebRetryVersion((current) => current + 1);
+  };
+
+  useEffect(() => {
     if (!layerSettings.weatherRisk) return;
 
     const latitude = Number(location.latitude);
@@ -986,8 +1143,48 @@ export default function AppPage() {
         onRiskProjectionSelect={selectRiskProjection}
         routes={demoRoutes}
         baseMapType={baseMapType}
+        centerRequestKey={centerRequestKey}
       />
 
+      <nav
+        className={`argus-view-toolbar pointer-events-auto fixed z-[55] flex max-w-[calc(100%-1rem)] items-center gap-1 overflow-x-auto border border-cyan-300/20 bg-slate-950/95 p-1.5 shadow-xl shadow-black/40 backdrop-blur-xl ${
+          displayMode === "command"
+            ? "argus-view-toolbar-command"
+            : "argus-view-toolbar-map"
+        }`}
+        aria-label="Vista operacional"
+      >
+        {([
+          ["map", "Vista mapa"],
+          ["command", "Paneles"],
+          ["layers", "Capas"],
+        ] as const).map(([mode, label]) => (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => changeDisplayMode(mode)}
+            className={`min-h-9 shrink-0 border px-3 text-xs font-semibold ${
+              displayMode === mode
+                ? "border-cyan-300/35 bg-cyan-400/15 text-cyan-100"
+                : "border-white/8 bg-white/[0.03] text-slate-300"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => {
+            location.refreshLocation();
+            setCenterRequestKey((current) => current + 1);
+          }}
+          className="min-h-9 shrink-0 border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200"
+        >
+          Centrar GPS
+        </button>
+      </nav>
+
+      {displayMode === "command" && (
       <div className="argus-safe-top pointer-events-auto fixed left-1/2 z-40 w-[calc(100%-1.5rem)] max-w-6xl -translate-x-1/2">
         <ArgusOperationalHUD
           mode="citizen"
@@ -1000,6 +1197,8 @@ export default function AppPage() {
           criticalCount={criticalCount}
         />
       </div>
+      )}
+      {displayMode === "command" && (
       <WindLayerLegend
         observation={activeWeatherObservation}
         selectedProjection={selectedRiskProjection}
@@ -1010,7 +1209,9 @@ export default function AppPage() {
           layerSettings.nasaFirms ? nasaEvents.length : 0
         }
       />
+      )}
 
+      {(displayMode === "command" || displayMode === "layers") && (
       <div className="argus-layer-panel-shell pointer-events-auto fixed z-[45] w-[310px]">
         <MapLayerControls
           layers={layerSettings}
@@ -1020,10 +1221,21 @@ export default function AppPage() {
           layerMeta={layerMeta}
           showActiveSummary
           supplementalPanel={
-            <ExternalCorrelationsPanel
-              correlations={externalCorrelations}
-              onSelectEvent={selectExternalEvent}
-            />
+            <>
+              <ReliefWebContextPanel
+                events={reliefWebEvents}
+                status={reliefWebStatus}
+                configured={reliefWebConfigured}
+                cached={reliefWebCached}
+                errorMessage={reliefWebErrorMessage}
+                onRefresh={retryReliefWeb}
+                relatedEventIds={relatedReliefWebEventIds}
+              />
+              <ExternalCorrelationsPanel
+                correlations={externalCorrelations}
+                onSelectEvent={selectExternalEvent}
+              />
+            </>
           }
           demoFilters={{
             severity: demoSeverityFilter,
@@ -1037,7 +1249,9 @@ export default function AppPage() {
           }}
         />
       </div>
+      )}
 
+      <div className={displayMode === "command" ? "contents" : "hidden"}>
       {errorMessage && (
         <div className="fixed left-4 top-40 z-40 max-w-sm border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-100 backdrop-blur-xl shadow-lg shadow-red-900/20 md:top-32">
           {errorMessage}
@@ -1139,18 +1353,12 @@ export default function AppPage() {
           Inicia sesión en <a href="/login" className="font-semibold text-white underline">/login</a> para crear reportes y SOS.
         </div>
       ) : null}
+      </div>
 
       <FloatingSOSButton disabled={!canSOS} onClick={() => setIsHelpOpen(true)} />
       <FloatingReportButton disabled={!canReport} onClick={() => setIsReportOpen(true)} />
 
-      <button
-        type="button"
-        onClick={location.refreshLocation}
-        className="argus-mobile-location fixed z-40 rounded-3xl border border-cyan-400/20 bg-slate-900/90 px-4 py-3 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-500/20"
-      >
-        Mi ubicación
-      </button>
-
+      {displayMode === "command" && (
       <NearbyEventsSheet
         events={nearbyEventPool}
         latitude={location.latitude}
@@ -1162,6 +1370,7 @@ export default function AppPage() {
         }
         demoTotalCount={layerSettings.demoReports ? demoEvents.length : undefined}
       />
+      )}
 
       {selectedEvent && (
         <div

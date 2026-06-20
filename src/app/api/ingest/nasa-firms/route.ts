@@ -5,6 +5,7 @@ import {
   normalizeNasaFirms,
   parseNasaFirmsCsv,
 } from "@/lib/ingestion/normalizeNasaFirms";
+import { persistFreshIngestion } from "@/lib/ingestion/persistExternalEvents";
 import {
   getCachedSource,
   setCachedSource,
@@ -125,6 +126,7 @@ export async function GET(request: NextRequest) {
   }
 
   const controller = new AbortController();
+  const startedAt = Date.now();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
@@ -178,8 +180,16 @@ export async function GET(request: NextRequest) {
       { events, sourceUpdatedAt },
       CACHE_TTL_MS
     );
+    const persistence = await persistFreshIngestion(SOURCE_ID, events, {
+      fetchedAt: cacheEntry.fetchedAt,
+      expiresAt: cacheEntry.expiresAt,
+      startedAt,
+    });
 
-    return NextResponse.json(buildResponse(cacheEntry, false));
+    return NextResponse.json({
+      ...buildResponse(cacheEntry, false),
+      ...persistence,
+    });
   } catch (error) {
     const timedOut = error instanceof Error && error.name === "AbortError";
     return NextResponse.json(
