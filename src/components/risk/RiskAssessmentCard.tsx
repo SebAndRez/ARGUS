@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import RiskEvidenceList from "@/components/risk/RiskEvidenceList";
+import {
+  calculateArgusConfidenceFromEvidence,
+  getConfirmationBadges,
+} from "@/lib/prediction/confirmationScoring";
 import type { ArgusRiskAssessment } from "@/types/riskAssessment";
 
 interface Props {
@@ -29,6 +33,8 @@ const bandClass: Record<ArgusRiskAssessment["probabilityBand"], string> = {
 export default function RiskAssessmentCard({ assessment }: Props) {
   const [showContext, setShowContext] = useState(false);
   const historical = assessment.historicalContext;
+  const confirmation = calculateArgusConfidenceFromEvidence(assessment.evidence);
+  const confirmationBadges = getConfirmationBadges(assessment.evidence);
 
   return (
     <article className="border border-cyan-300/15 bg-slate-950/75 p-3 shadow-lg shadow-black/25">
@@ -48,13 +54,33 @@ export default function RiskAssessmentCard({ assessment }: Props) {
         </span>
       </div>
 
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {confirmationBadges.map((badge) => (
+          <span
+            key={badge}
+            className="rounded border border-cyan-300/15 bg-cyan-400/8 px-2 py-1 text-[0.55rem] font-bold uppercase text-cyan-100"
+          >
+            {badge}
+          </span>
+        ))}
+        <span className="rounded border border-amber-300/20 bg-amber-400/8 px-2 py-1 text-[0.55rem] font-bold uppercase text-amber-100">
+          Estimacion, no exacto
+        </span>
+      </div>
+
       <div className="mt-3 grid grid-cols-3 gap-2">
         <Metric label="Prob." value={`${assessment.probabilityScore}%`} />
-        <Metric label="Conf." value={`${assessment.confidence}%`} />
-        <Metric label="Riesgo" value={assessment.riskType.replaceAll("_", " ")} />
+        <Metric label="Conf." value={`${Math.max(assessment.confidence, confirmation.confidence)}%`} />
+        <Metric label="Riesgo" value={assessment.riskType.replace(/_/g, " ")} />
       </div>
 
       <p className="mt-3 text-xs leading-5 text-slate-300">{assessment.summary}</p>
+      <p className="mt-2 rounded-md border border-amber-300/15 bg-amber-400/8 px-2.5 py-2 text-[0.62rem] leading-4 text-amber-100/85">
+        Estimacion ARGUS: no es una prediccion exacta ni reemplaza informacion oficial.
+      </p>
+      <p className="mt-2 text-[0.62rem] leading-4 text-slate-500">
+        {confirmation.explanation}
+      </p>
 
       <div className="mt-3 border border-cyan-300/15 bg-cyan-400/8 p-3">
         <p className="text-[0.58rem] font-bold uppercase text-cyan-200">

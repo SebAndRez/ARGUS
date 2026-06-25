@@ -30,6 +30,9 @@ export default function RiskAssessmentPanel({
           <p className="mt-1 text-xs text-slate-400">
             Hipotesis con evidencia, no certeza automatica
           </p>
+          <p className="mt-1 text-[0.6rem] leading-4 text-amber-100/75">
+            Estimacion ARGUS: no reemplaza informacion oficial.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button

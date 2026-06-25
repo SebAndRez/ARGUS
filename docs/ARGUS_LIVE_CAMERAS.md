@@ -80,3 +80,12 @@ Cuando la ubicacion exacta no es publica o no esta confirmada, ARGUS usa
 - Agrupacion por pais, riesgo, proveedor y relevancia operacional.
 - Relacion con clima, reportes ciudadanos e incidentes cercanos sin inferir
   vigilancia individual.
+
+## QA final antes de produccion
+
+- Revisar duplicados obvios por `provider + videoId`.
+- Mantener `needs_review` visible como deuda editorial.
+- Confirmar que ubicaciones aproximadas indiquen precision `city` o
+  `approximate`.
+- Confirmar que el panel movil no tape SOS/Reportar ni pierda el boton cerrar.
+- Confirmar que un embed restringido ofrece `Abrir fuente original`.

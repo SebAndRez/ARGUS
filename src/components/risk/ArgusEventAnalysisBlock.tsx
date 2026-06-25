@@ -2,6 +2,10 @@
 
 import { useArgusEventAnalysis } from "@/hooks/useArgusEventAnalysis";
 import RiskEvidenceList from "@/components/risk/RiskEvidenceList";
+import {
+  calculateArgusConfidenceFromEvidence,
+  getConfirmationBadges,
+} from "@/lib/prediction/confirmationScoring";
 
 type ArgusEventAnalysisBlockProps = {
   eventId?: string;
@@ -116,9 +120,28 @@ export default function ArgusEventAnalysisBlock({
 
       {!loading && !error && primaryAssessment && (
         <div className="mt-4 grid gap-3">
+          <div className="flex flex-wrap gap-1.5">
+            {getConfirmationBadges(primaryAssessment.evidence).map((badge) => (
+              <span
+                key={badge}
+                className="rounded border border-cyan-300/15 bg-cyan-400/8 px-2 py-1 text-[0.55rem] font-bold uppercase text-cyan-100"
+              >
+                {badge}
+              </span>
+            ))}
+            <span className="rounded border border-amber-300/20 bg-amber-400/8 px-2 py-1 text-[0.55rem] font-bold uppercase text-amber-100">
+              Estimacion, no exacto
+            </span>
+          </div>
           <p className="text-sm leading-6 text-slate-200">
             <span className="font-semibold text-cyan-100">Hipotesis: </span>
             {primaryAssessment.summary}
+          </p>
+          <p className="rounded-md border border-amber-300/15 bg-amber-400/8 px-2.5 py-2 text-[0.62rem] leading-4 text-amber-100/85">
+            Estimacion ARGUS: no es una prediccion exacta ni reemplaza informacion oficial.
+          </p>
+          <p className="text-[0.62rem] leading-4 text-slate-500">
+            {calculateArgusConfidenceFromEvidence(primaryAssessment.evidence).explanation}
           </p>
 
           <div className="grid grid-cols-3 gap-2">
@@ -211,6 +234,9 @@ export default function ArgusEventAnalysisBlock({
             </span>
           </div>
           <p className="mt-2 text-sm leading-6">{fallback.body}</p>
+          <p className="mt-2 rounded-md border border-amber-300/15 bg-amber-400/8 px-2.5 py-2 text-[0.62rem] leading-4 text-amber-100/85">
+            Estimacion ARGUS: no es una prediccion exacta ni reemplaza informacion oficial.
+          </p>
           <p className="mt-2 text-xs leading-5 text-slate-400">
             {emptyReason ?? fallback.action}
           </p>

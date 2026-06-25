@@ -65,3 +65,32 @@ contraste con fuentes oficiales, camaras o reportes cercanos.
 
 El contexto historico no confirma eventos actuales. Las fuentes oficiales tienen
 prioridad sobre doctrina o antecedentes.
+
+## Confirmaciones y confianza
+
+ARGUS calcula confirmaciones independientes en runtime. No agrega campos nuevos
+al schema para esta fase.
+
+Reglas actuales:
+
+- Reporte ciudadano unico: hipotesis baja/media, pendiente de confirmacion.
+- Multiples reportes ciudadanos independientes: suben a hipotesis posible, no
+  confirmada.
+- Reporte ciudadano + fuente tecnica/oficial: sube confianza si la evidencia
+  coincide.
+- Una fuente oficial/veraz como USGS, NOAA, GDACS, NASA FIRMS, MET Norway o
+  ReliefWeb puede generar hipotesis de confianza media/alta.
+- Dos o mas fuentes independientes muestran badge `2+ confirmaciones`.
+- Contexto historico aporta apoyo, pero nunca confirma por si solo.
+- Camara disponible es fuente visual auxiliar; ARGUS no analiza video
+  automaticamente.
+
+Toda salida visible debe incluir:
+
+```text
+Estimacion ARGUS: no es una prediccion exacta ni reemplaza informacion oficial.
+```
+
+La palabra `confirmado` se reserva para casos con fuente oficial explicita o
+confirmacion cruzada suficiente y aun asi debe mantener el contexto de
+estimacion operacional.

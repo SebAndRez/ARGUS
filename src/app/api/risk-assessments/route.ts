@@ -1,8 +1,8 @@
 import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { seedChileHazardSourceRegistry } from "@/lib/knowledge/seedHazardKnowledge";
 import { generateRiskAssessments, riskAssessmentToJson } from "@/lib/prediction/riskEngine";
+import { calculateArgusConfidenceFromEvidence } from "@/lib/prediction/confirmationScoring";
 import type {
   ArgusExternalSourceId,
   ArgusIngestionCategory,
@@ -14,6 +14,7 @@ import type {
   HazardKnowledgeFact,
 } from "@/types/hazardKnowledge";
 import type { ArgusRiskAssessment } from "@/types/riskAssessment";
+import type { ArgusRiskEvidence } from "@/types/riskAssessment";
 
 export const dynamic = "force-dynamic";
 
@@ -365,6 +366,108 @@ async function persistAssessment(assessment: ArgusRiskAssessment) {
   }
 }
 
+function reportRiskType(category: string): ArgusRiskAssessment["riskType"] {
+  const normalized = category.toLowerCase();
+  if (normalized.includes("fire") || normalized.includes("incendio")) return "fire_smoke";
+  if (normalized.includes("earthquake") || normalized.includes("sismo")) {
+    return "earthquake_impact";
+  }
+  if (normalized.includes("tsunami")) return "tsunami";
+  return "general_escalation";
+}
+
+function createCitizenReportAssessment(report: {
+  id: string;
+  title: string;
+  category: string;
+  severity: string;
+  createdAt: Date;
+  updatedAt: Date;
+}): ArgusRiskAssessment {
+  const evidence: ArgusRiskEvidence[] = [
+    {
+      id: `citizen_report:${report.id}`,
+      sourceId: "citizen_report",
+      sourceName: "Reporte ciudadano",
+      externalEventId: report.id,
+      kind: "citizen_report",
+      weight: 24,
+      finding:
+        "Reporte ciudadano en verificacion. Requiere confirmacion adicional.",
+      observedAt: report.createdAt.toISOString(),
+    },
+  ];
+  const confirmation = calculateArgusConfidenceFromEvidence(evidence);
+
+  return {
+    id: `argus-report-verification-${report.id}`,
+    riskType: reportRiskType(report.category),
+    status: confirmation.status,
+    probabilityBand: confirmation.probabilityBand,
+    probabilityScore: Math.min(45, confirmation.confidence),
+    confidence: Math.min(45, confirmation.confidence),
+    severity: report.severity.toLowerCase(),
+    title: `Verificacion ARGUS: ${report.title}`,
+    summary:
+      "Hipotesis inicial basada en reporte ciudadano. No es confirmacion exacta y requiere fuentes adicionales.",
+    recommendedAction:
+      "Contrastar con fuentes oficiales, camaras asociadas o reportes independientes cercanos antes de elevar prioridad.",
+    timeframe: "corto plazo",
+    evidence,
+    relatedExternalEventIds: [report.id],
+    createdAt: report.createdAt.toISOString(),
+    updatedAt: report.updatedAt.toISOString(),
+  };
+}
+
+function createExternalEventSourceAssessment(
+  event: ArgusNormalizedEvent
+): ArgusRiskAssessment {
+  const evidence: ArgusRiskEvidence[] = [
+    {
+      id: `${event.sourceId}:${event.id}:primary`,
+      sourceId: event.sourceId,
+      sourceName: event.sourceName,
+      externalEventId: event.id,
+      kind: event.category,
+      weight: 48,
+      finding: event.whyItMatters ?? "Fuente tecnica primaria detectada.",
+      observedAt: event.occurredAt,
+      url: event.url ?? undefined,
+    },
+  ];
+  const confirmation = calculateArgusConfidenceFromEvidence(evidence);
+  const riskType =
+    event.category === "earthquake"
+      ? "earthquake_impact"
+      : event.category === "tsunami"
+        ? "tsunami"
+        : event.category === "wildfire"
+          ? "fire_smoke"
+          : "general_escalation";
+
+  return {
+    id: `argus-external-source-${event.id}`,
+    riskType,
+    status: confirmation.status,
+    probabilityBand: confirmation.probabilityBand,
+    probabilityScore: confirmation.confidence,
+    confidence: confirmation.confidence,
+    severity: event.severity,
+    title: `Analisis ARGUS: ${event.title}`,
+    summary:
+      "Fuente tecnica u oficial detectada. ARGUS genera una hipotesis con mayor confianza, pero sigue siendo estimacion.",
+    recommendedAction:
+      event.recommendedAction ??
+      "Revisar actualizaciones oficiales y mantener seguimiento operacional.",
+    timeframe: "vigente mientras la fuente este activa",
+    evidence,
+    relatedExternalEventIds: [event.id, event.externalId].filter(Boolean),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export async function GET(request: NextRequest) {
   const riskType = request.nextUrl.searchParams.get("riskType")?.trim();
   const sourceId = request.nextUrl.searchParams.get("sourceId")?.trim();
@@ -400,13 +503,59 @@ export async function GET(request: NextRequest) {
       )
       .slice(0, limit);
 
+    if (assessments.length > 0) {
+      return NextResponse.json({
+        count: assessments.length,
+        assessments,
+      });
+    }
+
+    if (reportId) {
+      const report = await prisma.report.findUnique({ where: { id: reportId } });
+      const fallbackAssessment = report
+        ? createCitizenReportAssessment(report)
+        : createCitizenReportAssessment({
+            id: reportId,
+            title: "Reporte ciudadano demo",
+            category: "general",
+            severity: "LOW",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+
+      return NextResponse.json({
+        count: 1,
+        assessments: [fallbackAssessment],
+      });
+    }
+
+    const externalLookupId = externalEventId ?? relatedExternalEventId ?? externalId;
+    if (externalLookupId) {
+      const storedEvent = await prisma.externalEvent.findFirst({
+        where: {
+          OR: [{ id: externalLookupId }, { externalId: externalLookupId }],
+          ...(sourceId ? { sourceId } : {}),
+        },
+      });
+
+      if (storedEvent) {
+        const event = normalizePersistedEvent(storedEvent);
+        const generated = generateRiskAssessments({ externalEvents: [event] });
+        const fallbackAssessment =
+          generated[0] ?? createExternalEventSourceAssessment(event);
+
+        return NextResponse.json({
+          count: 1,
+          assessments: [fallbackAssessment],
+        });
+      }
+    }
+
     return NextResponse.json({
-      count: assessments.length,
-      assessments,
+      count: 0,
+      assessments: [],
     });
   }
-
-  await seedChileHazardSourceRegistry();
 
   const dbEvents = await prisma.externalEvent.findMany({
     where: {

@@ -105,6 +105,21 @@ const defaultVisibleWidgets = {
   nearby: true,
   risk: false,
 };
+type VisibleWidgetKey = keyof typeof defaultVisibleWidgets;
+const mobileExclusiveWidgets: VisibleWidgetKey[] = [
+  "layers",
+  "weather",
+  "nearby",
+  "risk",
+];
+
+function persistVisibleWidgets(widgets: typeof defaultVisibleWidgets) {
+  try {
+    window.localStorage.setItem("argus-visible-widgets", JSON.stringify(widgets));
+  } catch {
+    // Storage can be unavailable in Safari private mode.
+  }
+}
 
 export default function AppPage() {
   const [displayMode, setDisplayMode] = useState<
@@ -230,6 +245,7 @@ export default function AppPage() {
   >("idle");
   const [riskErrorMessage, setRiskErrorMessage] = useState<string | null>(null);
   const [riskRefreshVersion, setRiskRefreshVersion] = useState(0);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -239,31 +255,95 @@ export default function AppPage() {
   const canReport = Boolean(sessionUser && !["LIMITED", "SUSPENDED", "BANNED"].includes(sessionUser.accountStatus));
   const canSOS = Boolean(sessionUser);
 
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+
+    const mediaQuery = window.matchMedia("(max-width: 639px)");
+    const updateViewport = () => setIsMobileViewport(mediaQuery.matches);
+
+    updateViewport();
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener("change", updateViewport);
+      return () => mediaQuery.removeEventListener("change", updateViewport);
+    }
+    mediaQuery.addListener(updateViewport);
+    return () => mediaQuery.removeListener(updateViewport);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileViewport) return;
+
+    setVisibleWidgets((current) => {
+      const activePanels = mobileExclusiveWidgets.filter((key) => current[key]);
+      if (activePanels.length <= 1) return current;
+
+      const next = {
+        ...current,
+        layers: false,
+        weather: false,
+        nearby: false,
+        risk: false,
+      };
+      persistVisibleWidgets(next);
+      return next;
+    });
+  }, [isMobileViewport]);
+
   const changeDisplayMode = useCallback(
     (mode: "command" | "map" | "layers") => {
       setDisplayMode(mode);
+      if (mode === "map") {
+        setVisibleWidgets((current) => {
+          const next = {
+            ...current,
+            layers: false,
+            weather: false,
+            nearby: false,
+            risk: false,
+          };
+          persistVisibleWidgets(next);
+          return next;
+        });
+      } else if (mode === "layers" && isMobileViewport) {
+        setVisibleWidgets((current) => {
+          const next = {
+            ...current,
+            layers: true,
+            weather: false,
+            nearby: false,
+            risk: false,
+          };
+          persistVisibleWidgets(next);
+          return next;
+        });
+      }
       try {
         window.localStorage.setItem("argus-display-mode", mode);
       } catch {
         // Storage can be unavailable in Safari private mode.
       }
     },
-    []
+    [isMobileViewport]
   );
 
   const setWidgetVisibility = useCallback(
-    (key: keyof typeof visibleWidgets, visible: boolean) => {
+    (key: VisibleWidgetKey, visible: boolean) => {
       setVisibleWidgets((current) => {
         const next = { ...current, [key]: visible };
-        try {
-          window.localStorage.setItem("argus-visible-widgets", JSON.stringify(next));
-        } catch {
-          // Storage can be unavailable in Safari private mode.
+        if (
+          isMobileViewport &&
+          visible &&
+          mobileExclusiveWidgets.includes(key)
+        ) {
+          mobileExclusiveWidgets.forEach((widgetKey) => {
+            if (widgetKey !== key) next[widgetKey] = false;
+          });
         }
+        persistVisibleWidgets(next);
         return next;
       });
     },
-    []
+    [isMobileViewport]
   );
 
   const selectEvent = useCallback((event: CrisisEvent) => {
@@ -503,6 +583,20 @@ export default function AppPage() {
   }, [externalCorrelations, selectedExternalEvent]);
   const activeWeatherObservation =
     metWeather ?? demoWeatherObservations[0] ?? null;
+  const weatherSourceLabel = activeWeatherObservation
+    ? activeWeatherObservation.sourceType === "external_forecast"
+      ? metCached
+        ? "MET-CACHE"
+        : "MET-REAL"
+      : "DEMO"
+    : "SIN DATOS";
+  const weatherPressureLabel =
+    typeof activeWeatherObservation?.pressureHpa === "number"
+      ? `${activeWeatherObservation.pressureHpa.toFixed(0)} hPa`
+      : "Presion N/D";
+  const weatherWindLabel = activeWeatherObservation
+    ? `${activeWeatherObservation.windFromLabel} ${activeWeatherObservation.windSpeedKmh} km/h`
+    : "Viento N/D";
   const officialSourceCount = useMemo(
     () =>
       demoVisualSources.filter((source) =>
@@ -1350,6 +1444,58 @@ export default function AppPage() {
         onClose={() => setWidgetVisibility("weather", false)}
       />
       </div>
+      )}
+
+      {displayMode === "command" && layerSettings.weatherRisk && activeWeatherObservation && (
+        <div
+          className={`argus-mobile-weather-widget pointer-events-auto fixed z-[48] ${
+            visibleWidgets.weather
+              ? "argus-mobile-weather-card"
+              : "argus-mobile-weather-pill"
+          }`}
+        >
+          {visibleWidgets.weather ? (
+            <section className="rounded-lg border border-amber-300/20 bg-slate-950/94 p-3 shadow-2xl shadow-black/35 backdrop-blur-xl">
+              <header className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[0.58rem] font-bold uppercase tracking-[0.18em] text-amber-300">
+                    Clima
+                  </p>
+                  <p className="mt-1 truncate text-xs font-semibold text-white">
+                    {weatherSourceLabel}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setWidgetVisibility("weather", false)}
+                  className="shrink-0 border border-white/10 bg-slate-950/70 px-2 py-1 text-[0.55rem] font-bold uppercase text-slate-300"
+                >
+                  Ocultar
+                </button>
+              </header>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-[0.68rem] text-slate-300">
+                <span className="rounded border border-white/10 bg-slate-900/70 px-2 py-1.5">
+                  {weatherPressureLabel}
+                </span>
+                <span className="rounded border border-white/10 bg-slate-900/70 px-2 py-1.5">
+                  {weatherWindLabel}
+                </span>
+              </div>
+              <p className="mt-2 text-[0.62rem] leading-4 text-slate-500">
+                Zona estimada, no exacta.
+              </p>
+            </section>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setWidgetVisibility("weather", true)}
+              className="rounded-full border border-amber-300/25 bg-slate-950/94 px-3 py-2 text-left text-[0.68rem] font-semibold text-amber-100 shadow-xl shadow-black/35 backdrop-blur-xl"
+              aria-label="Mostrar clima"
+            >
+              Clima: {weatherPressureLabel}
+            </button>
+          )}
+        </div>
       )}
 
       {(displayMode === "command" || displayMode === "layers") && visibleWidgets.layers && (

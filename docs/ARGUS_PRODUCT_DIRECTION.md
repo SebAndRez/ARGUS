@@ -590,3 +590,22 @@ un panel contextual y no inventa marcadores en el mapa.
 Pendiente: automatización de ingestas, RLS, backups, HDX, GDELT y OpenAQ.
 
 Las cámaras, clima, rutas, confianza y verificaciones de esta fase son fundaciones locales/demo. No existe todavía ingesta externa, persistencia completa, reputación real, clustering masivo ni notificaciones productivas.
+
+## Mobile map-first rule
+
+En movil, ARGUS usa una interfaz simplificada por panel activo unico. CAPAS,
+CLIMA, RIESGO y CERCANOS no compiten entre si: abrir uno colapsa los otros.
+
+El objetivo movil es mapa primero, accion rapida, HUD compacto, cero
+superposicion y cero overflow horizontal.
+
+Clima movil se muestra como pildora/tarjeta compacta para evitar que desaparezca
+detras de otros paneles. `Vista mapa` limpia paneles secundarios y deja
+controles esenciales, SOS y Reportar.
+
+## QA final antes de produccion
+
+Antes de deploy productivo, revisar Google login, RUT unico, prediccion por
+evento/reporte, regla de 2+ confirmaciones, advertencia de estimacion/no exacto,
+movil multi navegador, camaras, knowledge APIs, risk APIs, ausencia de secretos
+y deploy por Vercel CLI.

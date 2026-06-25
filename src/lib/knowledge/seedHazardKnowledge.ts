@@ -15,6 +15,8 @@ import type {
 } from "@/types/hazardKnowledge";
 
 const seededDocumentIds = new Set<string>();
+let registrySeedPromise: Promise<{ documentCount: number; factCount: number }> | null =
+  null;
 
 function asJson(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
@@ -144,10 +146,44 @@ export async function seedChileTsunamiKnowledge() {
 }
 
 export async function seedChileHazardSourceRegistry() {
-  return seedHazardKnowledge({
-    documents: hazardKnowledgeDocuments,
-    facts: hazardKnowledgeFacts,
-  });
+  if (registrySeedPromise) return registrySeedPromise;
+
+  registrySeedPromise = (async () => {
+    const sentinelDocument = hazardKnowledgeDocuments[hazardKnowledgeDocuments.length - 1];
+    const sentinelFact = hazardKnowledgeFacts[hazardKnowledgeFacts.length - 1];
+
+    if (sentinelDocument && sentinelFact) {
+      const [storedDocument, storedFact] = await Promise.all([
+        prisma.hazardKnowledgeDocument.findUnique({
+          where: { id: sentinelDocument.id },
+          select: { id: true },
+        }),
+        prisma.hazardKnowledgeFact.findUnique({
+          where: { id: sentinelFact.id },
+          select: { id: true },
+        }),
+      ]);
+
+      if (storedDocument && storedFact) {
+        return {
+          documentCount: hazardKnowledgeDocuments.length,
+          factCount: hazardKnowledgeFacts.length,
+        };
+      }
+    }
+
+    return seedHazardKnowledge({
+      documents: hazardKnowledgeDocuments,
+      facts: hazardKnowledgeFacts,
+    });
+  })();
+
+  try {
+    return await registrySeedPromise;
+  } catch (error) {
+    registrySeedPromise = null;
+    throw error;
+  }
 }
 
 export async function seedHazardKnowledge(input?: {

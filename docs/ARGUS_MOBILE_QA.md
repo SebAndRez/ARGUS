@@ -72,3 +72,42 @@
 - Confirm SOS and Report are aligned in a single bottom-right action stack.
 - Confirm on 390x844: HUD sits with safe margins, the toolbar is higher,
   Prediccion sits below controls and Clima does not overlap it.
+
+## Final mobile layout QA
+
+Browsers to verify before production:
+
+- iPhone Safari.
+- iPhone Chrome.
+- Android Chrome.
+- Samsung Internet.
+- Firefox Android.
+
+Viewport widths:
+
+- 360 px.
+- 375 px.
+- 390 px.
+- 414 px.
+- 430 px.
+
+Required checks:
+
+- `/app` loads without black screen.
+- The map remains the primary visible surface.
+- HUD is compact and respects safe areas.
+- The main toolbar and widget rail stay compact with horizontal scroll if needed.
+- Opening CAPAS closes CLIMA, RIESGO and CERCANOS.
+- Opening CLIMA closes CAPAS, RIESGO and CERCANOS.
+- Opening RIESGO closes CAPAS, CLIMA and CERCANOS.
+- Opening CERCANOS closes CAPAS, CLIMA and RIESGO.
+- `Vista mapa` clears secondary panels and leaves only essential controls.
+- CAPAS opens as a contained scrollable sheet.
+- CLIMA is visible as a compact pill or card.
+- RIESGO / Prediccion ARGUS appears below controls with internal scroll.
+- CERCANOS behaves as a bottom sheet with internal scroll.
+- SOS and Reportar stay symmetric in the bottom-right action stack.
+- `/app` without session shows only compact `Login`.
+- There are no floating `Ocultar` buttons outside panel headers.
+- There is no horizontal overflow.
+- Analysis blocks show `Estimacion ARGUS` and do not claim certainty.

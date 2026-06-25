@@ -75,7 +75,7 @@ function typeBadge(type: CrisisEvent["type"]) {
 
 function statusBadge(status: string | null | undefined) {
   const normalized = status?.trim().toUpperCase() || "UNKNOWN";
-  const label = statusLabels[normalized] ?? normalized.replaceAll("_", " ");
+  const label = statusLabels[normalized] ?? normalized.replace(/_/g, " ");
 
   if (["RESOLVED", "VALIDATED"].includes(normalized)) {
     return {

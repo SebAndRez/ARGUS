@@ -66,3 +66,11 @@ una alerta oficial ni una prediccion absoluta.
 - No hay descarga de PDFs en runtime.
 - Los documentos queued no deben usarse como evidencia fuerte.
 - Las inferencias deben indicar incertidumbre.
+
+## Deuda operativa
+
+Las APIs de knowledge pueden ejecutar seed idempotente para asegurar datos base
+en entornos nuevos. El runtime revisa registros centinela antes de resembrar
+para evitar upserts masivos en cada GET. Esto no descarga documentos ni debe
+duplicar filas, pero sigue siendo deuda tecnica: mover el seed a un script o
+endpoint administrativo en una fase posterior.

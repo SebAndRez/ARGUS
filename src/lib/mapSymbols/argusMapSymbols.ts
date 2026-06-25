@@ -91,10 +91,10 @@ const shapeClipPath: Partial<Record<ArgusMapEventKind, string>> = {
 
 const escapeHtml = (value: string) =>
   value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 
 export function getArgusMarkerColor(severity: ArgusMapSeverity) {
   return severityColor[severity] ?? severityColor.info;
