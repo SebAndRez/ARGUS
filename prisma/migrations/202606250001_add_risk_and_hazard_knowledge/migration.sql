@@ -1,4 +1,4 @@
-﻿-- CreateTable
+-- CreateTable
 CREATE TABLE "RiskAssessment" (
     "id" TEXT NOT NULL,
     "riskType" TEXT NOT NULL,
