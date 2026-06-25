@@ -11,7 +11,9 @@ import type { ArgusNormalizedEvent } from "@/types/ingestion";
 import { clusterEventsByGrid } from "@/lib/simpleEventClustering";
 import EventClusterMarker from "@/components/map/EventClusterMarker";
 import ExternalEventMarker from "@/components/map/ExternalEventMarker";
+import GlobeView from "@/components/map/GlobeView";
 import IncidentMarker from "@/components/map/IncidentMarker";
+import MapToGlobeTransition from "@/components/map/MapToGlobeTransition";
 import RiskProjectionOverlay from "@/components/map/RiskProjectionOverlay";
 import RouteLayerOverlay from "@/components/map/RouteLayerOverlay";
 import UserLocationMarker from "@/components/map/UserLocationMarker";
@@ -65,6 +67,8 @@ interface Props {
 }
 
 const DEFAULT_CENTER: [number, number] = [-33.4489, -70.6693];
+const GLOBE_ZOOM_THRESHOLD = 3;
+const MAP_RETURN_ZOOM = GLOBE_ZOOM_THRESHOLD + 1;
 
 const isEventVisible = (event: CrisisEvent, layers: MapLayerSettings) => {
   if (event.status === "RESOLVED" && !layers.resolved) return false;
@@ -105,8 +109,10 @@ export default function OperationalMap({
   const externalEventLayerRef = useRef<any>(null);
   const visualSourceLayerRef = useRef<any>(null);
   const userLayerRef = useRef<any>(null);
+  const suppressGlobeModeRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [isGlobeMode, setIsGlobeMode] = useState(false);
 
   const visibleEvents = useMemo(
     () => events.filter((event) => isEventVisible(event, layerSettings)),
@@ -155,6 +161,23 @@ export default function OperationalMap({
       layerSettings.terrestrialRoutes,
     ]
   );
+  const visibleExternalEvents = useMemo(
+    () =>
+      externalEvents.filter(
+        (event) =>
+          (event.sourceId === "usgs_earthquake" && layerSettings.usgsEarthquakes) ||
+          (event.sourceId === "gdacs" && layerSettings.gdacsAlerts) ||
+          (event.sourceId === "noaa_tsunami" && layerSettings.noaaTsunami) ||
+          (event.sourceId === "nasa_firms" && layerSettings.nasaFirms)
+      ),
+    [
+      externalEvents,
+      layerSettings.gdacsAlerts,
+      layerSettings.nasaFirms,
+      layerSettings.noaaTsunami,
+      layerSettings.usgsEarthquakes,
+    ]
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -170,6 +193,7 @@ export default function OperationalMap({
           center: DEFAULT_CENTER,
           zoom: 11.2,
           zoomControl: true,
+          worldCopyJump: true,
         });
 
         L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -184,6 +208,22 @@ export default function OperationalMap({
         mapRef.current = map;
         setMapError(null);
         setMapReady(true);
+        setIsGlobeMode(map.getZoom() <= GLOBE_ZOOM_THRESHOLD);
+
+        const handleZoomEnd = () => {
+          const zoom = map.getZoom();
+          if (zoom > GLOBE_ZOOM_THRESHOLD) {
+            suppressGlobeModeRef.current = false;
+            setIsGlobeMode(false);
+            return;
+          }
+          if (suppressGlobeModeRef.current) {
+            setIsGlobeMode(false);
+            return;
+          }
+          setIsGlobeMode(true);
+        };
+        map.on("zoomend", handleZoomEnd);
 
         window.requestAnimationFrame(() => {
           if (isMounted && mapRef.current) mapRef.current.invalidateSize(false);
@@ -318,14 +358,7 @@ export default function OperationalMap({
       });
     });
 
-    externalEvents
-      .filter(
-        (event) =>
-          (event.sourceId === "usgs_earthquake" && layerSettings.usgsEarthquakes) ||
-          (event.sourceId === "gdacs" && layerSettings.gdacsAlerts) ||
-          (event.sourceId === "noaa_tsunami" && layerSettings.noaaTsunami) ||
-          (event.sourceId === "nasa_firms" && layerSettings.nasaFirms)
-      )
+    visibleExternalEvents
       .forEach((event) => {
         const latitude =
           typeof event.latitude === "number" ? event.latitude : Number.NaN;
@@ -421,6 +454,7 @@ export default function OperationalMap({
     visibleDemoEvents,
     demoEventClusters,
     externalEvents,
+    visibleExternalEvents,
     visibleVisualSources,
     selectedEventId,
     selectedVisualSourceId,
@@ -452,11 +486,72 @@ export default function OperationalMap({
     mapRef.current.flyTo([lat, lng], 13, { duration: 0.6 });
   }, [centerRequestKey, location.latitude, location.longitude, mapReady]);
 
+  const exitGlobeMode = () => {
+    suppressGlobeModeRef.current = true;
+    setIsGlobeMode(false);
+    if (!mapRef.current) {
+      return;
+    }
+    mapRef.current.setView(mapRef.current.getCenter(), MAP_RETURN_ZOOM, {
+      animate: false,
+    });
+    window.requestAnimationFrame(() => {
+      setIsGlobeMode(false);
+      mapRef.current?.invalidateSize(false);
+    });
+  };
+
   return (
     <div
-      className={`argus-map-${baseMapType} relative h-full min-h-80 w-full overflow-hidden rounded-lg border border-white/10 bg-slate-950/50 shadow-2xl shadow-black/40`}
+      className={`argus-map-${baseMapType} relative h-full min-h-80 w-full overflow-hidden rounded-lg border border-white/10 bg-slate-950/50 shadow-2xl shadow-black/40 ${
+        isGlobeMode ? "argus-orbit-active" : ""
+      }`}
     >
-      <div ref={mapContainerRef} className="argus-leaflet-map h-full w-full" />
+      <MapToGlobeTransition
+        isGlobeMode={isGlobeMode}
+        map={
+          <>
+            <div ref={mapContainerRef} className="argus-leaflet-map h-full w-full" />
+            <RiskProjectionOverlay
+              projections={riskProjections}
+              visible={Boolean(layerSettings.weatherRisk)}
+              onProjectionSelect={onRiskProjectionSelect}
+              map={mapReady ? mapRef.current : null}
+              leaflet={mapReady ? leafletRef.current : null}
+            />
+            <RouteLayerOverlay
+              routes={routes}
+              visibleTypes={visibleRouteTypes}
+              map={mapReady ? mapRef.current : null}
+              leaflet={mapReady ? leafletRef.current : null}
+            />
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-slate-950/90 to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-950/90 to-transparent" />
+          </>
+        }
+        globe={
+          <GlobeView
+            active={isGlobeMode}
+            events={visibleEvents}
+            demoEvents={visibleDemoEvents}
+            externalEvents={visibleExternalEvents}
+            onSelectEvent={onEventSelect}
+            onSelectExternalEvent={onExternalEventSelect}
+            onExitGlobe={exitGlobeMode}
+          />
+        }
+      />
+      {isGlobeMode && (
+        <button
+          type="button"
+          onClick={exitGlobeMode}
+          onMouseDown={exitGlobeMode}
+          onTouchEnd={exitGlobeMode}
+          className="absolute right-4 top-4 z-[70] min-h-10 border border-cyan-300/35 bg-slate-950/90 px-3 py-2 text-xs font-bold uppercase text-cyan-100 shadow-lg shadow-black/30 backdrop-blur-xl transition hover:bg-cyan-300/15"
+        >
+          Salir de Orbit
+        </button>
+      )}
       {mapError && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/95 p-6">
           <div className="max-w-sm border border-amber-300/25 bg-amber-400/10 p-4 text-center">
@@ -474,21 +569,6 @@ export default function OperationalMap({
           </div>
         </div>
       )}
-      <RiskProjectionOverlay
-        projections={riskProjections}
-        visible={Boolean(layerSettings.weatherRisk)}
-        onProjectionSelect={onRiskProjectionSelect}
-        map={mapReady ? mapRef.current : null}
-        leaflet={mapReady ? leafletRef.current : null}
-      />
-      <RouteLayerOverlay
-        routes={routes}
-        visibleTypes={visibleRouteTypes}
-        map={mapReady ? mapRef.current : null}
-        leaflet={mapReady ? leafletRef.current : null}
-      />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-slate-950/90 to-transparent" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-950/90 to-transparent" />
     </div>
   );
 }

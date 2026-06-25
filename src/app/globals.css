@@ -170,6 +170,28 @@ html {
   width: 100%;
 }
 
+.argus-orbit {
+  background:
+    radial-gradient(circle at 50% 45%, rgba(34, 211, 238, 0.12), transparent 38%),
+    radial-gradient(circle at 50% 50%, rgba(15, 23, 42, 0.92), #020617 68%);
+  isolation: isolate;
+}
+
+.argus-orbit canvas {
+  display: block;
+  height: 100% !important;
+  outline: none;
+  touch-action: none;
+  width: 100% !important;
+}
+
+.argus-orbit-active {
+  border-color: rgba(34, 211, 238, 0.32);
+  box-shadow:
+    0 0 0 1px rgba(34, 211, 238, 0.1),
+    0 28px 80px rgba(0, 0, 0, 0.55);
+}
+
 .argus-map-tactical .argus-leaflet-map .leaflet-tile-pane,
 .argus-map-satellite .argus-leaflet-map .leaflet-tile-pane {
   filter: invert(1) hue-rotate(180deg) brightness(0.72) contrast(1.15) saturate(0.75);
@@ -187,6 +209,17 @@ html {
   background: rgba(0, 0, 0, 0.55);
   color: rgba(255, 255, 255, 0.65);
   font-size: 10px;
+}
+
+.argus-leaflet-map .leaflet-top.leaflet-left {
+  margin-left: max(0.75rem, env(safe-area-inset-left));
+  margin-top: calc(3.75rem + env(safe-area-inset-top));
+}
+
+@media (max-width: 640px) {
+  .argus-leaflet-map .leaflet-top.leaflet-left {
+    margin-top: calc(14rem + env(safe-area-inset-top));
+  }
 }
 
 .argus-leaflet-map .leaflet-div-icon,
