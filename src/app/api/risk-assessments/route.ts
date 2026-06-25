@@ -36,6 +36,88 @@ function dateIso(value: Date | null | undefined) {
   return value?.toISOString() ?? new Date().toISOString();
 }
 
+function jsonArray(value: Prisma.JsonValue | null): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function mapStoredAssessment(assessment: {
+  id: string;
+  riskType: string;
+  status: string;
+  probabilityBand: string;
+  probabilityScore: number;
+  confidence: number;
+  severity: string;
+  title: string;
+  summary: string;
+  recommendedAction: string;
+  timeframe: string | null;
+  relatedExternalEventIds: Prisma.JsonValue;
+  evidence: Prisma.JsonValue;
+  createdAt: Date;
+  updatedAt: Date;
+  nextReviewAt: Date | null;
+  metadata: Prisma.JsonValue | null;
+}): ArgusRiskAssessment {
+  const metadata = jsonObject(assessment.metadata);
+
+  return {
+    ...(metadata as Partial<ArgusRiskAssessment>),
+    id: assessment.id,
+    riskType: assessment.riskType as ArgusRiskAssessment["riskType"],
+    status: assessment.status as ArgusRiskAssessment["status"],
+    probabilityBand:
+      assessment.probabilityBand as ArgusRiskAssessment["probabilityBand"],
+    probabilityScore: assessment.probabilityScore,
+    confidence: assessment.confidence,
+    severity: assessment.severity,
+    title: assessment.title,
+    summary: assessment.summary,
+    recommendedAction: assessment.recommendedAction,
+    timeframe: assessment.timeframe ?? "",
+    relatedExternalEventIds: jsonArray(assessment.relatedExternalEventIds).map(String),
+    evidence: jsonArray(assessment.evidence) as ArgusRiskAssessment["evidence"],
+    createdAt: assessment.createdAt.toISOString(),
+    updatedAt: assessment.updatedAt.toISOString(),
+    nextReviewAt: assessment.nextReviewAt?.toISOString(),
+  };
+}
+
+function assessmentMatchesQuery(
+  assessment: ArgusRiskAssessment,
+  query: {
+    externalEventId?: string;
+    relatedExternalEventId?: string;
+    externalId?: string;
+    reportId?: string;
+    sourceId?: string;
+    riskType?: string;
+  }
+) {
+  if (query.riskType && assessment.riskType !== query.riskType) return false;
+
+  const relatedIds = new Set(assessment.relatedExternalEventIds);
+  const targetIds = [
+    query.externalEventId,
+    query.relatedExternalEventId,
+    query.externalId,
+    query.reportId,
+  ].filter(Boolean) as string[];
+
+  if (targetIds.length > 0 && !targetIds.some((id) => relatedIds.has(id))) {
+    return false;
+  }
+
+  if (
+    query.sourceId &&
+    !assessment.evidence.some((evidence) => evidence.sourceId === query.sourceId)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 function normalizePersistedEvent(event: {
   id: string;
   sourceId: string;
@@ -284,11 +366,47 @@ async function persistAssessment(assessment: ArgusRiskAssessment) {
 }
 
 export async function GET(request: NextRequest) {
-  await seedChileHazardSourceRegistry();
-
   const riskType = request.nextUrl.searchParams.get("riskType")?.trim();
   const sourceId = request.nextUrl.searchParams.get("sourceId")?.trim();
+  const externalEventId = request.nextUrl.searchParams
+    .get("externalEventId")
+    ?.trim();
+  const relatedExternalEventId = request.nextUrl.searchParams
+    .get("relatedExternalEventId")
+    ?.trim();
+  const externalId = request.nextUrl.searchParams.get("externalId")?.trim();
+  const reportId = request.nextUrl.searchParams.get("reportId")?.trim();
   const limit = parseLimit(request.nextUrl.searchParams.get("limit"));
+  const isEventSpecificQuery = Boolean(
+    externalEventId || relatedExternalEventId || externalId || reportId
+  );
+
+  if (isEventSpecificQuery) {
+    const storedAssessments = await prisma.riskAssessment.findMany({
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      take: Math.max(50, limit),
+    });
+    const assessments = storedAssessments
+      .map(mapStoredAssessment)
+      .filter((assessment) =>
+        assessmentMatchesQuery(assessment, {
+          externalEventId,
+          relatedExternalEventId,
+          externalId,
+          reportId,
+          sourceId,
+          riskType,
+        })
+      )
+      .slice(0, limit);
+
+    return NextResponse.json({
+      count: assessments.length,
+      assessments,
+    });
+  }
+
+  await seedChileHazardSourceRegistry();
 
   const dbEvents = await prisma.externalEvent.findMany({
     where: {

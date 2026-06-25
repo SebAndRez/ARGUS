@@ -12,6 +12,11 @@
 
 - Confirm `/api/events` returns a successful response.
 - Confirm `/api/ingest/status` returns a successful response.
+- Confirm `/api/risk-assessments?limit=3` returns a controlled response.
+- Confirm `/api/knowledge/facts?hazardType=tsunami&country=Chile` returns a
+  controlled response.
+- Confirm `/api/knowledge/documents?hazardType=tsunami&country=Chile` returns a
+  controlled response.
 - Allow GPS and confirm the location state changes.
 - Deny GPS and confirm ARGUS uses the fallback location.
 - Confirm `/app` shows a visible error and retry action if the map cannot load.
@@ -37,6 +42,10 @@
 - Confirm the nearby events tray remains usable.
 - Confirm marker symbols remain readable: earthquake diamond, tsunami triangle,
   thermal/fire glyph, citizen report circle, camera glyph and user ring.
+- Open a USGS/GDACS/NOAA/FIRMS event and confirm **Analisis ARGUS** appears.
+- Open a citizen report and confirm **Verificacion ARGUS** appears when there is
+  no active assessment.
+- Confirm the analysis block does not cover SOS, Report or the close control.
 
 ## Mobile layout
 
@@ -54,3 +63,12 @@
   landscape, with the close button visible.
 - Confirm ReliefWeb is not shown as an active UI layer while the endpoint remains
   available for future work.
+- Confirm `/app` without session shows only a compact `Login` button.
+- Confirm the `Login` button opens `/login`.
+- Confirm `/login` shows local login, `Continuar con Google` and `Crear cuenta`.
+- Confirm Google start redirects to Google or returns a controlled missing-config
+  message.
+- Confirm duplicate RUT/document registration is rejected.
+- Confirm SOS and Report are aligned in a single bottom-right action stack.
+- Confirm on 390x844: HUD sits with safe margins, the toolbar is higher,
+  Prediccion sits below controls and Clima does not overlap it.

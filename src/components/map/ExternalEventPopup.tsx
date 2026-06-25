@@ -4,6 +4,7 @@ import type { ArgusNormalizedEvent } from "@/types/ingestion";
 import type { ArgusCorrelatedIncident } from "@/types/correlation";
 import { formatLocalAndUtcTime } from "@/lib/formatDateTime";
 import { formatNasaFirmsConfidence } from "@/lib/nasaFirmsLabels";
+import ArgusEventAnalysisBlock from "@/components/risk/ArgusEventAnalysisBlock";
 import {
   classifySeismicEvent,
   estimateMercalliFromMagnitude,
@@ -261,6 +262,15 @@ export default function ExternalEventPopup({
               <p className="mt-2 text-sm leading-6 text-slate-100">{event.recommendedAction}</p>
             </div>
           )}
+
+          <ArgusEventAnalysisBlock
+            externalEventId={event.id}
+            sourceId={event.sourceId}
+            externalId={event.externalId}
+            eventKind={event.category}
+            title={event.title}
+            compact
+          />
 
           {correlations.length > 0 && (
             <section className="border border-cyan-300/20 bg-cyan-400/8 p-4">

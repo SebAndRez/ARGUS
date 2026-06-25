@@ -512,9 +512,28 @@ Capacidades iniciales:
 - contexto historico/doctrinal para Chile y doctrina general de desastres;
 - APIs `/api/risk-assessments`, `/api/knowledge/facts` y
   `/api/knowledge/documents`;
-- panel **Prediccion ARGUS** en `/app`.
+- panel **Prediccion ARGUS** en `/app`;
+- bloque **Analisis ARGUS** dentro del detalle de cada evento, reporte o fuente
+  externa relevante.
 
 La historia y doctrina elevan vigilancia, no confirman eventos actuales.
+
+## Auth And Identity
+
+ARGUS mantiene login local demo y agrega Google/Gmail como proveedor opcional de
+identidad. Google se usa solo para autenticar `openid`, `email` y `profile`; no
+lee correos ni solicita permisos de Gmail API.
+
+La identidad civil sigue separada:
+
+- `googleSub` identifica la cuenta Google;
+- `governmentIdHash` identifica documento/RUT unico por persona;
+- el documento/RUT debe almacenarse como hash o mecanismo seguro equivalente;
+- Google no reemplaza la regla de una persona real = una cuenta validada.
+
+La entrada desde el mapa debe ser limpia: un boton compacto **Login** abre
+`/login`, donde el usuario puede iniciar sesion o crear cuenta. SOS mantiene
+prioridad visual y operativa.
 
 ## Estado actual
 
@@ -525,6 +544,7 @@ La implementación actual incluye:
 - selector de mapa sin API keys;
 - eventos, SOS y reportes;
 - detalle de evento y verificación local;
+- Analisis ARGUS por evento con evidencia, confianza y accion recomendada;
 - fuentes visuales demo;
 - capa de camaras publicas en vivo con embed seguro y fallback externo;
 - popup de fuentes;
@@ -537,7 +557,7 @@ La implementación actual incluye:
 - ingesta de viento y clima MET Norway por coordenada;
 - scaffold NASA FIRMS configurable para focos térmicos MODIS/VIIRS;
 - dashboard operativo local;
-- Prisma con Supabase PostgreSQL y autenticación demo existentes.
+- Prisma con Supabase PostgreSQL y autenticacion demo/Google opcional.
 - Persistencia PostgreSQL de eventos externos, corridas de ingesta y base de
   correlaciones.
 - UX móvil operacional con vistas de mapa limpio, paneles y capas.

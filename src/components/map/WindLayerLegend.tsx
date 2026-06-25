@@ -45,7 +45,7 @@ export default function WindLayerLegend({
     : selectedProjection?.confidence ?? observation.confidence;
 
   return (
-    <aside className="pointer-events-none fixed left-4 top-56 z-40 hidden w-72 border border-amber-300/20 bg-slate-950/90 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl md:block">
+    <aside className="argus-weather-panel pointer-events-none fixed z-40 hidden w-72 border border-amber-300/20 bg-slate-950/90 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl md:block">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[0.62rem] font-semibold uppercase tracking-[0.2em] text-amber-300/90">

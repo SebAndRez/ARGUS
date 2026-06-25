@@ -1322,7 +1322,7 @@ export default function AppPage() {
       )}
 
       {displayMode === "command" && visibleWidgets.hud && (
-      <div className="argus-safe-top pointer-events-auto fixed left-1/2 z-40 w-[calc(100%-1.5rem)] max-w-6xl -translate-x-1/2">
+      <div className="argus-top-hud-shell pointer-events-auto fixed z-40 max-w-6xl">
         <ArgusOperationalHUD
           mode="citizen"
           role="civil"
@@ -1489,14 +1489,19 @@ export default function AppPage() {
       )}
 
       {!sessionLoading && !sessionUser ? (
-        <div className="fixed bottom-32 left-4 z-40 rounded-3xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 backdrop-blur-xl shadow-lg shadow-amber-900/20">
-          Inicia sesión en <a href="/login" className="font-semibold text-white underline">/login</a> para crear reportes y SOS.
-        </div>
+        <a
+          href="/login"
+          className="argus-login-button pointer-events-auto fixed z-[56] inline-flex min-h-9 items-center justify-center rounded-md border border-cyan-300/25 bg-slate-950/92 px-3 text-xs font-bold uppercase tracking-[0.12em] text-cyan-100 shadow-xl shadow-black/35 backdrop-blur-xl transition hover:border-cyan-200/60 hover:text-white"
+        >
+          Login
+        </a>
       ) : null}
       </div>
 
-      <FloatingSOSButton disabled={!canSOS} onClick={() => setIsHelpOpen(true)} />
-      <FloatingReportButton disabled={!canReport} onClick={() => setIsReportOpen(true)} />
+      <div className="argus-action-stack pointer-events-auto fixed z-50">
+        <FloatingSOSButton disabled={!canSOS} onClick={() => setIsHelpOpen(true)} />
+        <FloatingReportButton disabled={!canReport} onClick={() => setIsReportOpen(true)} />
+      </div>
 
       {displayMode === "command" && visibleWidgets.nearby && (
       <div className="contents">

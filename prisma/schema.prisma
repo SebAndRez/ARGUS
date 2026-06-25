@@ -13,7 +13,12 @@ model User {
   name             String
   email            String         @unique
   phone            String?
-  governmentIdHash String         @unique
+  governmentIdHash String?        @unique
+  googleSub        String?        @unique
+  avatarUrl        String?
+  emailVerifiedAt  DateTime?
+  authProvider     String?        @default("local")
+  lastLoginAt      DateTime?
   publicAlias      String
   role             String         @default("CITIZEN")
   accountStatus    String         @default("ACTIVE")

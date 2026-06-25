@@ -19,6 +19,7 @@ import AlertVerificationActions from "@/components/ui/AlertVerificationActions";
 import ConfidenceBlock from "@/components/ui/ConfidenceBlock";
 import RecommendedActionBlock from "@/components/ui/RecommendedActionBlock";
 import SourceTypeBadge from "@/components/ui/SourceTypeBadge";
+import ArgusEventAnalysisBlock from "@/components/risk/ArgusEventAnalysisBlock";
 import type {
   AlertVerificationAction,
   CrisisEvent,
@@ -270,6 +271,16 @@ export default function EventDetailPanel({
             )}
           </section>
         )}
+
+        <section className="px-5 py-5 sm:px-6">
+          <ArgusEventAnalysisBlock
+            eventId={event.id}
+            reportId={event.type === "REPORT" || event.type === "SOS" ? event.id : undefined}
+            eventKind={event.type === "REPORT" ? "citizen_report" : event.type}
+            title={event.title}
+            compact
+          />
+        </section>
 
         <section className="grid gap-3 px-5 py-5 sm:px-6">
           <section className="argus-calm-panel rounded-lg border border-white/10 p-4">

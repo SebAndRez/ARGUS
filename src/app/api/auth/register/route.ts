@@ -16,17 +16,16 @@ export async function POST(req: Request) {
   }
 
   const governmentIdHash = generateGovernmentIdHash(governmentId);
-  const existing = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { email },
-        { governmentIdHash },
-      ],
-    },
-  });
+  const existingEmail = await prisma.user.findUnique({ where: { email } });
+  if (existingEmail) {
+    return NextResponse.json({ error: "Ya existe una cuenta con este email." }, { status: 409 });
+  }
 
-  if (existing) {
-    return NextResponse.json({ error: "Ya existe una cuenta con este email o documento." }, { status: 409 });
+  const existingGovernmentId = await prisma.user.findUnique({
+    where: { governmentIdHash },
+  });
+  if (existingGovernmentId) {
+    return NextResponse.json({ error: "Este RUT ya esta registrado." }, { status: 409 });
   }
 
   const publicAlias = formatPublicAlias(name);

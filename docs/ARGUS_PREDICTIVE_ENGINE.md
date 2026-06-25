@@ -50,3 +50,18 @@ historico/doctrinal.
 - Auditoria detallada de reglas y umbrales.
 - Comparacion historica de falsos positivos/falsos negativos.
 - Sintesis con IA citando fuentes y con revision humana.
+
+## Analisis Por Evento
+
+El detalle de cada reporte ciudadano, SOS, alerta interna o evento externo puede
+mostrar un bloque **Analisis ARGUS** bajo demanda. El bloque consulta
+`/api/risk-assessments` solo cuando el usuario abre el detalle, para no cargar
+analisis de todos los marcadores al iniciar el mapa.
+
+El bloque muestra hipotesis, estado, probabilidad, confianza, evidencia, accion
+recomendada y contexto historico/doctrinal cuando existe. En reportes ciudadanos
+sin assessment, ARGUS muestra una verificacion prudente: el reporte requiere
+contraste con fuentes oficiales, camaras o reportes cercanos.
+
+El contexto historico no confirma eventos actuales. Las fuentes oficiales tienen
+prioridad sobre doctrina o antecedentes.
