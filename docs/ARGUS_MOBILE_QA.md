@@ -19,11 +19,16 @@
 ## Map workflow
 
 - Confirm the map loads and supports pan and zoom.
+- Zoom out to global level and confirm ARGUS Orbit appears.
+- Confirm ARGUS Orbit can be rotated with touch.
+- Confirm zooming in or using the exit control returns to the 2D map.
 - Open the layer panel and scroll through every control.
 - Activate visual sources and open a popup.
 - Activate routes and climate/risk.
 - Activate NASA FIRMS and open a thermal event.
 - Confirm the nearby events tray remains usable.
+- Confirm marker symbols remain readable: earthquake diamond, tsunami triangle,
+  thermal/fire glyph, citizen report circle, camera glyph and user ring.
 
 ## Mobile layout
 
@@ -36,3 +41,6 @@
 - Confirm SOS and Report remain tappable above the bottom safe area.
 - Confirm the layer panel does not cover the entire viewport.
 - Confirm report and SOS forms scroll when the keyboard is open.
+- Confirm widgets can be hidden and restored individually from the module rail.
+- Confirm ReliefWeb is not shown as an active UI layer while the endpoint remains
+  available for future work.

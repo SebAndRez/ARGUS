@@ -509,6 +509,25 @@ La implementación actual incluye:
 - ReliefWeb como contexto humanitario Tier 1 condicionado a
   `RELIEFWEB_APP_NAME`.
 
+## ARGUS Orbit And Map Symbols
+
+ARGUS Orbit is the global 3D view shown after the user zooms out beyond the
+last useful 2D tactical map level. Orbit keeps the visual language dark,
+operational and continuous with the 2D map. The user can return to 2D through
+the exit control or by zooming in.
+
+ARGUS Map Symbol System defines the map grammar:
+
+- shape/icon = event type;
+- color = severity or priority;
+- border = confidence or source quality;
+- pulse = active or recent event;
+- size = operational importance;
+- perimeter/area = estimated, confirmed or ARGUS hypothesis zone.
+
+ReliefWeb remains in the codebase and endpoints, but is temporarily hidden from
+the main UI until ingest reliability and contextual presentation are improved.
+
 ReliefWeb aporta reportes de impacto y respuesta humanitaria. Sus documentos
 no siempre incluyen coordenadas confiables, por lo que ARGUS los presenta en
 un panel contextual y no inventa marcadores en el mapa.

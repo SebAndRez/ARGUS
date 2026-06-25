@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import type { CrisisEvent } from "@/types/crisis";
 import type { UserLocationStatus } from "@/types/crisis";
 import type { VisualSource } from "@/types/visualSource";
@@ -9,15 +8,16 @@ import type { RiskProjection } from "@/types/weatherRisk";
 import type { ArgusRoute, BaseMapType, RouteType } from "@/types/map";
 import type { ArgusNormalizedEvent } from "@/types/ingestion";
 import { clusterEventsByGrid } from "@/lib/simpleEventClustering";
-import EventClusterMarker from "@/components/map/EventClusterMarker";
-import ExternalEventMarker from "@/components/map/ExternalEventMarker";
 import GlobeView from "@/components/map/GlobeView";
-import IncidentMarker from "@/components/map/IncidentMarker";
 import MapToGlobeTransition from "@/components/map/MapToGlobeTransition";
 import RiskProjectionOverlay from "@/components/map/RiskProjectionOverlay";
 import RouteLayerOverlay from "@/components/map/RouteLayerOverlay";
-import UserLocationMarker from "@/components/map/UserLocationMarker";
-import VisualSourceMarker from "@/components/map/VisualSourceMarker";
+import {
+  createArgusDivIcon,
+  type ArgusMapConfidence,
+  type ArgusMapEventKind,
+  type ArgusMapSeverity,
+} from "@/lib/mapSymbols/argusMapSymbols";
 
 interface MapLayerSettings {
   reports: boolean;
@@ -67,8 +67,8 @@ interface Props {
 }
 
 const DEFAULT_CENTER: [number, number] = [-33.4489, -70.6693];
-const GLOBE_ZOOM_THRESHOLD = 3;
-const MAP_RETURN_ZOOM = GLOBE_ZOOM_THRESHOLD + 1;
+const GLOBE_ZOOM_THRESHOLD = 2;
+const MAP_RETURN_ZOOM = GLOBE_ZOOM_THRESHOLD + 2;
 
 const isEventVisible = (event: CrisisEvent, layers: MapLayerSettings) => {
   if (event.status === "RESOLVED" && !layers.resolved) return false;
@@ -78,6 +78,76 @@ const isEventVisible = (event: CrisisEvent, layers: MapLayerSettings) => {
   if (event.type === "REPORT" && !layers.reports) return false;
   if (event.status !== "RESOLVED" && event.severity !== "CRITICAL" && !layers.reports && event.type === "REPORT") return false;
   return true;
+};
+
+const toMapSeverity = (value: string | null | undefined): ArgusMapSeverity => {
+  const normalized = value?.toLowerCase();
+  if (normalized === "critical") return "critical";
+  if (normalized === "high") return "high";
+  if (normalized === "medium") return "medium";
+  if (normalized === "low") return "low";
+  return "info";
+};
+
+const getInternalEventKind = (event: CrisisEvent): ArgusMapEventKind => {
+  if (event.type === "SOS") return "force_report";
+  if (event.type === "REPORT") return "citizen_report";
+  if (event.category?.toLowerCase().includes("fire")) return "fire";
+  if (event.category?.toLowerCase().includes("weather")) return "weather";
+  return "risk_assessment";
+};
+
+const getExternalEventKind = (event: ArgusNormalizedEvent): ArgusMapEventKind => {
+  if (event.sourceId === "usgs_earthquake" || event.category === "earthquake") {
+    return "earthquake";
+  }
+  if (event.sourceId === "noaa_tsunami" || event.category === "tsunami") {
+    return "tsunami";
+  }
+  if (
+    event.sourceId === "nasa_firms" ||
+    event.category === "wildfire" ||
+    event.category === "thermal_anomaly"
+  ) {
+    return "fire";
+  }
+  if (["weather", "cyclone", "flood"].includes(event.category)) return "weather";
+  return "official_source";
+};
+
+const getExternalConfidence = (
+  event: ArgusNormalizedEvent
+): ArgusMapConfidence => {
+  if (event.sourceId === "usgs_earthquake" || event.sourceId === "noaa_tsunami") {
+    return "official";
+  }
+  if (event.sourceId === "gdacs") return "multi_source";
+  if (event.sourceId === "nasa_firms") return "raw";
+  return event.confidence >= 85 ? "verified" : "unknown";
+};
+
+const getVisualSourceKind = (source: VisualSource): ArgusMapEventKind => {
+  if (
+    source.category === "open_public_camera" ||
+    source.category === "commercial_webcam" ||
+    source.category === "media_stream" ||
+    source.category === "citizen_stream"
+  ) {
+    return "live_camera";
+  }
+  return "official_source";
+};
+
+const getVisualSourceConfidence = (source: VisualSource): ArgusMapConfidence => {
+  if (source.category === "argus_verified_sensor") return "verified";
+  if (
+    source.category === "governmental_osint" ||
+    source.category === "institutional_camera"
+  ) {
+    return "official";
+  }
+  if (source.category === "unverified_source") return "raw";
+  return "reported";
 };
 
 export default function OperationalMap({
@@ -110,6 +180,10 @@ export default function OperationalMap({
   const visualSourceLayerRef = useRef<any>(null);
   const userLayerRef = useRef<any>(null);
   const suppressGlobeModeRef = useRef(false);
+  const lastUsefulMapViewRef = useRef<{
+    center: [number, number];
+    zoom: number;
+  }>({ center: DEFAULT_CENTER, zoom: 11.2 });
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [isGlobeMode, setIsGlobeMode] = useState(false);
@@ -192,13 +266,14 @@ export default function OperationalMap({
         const map = L.map(mapContainerRef.current, {
           center: DEFAULT_CENTER,
           zoom: 11.2,
-          zoomControl: true,
+          zoomControl: false,
           worldCopyJump: true,
         });
 
         L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: "© OpenStreetMap contributors",
         }).addTo(map);
+        L.control.zoom({ position: "bottomleft" }).addTo(map);
 
         eventLayerRef.current = L.layerGroup().addTo(map);
         demoEventLayerRef.current = L.layerGroup().addTo(map);
@@ -210,9 +285,21 @@ export default function OperationalMap({
         setMapReady(true);
         setIsGlobeMode(map.getZoom() <= GLOBE_ZOOM_THRESHOLD);
 
+        const rememberUsefulView = () => {
+          const zoom = map.getZoom();
+          if (zoom > GLOBE_ZOOM_THRESHOLD) {
+            const center = map.getCenter();
+            lastUsefulMapViewRef.current = {
+              center: [center.lat, center.lng],
+              zoom,
+            };
+          }
+        };
+
         const handleZoomEnd = () => {
           const zoom = map.getZoom();
           if (zoom > GLOBE_ZOOM_THRESHOLD) {
+            rememberUsefulView();
             suppressGlobeModeRef.current = false;
             setIsGlobeMode(false);
             return;
@@ -223,6 +310,8 @@ export default function OperationalMap({
           }
           setIsGlobeMode(true);
         };
+        map.on("zoomstart", rememberUsefulView);
+        map.on("movestart", rememberUsefulView);
         map.on("zoomend", handleZoomEnd);
 
         window.requestAnimationFrame(() => {
@@ -302,18 +391,16 @@ export default function OperationalMap({
     userLayer?.clearLayers();
 
     visibleEvents.forEach((event) => {
-      const markerIcon = L.divIcon({
-        html: renderToStaticMarkup(
-          <IncidentMarker
-            severity={event.severity}
-            type={event.type}
-            isSelected={event.id === selectedEventId}
-          />
-        ),
-        className: "leaflet-div-icon bg-transparent p-0",
-        iconSize: [56, 56],
-        iconAnchor: [28, 28],
+      const iconDefinition = createArgusDivIcon({
+        kind: getInternalEventKind(event),
+        severity: toMapSeverity(event.severity),
+        confidence: event.type === "REPORT" ? "reported" : "verified",
+        label: event.type === "SOS" ? "SOS" : event.type === "ALERT" ? "A" : "R",
+        title: event.title,
+        active: event.status !== "RESOLVED",
+        selected: event.id === selectedEventId,
       });
+      const markerIcon = L.divIcon(iconDefinition);
 
       const marker = L.marker([event.latitude, event.longitude], {
         icon: markerIcon,
@@ -328,17 +415,15 @@ export default function OperationalMap({
       const primaryEvent = cluster.events[0];
       if (!primaryEvent) return;
 
-      const clusterIcon = L.divIcon({
-        html: renderToStaticMarkup(
-          <EventClusterMarker
-            cluster={cluster}
-            isSelected={cluster.events.some((event) => event.id === selectedEventId)}
-          />
-        ),
-        className: "leaflet-div-icon bg-transparent p-0",
-        iconSize: [44, 44],
-        iconAnchor: [22, 22],
-      });
+      const clusterIcon = L.divIcon(createArgusDivIcon({
+        kind: "citizen_report",
+        severity: toMapSeverity(cluster.highestSeverity),
+        confidence: "reported",
+        label: String(cluster.count),
+        title: `${cluster.count} reportes demo`,
+        active: cluster.highestSeverity === "CRITICAL" || cluster.highestSeverity === "HIGH",
+        selected: cluster.events.some((event) => event.id === selectedEventId),
+      }));
 
       const marker = L.marker([cluster.latitude, cluster.longitude], {
         icon: clusterIcon,
@@ -366,17 +451,24 @@ export default function OperationalMap({
           typeof event.longitude === "number" ? event.longitude : Number.NaN;
         if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
 
-        const markerIcon = L.divIcon({
-          html: renderToStaticMarkup(
-            <ExternalEventMarker
-              event={event}
-              isSelected={event.id === selectedExternalEventId}
-            />
-          ),
-          className: "argus-external-event-icon leaflet-div-icon bg-transparent p-0",
-          iconSize: [44, 44],
-          iconAnchor: [22, 22],
-        });
+        const markerIcon = L.divIcon(createArgusDivIcon({
+          kind: getExternalEventKind(event),
+          severity: toMapSeverity(event.severity),
+          confidence: getExternalConfidence(event),
+          label:
+            typeof event.rawMagnitude === "number"
+              ? event.rawMagnitude.toFixed(1)
+              : event.sourceId === "nasa_firms"
+                ? "FIR"
+                : event.sourceId === "noaa_tsunami"
+                  ? "TSU"
+                  : event.sourceId === "gdacs"
+                    ? "GD"
+                    : undefined,
+          title: event.title,
+          active: event.severity === "critical" || event.severity === "high",
+          selected: event.id === selectedExternalEventId,
+        }));
 
         const marker = L.marker([latitude, longitude], {
           icon: markerIcon,
@@ -399,14 +491,21 @@ export default function OperationalMap({
       const lng = Number(source.longitude);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
 
-      const markerIcon = L.divIcon({
-        html: renderToStaticMarkup(
-          <VisualSourceMarker source={source} isSelected={source.id === selectedVisualSourceId} />
-        ),
-        className: "argus-visual-source-icon leaflet-div-icon bg-transparent p-0",
-        iconSize: [40, 40],
-        iconAnchor: [20, 20],
-      });
+      const defaultLabel =
+        source.category === "argus_verified_sensor"
+          ? "ARG"
+          : getVisualSourceKind(source) === "live_camera"
+            ? "C"
+            : source.shortCode || source.markerLabel || "I";
+      const markerIcon = L.divIcon(createArgusDivIcon({
+        kind: getVisualSourceKind(source),
+        severity: source.status === "offline" ? "inactive" : "info",
+        confidence: getVisualSourceConfidence(source),
+        label: defaultLabel,
+        title: source.title,
+        active: source.status === "live",
+        selected: source.id === selectedVisualSourceId,
+      }));
 
       const marker = L.marker([lat, lng], {
         icon: markerIcon,
@@ -424,12 +523,14 @@ export default function OperationalMap({
     });
 
     if (layerSettings.user && locationStatus !== "fallback") {
-      const userIcon = L.divIcon({
-        html: renderToStaticMarkup(<UserLocationMarker />),
-        className: "leaflet-div-icon bg-transparent p-0",
-        iconSize: [64, 64],
-        iconAnchor: [32, 32],
-      });
+      const userIcon = L.divIcon(createArgusDivIcon({
+        kind: "user",
+        severity: locationStatus === "granted" ? "info" : "inactive",
+        confidence: locationStatus === "granted" ? "verified" : "unknown",
+        label: "MI",
+        title: "Mi ubicación",
+        active: locationStatus === "granted",
+      }));
       L.marker([location.latitude, location.longitude], {
         icon: userIcon,
       }).addTo(userLayer);
@@ -492,8 +593,11 @@ export default function OperationalMap({
     if (!mapRef.current) {
       return;
     }
-    mapRef.current.setView(mapRef.current.getCenter(), MAP_RETURN_ZOOM, {
-      animate: false,
+    const previousView = lastUsefulMapViewRef.current;
+    const returnZoom = Math.max(previousView.zoom, MAP_RETURN_ZOOM);
+    mapRef.current.setView(previousView.center, returnZoom, {
+      animate: true,
+      duration: 0.35,
     });
     window.requestAnimationFrame(() => {
       setIsGlobeMode(false);
@@ -506,6 +610,12 @@ export default function OperationalMap({
       className={`argus-map-${baseMapType} relative h-full min-h-80 w-full overflow-hidden rounded-lg border border-white/10 bg-slate-950/50 shadow-2xl shadow-black/40 ${
         isGlobeMode ? "argus-orbit-active" : ""
       }`}
+      onWheelCapture={(event) => {
+        if (isGlobeMode && event.deltaY < 0) {
+          event.preventDefault();
+          exitGlobeMode();
+        }
+      }}
     >
       <MapToGlobeTransition
         isGlobeMode={isGlobeMode}

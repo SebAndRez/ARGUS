@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { CrisisEvent } from "@/types/crisis";
 import type { ArgusNormalizedEvent } from "@/types/ingestion";
+import type { ArgusMapEventKind } from "@/lib/mapSymbols/argusMapSymbols";
 
 type GlobeEvent =
   | { kind: "internal"; event: CrisisEvent }
@@ -15,7 +16,7 @@ interface GlobeMarker {
   latitude: number;
   longitude: number;
   severity: "low" | "medium" | "high" | "critical";
-  category: string;
+  kind: ArgusMapEventKind;
   payload: GlobeEvent;
 }
 
@@ -33,10 +34,17 @@ interface Props {
 const GLOBE_RADIUS = 2.45;
 
 const severityColors: Record<GlobeMarker["severity"], number> = {
-  low: 0x38bdf8,
+  low: 0x34d399,
   medium: 0xfacc15,
   high: 0xfb923c,
   critical: 0xf43f5e,
+};
+
+const markerSize: Record<GlobeMarker["severity"], number> = {
+  low: 0.04,
+  medium: 0.052,
+  high: 0.064,
+  critical: 0.078,
 };
 
 const normalizeSeverity = (
@@ -52,6 +60,32 @@ const normalizeSeverity = (
 const toFiniteCoordinate = (value: number | null | undefined) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+};
+
+const getInternalKind = (event: CrisisEvent): ArgusMapEventKind => {
+  if (event.type === "REPORT") return "citizen_report";
+  if (event.type === "SOS") return "force_report";
+  if (event.category?.toLowerCase().includes("fire")) return "fire";
+  if (event.category?.toLowerCase().includes("weather")) return "weather";
+  return "risk_assessment";
+};
+
+const getExternalKind = (event: ArgusNormalizedEvent): ArgusMapEventKind => {
+  if (event.sourceId === "usgs_earthquake" || event.category === "earthquake") {
+    return "earthquake";
+  }
+  if (event.sourceId === "noaa_tsunami" || event.category === "tsunami") {
+    return "tsunami";
+  }
+  if (
+    event.sourceId === "nasa_firms" ||
+    event.category === "wildfire" ||
+    event.category === "thermal_anomaly"
+  ) {
+    return "fire";
+  }
+  if (["weather", "cyclone", "flood"].includes(event.category)) return "weather";
+  return "official_source";
 };
 
 const latLngToVector = (latitude: number, longitude: number, radius: number) => {
@@ -73,14 +107,14 @@ const createEarthTexture = () => {
   if (!ctx) return null;
 
   const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  gradient.addColorStop(0, "#061529");
-  gradient.addColorStop(0.5, "#020817");
-  gradient.addColorStop(1, "#07111f");
+  gradient.addColorStop(0, "#020a15");
+  gradient.addColorStop(0.48, "#01040c");
+  gradient.addColorStop(1, "#03101c");
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.fillStyle = "rgba(14, 116, 144, 0.38)";
-  ctx.strokeStyle = "rgba(103, 232, 249, 0.16)";
+  ctx.fillStyle = "rgba(8, 47, 73, 0.72)";
+  ctx.strokeStyle = "rgba(103, 232, 249, 0.22)";
   ctx.lineWidth = 2;
 
   const drawBlob = (points: Array<[number, number]>) => {
@@ -132,7 +166,7 @@ const createEarthTexture = () => {
     [740, 430],
   ]);
 
-  ctx.strokeStyle = "rgba(34, 211, 238, 0.08)";
+  ctx.strokeStyle = "rgba(34, 211, 238, 0.1)";
   ctx.lineWidth = 1;
   for (let x = 0; x <= canvas.width; x += 64) {
     ctx.beginPath();
@@ -153,6 +187,26 @@ const createEarthTexture = () => {
   return texture;
 };
 
+const createMarkerGeometry = (marker: GlobeMarker) => {
+  const size = markerSize[marker.severity];
+  switch (marker.kind) {
+    case "earthquake":
+      return new THREE.OctahedronGeometry(size * 1.15, 0);
+    case "tsunami":
+      return new THREE.ConeGeometry(size * 1.4, size * 2.4, 3);
+    case "fire":
+      return new THREE.ConeGeometry(size * 1.05, size * 2.8, 8);
+    case "official_source":
+      return new THREE.BoxGeometry(size * 1.5, size * 1.5, size * 1.5);
+    case "live_camera":
+      return new THREE.BoxGeometry(size * 1.7, size * 1.15, size * 1.15);
+    case "force_report":
+      return new THREE.ConeGeometry(size * 1.25, size * 2.1, 5);
+    default:
+      return new THREE.SphereGeometry(size, 14, 14);
+  }
+};
+
 const buildMarkers = (
   events: CrisisEvent[],
   demoEvents: CrisisEvent[],
@@ -170,7 +224,7 @@ const buildMarkers = (
         latitude,
         longitude,
         severity: normalizeSeverity(event.severity),
-        category: event.type,
+        kind: getInternalKind(event),
         payload: { kind: "internal", event },
       };
     })
@@ -188,7 +242,7 @@ const buildMarkers = (
         latitude,
         longitude,
         severity: normalizeSeverity(event.severity),
-        category: event.sourceName,
+        kind: getExternalKind(event),
         payload: { kind: "external", event },
       };
     })
@@ -333,6 +387,12 @@ export default function GlobeView({
     let activePointerId: number | null = null;
 
     const syncMarkers = () => {
+      markerGroup.children.forEach((child) => {
+        const mesh = child as THREE.Mesh;
+        mesh.geometry?.dispose();
+        const material = mesh.material as THREE.Material | undefined;
+        material?.dispose();
+      });
       markerGroup.clear();
       markerMeshes.length = 0;
 
@@ -344,11 +404,7 @@ export default function GlobeView({
           GLOBE_RADIUS + 0.045
         );
         const markerMesh = new THREE.Mesh(
-          new THREE.SphereGeometry(
-            marker.severity === "critical" ? 0.075 : 0.058,
-            18,
-            18
-          ),
+          createMarkerGeometry(marker),
           new THREE.MeshBasicMaterial({
             color,
             transparent: true,
@@ -362,7 +418,7 @@ export default function GlobeView({
 
         const glow = new THREE.Mesh(
           new THREE.SphereGeometry(
-            marker.severity === "critical" ? 0.16 : 0.12,
+            marker.severity === "critical" ? 0.15 : 0.105,
             18,
             18
           ),

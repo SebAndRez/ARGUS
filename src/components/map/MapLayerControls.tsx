@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import MapLegend from "@/components/map/MapLegend";
+import ArgusMapLegend from "@/components/map/ArgusMapLegend";
 import DemoEventFilterControls from "@/components/map/DemoEventFilterControls";
 import type { BaseMapType } from "@/types/map";
 import type {
@@ -84,7 +84,7 @@ const layerGroups: Array<{
       "gdacsAlerts",
       "noaaTsunami",
       "nasaFirms",
-      "reliefWeb",
+      // ReliefWeb temporarily hidden from UI until ingest reliability is fixed.
       "sos",
       "alerts",
       "critical",
@@ -191,11 +191,6 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
       label: "FIRMS",
       enabled: Boolean(layers.nasaFirms),
       available: Object.prototype.hasOwnProperty.call(layers, "nasaFirms"),
-    },
-    {
-      label: "ReliefWeb",
-      enabled: Boolean(layers.reliefWeb),
-      available: Object.prototype.hasOwnProperty.call(layers, "reliefWeb"),
     },
   ].filter((item) => item.available);
 
@@ -357,7 +352,7 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
 
       {supplementalPanel}
 
-      {showLegend && <div className="mt-4"><MapLegend /></div>}
+      {showLegend && <div className="mt-4"><ArgusMapLegend /></div>}
     </div>
   );
 }

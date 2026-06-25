@@ -9,7 +9,6 @@ import MapLayerControls, {
 import EventDetailPanel from "@/components/map/EventDetailPanel";
 import ExternalEventPopup from "@/components/map/ExternalEventPopup";
 import ExternalCorrelationsPanel from "@/components/map/ExternalCorrelationsPanel";
-import ReliefWebContextPanel from "@/components/map/ReliefWebContextPanel";
 import VisualSourcePopup from "@/components/map/VisualSourcePopup";
 import WindLayerLegend from "@/components/map/WindLayerLegend";
 import FloatingSOSButton from "@/components/app/FloatingSOSButton";
@@ -43,7 +42,6 @@ import {
 import type {
   AlertVerificationAction,
   CrisisEvent,
-  SessionUser,
 } from "@/types/crisis";
 import type { VisualSource } from "@/types/visualSource";
 import type {
@@ -93,11 +91,50 @@ const initialLayers = {
 };
 
 const initialEventState: CrisisEvent[] = [];
+const defaultVisibleWidgets = {
+  hud: true,
+  layers: true,
+  weather: true,
+  nearby: true,
+};
 
 export default function AppPage() {
   const [displayMode, setDisplayMode] = useState<
     "command" | "map" | "layers"
-  >("command");
+  >(() => {
+    if (typeof window === "undefined") return "command";
+    try {
+      const storedMode = window.localStorage.getItem("argus-display-mode");
+      if (
+        storedMode === "command" ||
+        storedMode === "map" ||
+        storedMode === "layers"
+      ) {
+        return storedMode;
+      }
+    } catch {
+      return "command";
+    }
+    return "command";
+  });
+  const [visibleWidgets, setVisibleWidgets] = useState(() => {
+    if (typeof window === "undefined") return defaultVisibleWidgets;
+    try {
+      const storedWidgets = window.localStorage.getItem("argus-visible-widgets");
+      if (!storedWidgets) return defaultVisibleWidgets;
+      const parsed = JSON.parse(storedWidgets) as Partial<
+        typeof defaultVisibleWidgets
+      >;
+      return {
+        ...defaultVisibleWidgets,
+        ...Object.fromEntries(
+          Object.entries(parsed).filter(([, value]) => typeof value === "boolean")
+        ),
+      };
+    } catch {
+      return defaultVisibleWidgets;
+    }
+  });
   const [centerRequestKey, setCenterRequestKey] = useState(0);
   const [selectedEvent, setSelectedEvent] = useState<CrisisEvent | null>(null);
   const [selectedVisualSource, setSelectedVisualSource] = useState<VisualSource | null>(null);
@@ -161,14 +198,14 @@ export default function AppPage() {
   const [reliefWebStatus, setReliefWebStatus] = useState<
     "idle" | "loading" | "loaded" | "error"
   >("idle");
-  const [reliefWebErrorMessage, setReliefWebErrorMessage] = useState<
+  const [, setReliefWebErrorMessage] = useState<
     string | null
   >(null);
   const [reliefWebCached, setReliefWebCached] = useState(false);
   const [reliefWebConfigured, setReliefWebConfigured] = useState<
     boolean | null
   >(null);
-  const [reliefWebRetryVersion, setReliefWebRetryVersion] = useState(0);
+  const [reliefWebRetryVersion] = useState(0);
   const reliefWebFetchStartedRef = useRef(false);
   const [metWeather, setMetWeather] = useState<WeatherObservation | null>(null);
   const [metStatus, setMetStatus] = useState<
@@ -198,20 +235,20 @@ export default function AppPage() {
     []
   );
 
-  useEffect(() => {
-    try {
-      const storedMode = window.localStorage.getItem("argus-display-mode");
-      if (
-        storedMode === "command" ||
-        storedMode === "map" ||
-        storedMode === "layers"
-      ) {
-        setDisplayMode(storedMode);
-      }
-    } catch {
-      setDisplayMode("command");
-    }
-  }, []);
+  const setWidgetVisibility = useCallback(
+    (key: keyof typeof visibleWidgets, visible: boolean) => {
+      setVisibleWidgets((current) => {
+        const next = { ...current, [key]: visible };
+        try {
+          window.localStorage.setItem("argus-visible-widgets", JSON.stringify(next));
+        } catch {
+          // Storage can be unavailable in Safari private mode.
+        }
+        return next;
+      });
+    },
+    []
+  );
 
   const selectEvent = useCallback((event: CrisisEvent) => {
     setSelectedVisualSource(null);
@@ -421,21 +458,6 @@ export default function AppPage() {
   const externalCorrelations = useMemo(
     () => correlateExternalEvents(externalEvents),
     [externalEvents]
-  );
-  const relatedReliefWebEventIds = useMemo(
-    () =>
-      reliefWebEvents
-        .filter((reliefEvent) => {
-          const country = reliefEvent.country?.trim().toLowerCase();
-          if (!country || country.length < 3) return false;
-          return externalEvents.some((event) =>
-            [event.country, event.locationName, event.title]
-              .filter(Boolean)
-              .some((value) => value!.toLowerCase().includes(country))
-          );
-        })
-        .map((event) => event.id),
-    [externalEvents, reliefWebEvents]
   );
   const selectedExternalCorrelations = useMemo(() => {
     if (!selectedExternalEvent) return [];
@@ -1003,13 +1025,6 @@ export default function AppPage() {
     reliefWebRetryVersion,
   ]);
 
-  const retryReliefWeb = () => {
-    reliefWebFetchStartedRef.current = false;
-    setReliefWebStatus("idle");
-    setReliefWebErrorMessage(null);
-    setReliefWebRetryVersion((current) => current + 1);
-  };
-
   useEffect(() => {
     if (!layerSettings.weatherRisk) return;
 
@@ -1184,8 +1199,38 @@ export default function AppPage() {
         </button>
       </nav>
 
-      {displayMode === "command" && (
+      <div className="argus-widget-rail pointer-events-auto fixed z-[54] flex max-w-[calc(100%-1rem)] gap-1 overflow-x-auto border border-white/10 bg-slate-950/88 p-1 shadow-xl shadow-black/35 backdrop-blur-xl">
+        {([
+          ["hud", "HUD"],
+          ["layers", "Capas"],
+          ["weather", "Clima"],
+          ["nearby", "Cercanos"],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setWidgetVisibility(key, !visibleWidgets[key])}
+            className={`min-h-8 shrink-0 border px-2.5 text-[0.62rem] font-bold uppercase ${
+              visibleWidgets[key]
+                ? "border-cyan-300/25 bg-cyan-400/12 text-cyan-100"
+                : "border-white/8 bg-white/[0.03] text-slate-500"
+            }`}
+            title={`${visibleWidgets[key] ? "Ocultar" : "Mostrar"} ${label}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {displayMode === "command" && visibleWidgets.hud && (
       <div className="argus-safe-top pointer-events-auto fixed left-1/2 z-40 w-[calc(100%-1.5rem)] max-w-6xl -translate-x-1/2">
+        <button
+          type="button"
+          onClick={() => setWidgetVisibility("hud", false)}
+          className="absolute right-2 top-2 z-10 border border-white/10 bg-slate-950/80 px-2 py-1 text-[0.56rem] font-bold uppercase text-slate-400 hover:text-white"
+        >
+          Ocultar
+        </button>
         <ArgusOperationalHUD
           mode="citizen"
           role="civil"
@@ -1198,7 +1243,15 @@ export default function AppPage() {
         />
       </div>
       )}
-      {displayMode === "command" && (
+      {displayMode === "command" && visibleWidgets.weather && (
+      <div className="contents">
+      <button
+        type="button"
+        onClick={() => setWidgetVisibility("weather", false)}
+        className="argus-weather-hide-button pointer-events-auto fixed z-[46] border border-white/10 bg-slate-950/86 px-2 py-1 text-[0.56rem] font-bold uppercase text-slate-400 shadow-lg shadow-black/25 backdrop-blur-xl hover:text-white"
+      >
+        Ocultar clima
+      </button>
       <WindLayerLegend
         observation={activeWeatherObservation}
         selectedProjection={selectedRiskProjection}
@@ -1209,10 +1262,18 @@ export default function AppPage() {
           layerSettings.nasaFirms ? nasaEvents.length : 0
         }
       />
+      </div>
       )}
 
-      {(displayMode === "command" || displayMode === "layers") && (
+      {(displayMode === "command" || displayMode === "layers") && visibleWidgets.layers && (
       <div className="argus-layer-panel-shell pointer-events-auto fixed z-[45] w-[310px]">
+        <button
+          type="button"
+          onClick={() => setWidgetVisibility("layers", false)}
+          className="absolute right-2 top-2 z-10 border border-white/10 bg-slate-950/80 px-2 py-1 text-[0.56rem] font-bold uppercase text-slate-400 hover:text-white"
+        >
+          Ocultar
+        </button>
         <MapLayerControls
           layers={layerSettings}
           onToggle={toggleLayer}
@@ -1222,15 +1283,7 @@ export default function AppPage() {
           showActiveSummary
           supplementalPanel={
             <>
-              <ReliefWebContextPanel
-                events={reliefWebEvents}
-                status={reliefWebStatus}
-                configured={reliefWebConfigured}
-                cached={reliefWebCached}
-                errorMessage={reliefWebErrorMessage}
-                onRefresh={retryReliefWeb}
-                relatedEventIds={relatedReliefWebEventIds}
-              />
+              {/* ReliefWeb temporarily hidden from UI until ingest reliability is fixed. */}
               <ExternalCorrelationsPanel
                 correlations={externalCorrelations}
                 onSelectEvent={selectExternalEvent}
@@ -1358,7 +1411,15 @@ export default function AppPage() {
       <FloatingSOSButton disabled={!canSOS} onClick={() => setIsHelpOpen(true)} />
       <FloatingReportButton disabled={!canReport} onClick={() => setIsReportOpen(true)} />
 
-      {displayMode === "command" && (
+      {displayMode === "command" && visibleWidgets.nearby && (
+      <div className="contents">
+      <button
+        type="button"
+        onClick={() => setWidgetVisibility("nearby", false)}
+        className="argus-nearby-hide-button pointer-events-auto fixed z-[51] border border-white/10 bg-slate-950/86 px-2 py-1 text-[0.56rem] font-bold uppercase text-slate-400 shadow-lg shadow-black/25 backdrop-blur-xl hover:text-white"
+      >
+        Ocultar cercanos
+      </button>
       <NearbyEventsSheet
         events={nearbyEventPool}
         latitude={location.latitude}
@@ -1370,6 +1431,7 @@ export default function AppPage() {
         }
         demoTotalCount={layerSettings.demoReports ? demoEvents.length : undefined}
       />
+      </div>
       )}
 
       {selectedEvent && (

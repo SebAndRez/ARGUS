@@ -125,6 +125,27 @@ html {
   top: max(0.5rem, env(safe-area-inset-top));
 }
 
+.argus-widget-rail {
+  left: max(0.5rem, env(safe-area-inset-left));
+  top: calc(11.75rem + env(safe-area-inset-top));
+  scrollbar-width: none;
+}
+
+.argus-widget-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.argus-weather-hide-button {
+  bottom: calc(16.75rem + env(safe-area-inset-bottom));
+  left: max(1rem, env(safe-area-inset-left));
+}
+
+.argus-nearby-hide-button {
+  bottom: calc(11.8rem + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+}
+
 .argus-hud {
   border-color: rgba(45, 212, 191, 0.18);
   background-image: radial-gradient(circle at top left, rgba(45, 212, 191, 0.08), transparent 36%), radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.05), transparent 28%);
@@ -211,21 +232,96 @@ html {
   font-size: 10px;
 }
 
-.argus-leaflet-map .leaflet-top.leaflet-left {
+.argus-leaflet-map .leaflet-bottom.leaflet-left {
+  margin-bottom: calc(15rem + env(safe-area-inset-bottom));
   margin-left: max(0.75rem, env(safe-area-inset-left));
-  margin-top: calc(3.75rem + env(safe-area-inset-top));
 }
 
-@media (max-width: 640px) {
-  .argus-leaflet-map .leaflet-top.leaflet-left {
-    margin-top: calc(14rem + env(safe-area-inset-top));
-  }
+.argus-leaflet-map .leaflet-control-zoom {
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.argus-leaflet-map .leaflet-control-zoom a {
+  background: rgba(2, 6, 23, 0.92);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  color: rgba(207, 250, 254, 0.95);
+}
+
+.argus-leaflet-map .leaflet-control-zoom a:hover {
+  background: rgba(8, 47, 73, 0.96);
+  color: white;
 }
 
 .argus-leaflet-map .leaflet-div-icon,
 .argus-leaflet-map .leaflet-marker-icon {
   background: transparent !important;
   border: none !important;
+}
+
+.argus-symbol-leaflet-icon {
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.argus-symbol-marker {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+.argus-symbol-core {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.argus-symbol-core svg {
+  display: block;
+  height: 72%;
+  width: 72%;
+}
+
+.argus-symbol-label {
+  bottom: 2px;
+  color: white;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.52rem;
+  font-weight: 900;
+  left: 50%;
+  line-height: 1;
+  position: absolute;
+  text-shadow: 0 1px 4px rgba(2, 6, 23, 0.9);
+  transform: translateX(-50%);
+}
+
+.argus-symbol-pulse {
+  animation: argus-symbol-pulse 1.9s ease-out infinite;
+  border-radius: 999px;
+  inset: 2px;
+  opacity: 0.3;
+  position: absolute;
+}
+
+@keyframes argus-symbol-pulse {
+  0% {
+    opacity: 0.3;
+    transform: scale(0.72);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .argus-symbol-pulse {
+    animation: none;
+  }
 }
 
 .argus-leaflet-map .argus-visual-source-icon,
@@ -269,6 +365,10 @@ html {
 }
 
 @media (max-width: 639px) {
+  .argus-widget-rail {
+    top: calc(4rem + env(safe-area-inset-top));
+  }
+
   .argus-layer-panel-shell {
     bottom: auto;
     max-height: 38vh;
