@@ -563,6 +563,9 @@ La implementación actual incluye:
 - UX móvil operacional con vistas de mapa limpio, paneles y capas.
 - ReliefWeb como contexto humanitario Tier 1 condicionado a
   `RELIEFWEB_APP_NAME`.
+- Capa defensiva de zonas de conflicto/crisis con GDELT como senal abierta,
+  ReliefWeb como contexto humanitario, Liveuamap solo como referencia manual y
+  ACLED deshabilitado hasta contar con API key/revision de terminos.
 
 ## ARGUS Orbit And Map Symbols
 
@@ -609,3 +612,32 @@ Antes de deploy productivo, revisar Google login, RUT unico, prediccion por
 evento/reporte, regla de 2+ confirmaciones, advertencia de estimacion/no exacto,
 movil multi navegador, camaras, knowledge APIs, risk APIs, ausencia de secretos
 y deploy por Vercel CLI.
+
+## Missing persons reports
+
+ARGUS soporta `missing_person` como categoria de reporte ciudadano sin exponer
+datos sensibles innecesarios. La UI publica debe mostrar solo nombre/alias si
+fue entregado, edad aproximada, ultima zona vista, hora aproximada y estado de
+verificacion. No se muestran telefono, email ni contacto privado.
+
+La capa `Desaparecidos` muestra marcadores discretos `MP` y sirve como indicador
+operativo para busqueda/rescate. En fases posteriores puede separarse a una
+tabla dedicada con flujo admin/analista, auditoria y contacto seguro.
+
+## Orbit and 2D map
+
+`Vista mapa` y `Salir de Orbit` deben volver siempre al mapa operacional 2D,
+limpiar paneles secundarios en movil y preservar contexto de navegacion cuando
+sea posible. Orbit es una vista global, no reemplaza el mapa tactico principal.
+
+## Conflict zones and source reliability
+
+La capa `Zonas de conflicto` es defensiva y de conciencia situacional. Debe
+usar lenguaje neutral: zona de conflicto activo, zona disputada, zona bajo
+control militar reportado, zona con ataques recientes, zona de riesgo elevado,
+zona con catastrofe confirmada o zona con alerta humanitaria.
+
+ARGUS no debe presentar control territorial, fronteras ni reportes de fuentes
+abiertas como certeza. Liveuamap queda solo como referencia manual sin scraping.
+ACLED queda deshabilitado hasta tener API key y revision de terminos. GDELT y
+ReliefWeb se tratan como senales/contexto y no como instrucciones operativas.

@@ -6,6 +6,7 @@ import type {
 } from "@/types/riskAssessment";
 import { findHistoricalHazardContext } from "@/lib/prediction/historicalContext";
 import { evaluateEarthquakeImpactRisk } from "@/lib/prediction/rules/earthquakeImpactRisk";
+import { evaluateEarthquakeEntrapmentRisk } from "@/lib/prediction/rules/earthquakeEntrapmentRisk";
 import { evaluateFireSmokeRisk } from "@/lib/prediction/rules/fireSmokeRisk";
 import { evaluateHumanitarianImpactRisk } from "@/lib/prediction/rules/humanitarianImpactRisk";
 import { evaluateTsunamiRisk } from "@/lib/prediction/rules/tsunamiRisk";
@@ -23,6 +24,7 @@ export function generateRiskAssessments(
   const assessments = [
     ...evaluateTsunamiRisk(input.externalEvents),
     ...evaluateEarthquakeImpactRisk(input.externalEvents),
+    ...evaluateEarthquakeEntrapmentRisk(input.externalEvents),
     ...evaluateFireSmokeRisk(input.externalEvents),
     ...evaluateHumanitarianImpactRisk(input.externalEvents),
   ];

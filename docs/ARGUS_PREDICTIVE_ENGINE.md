@@ -94,3 +94,42 @@ Estimacion ARGUS: no es una prediccion exacta ni reemplaza informacion oficial.
 La palabra `confirmado` se reserva para casos con fuente oficial explicita o
 confirmacion cruzada suficiente y aun asi debe mantener el contexto de
 estimacion operacional.
+
+## Vulnerabilidad sismica y SAR
+
+ARGUS agrega perfiles contextuales iniciales en
+`src/data/knowledge/seismicVulnerabilityProfiles.ts`. Estos perfiles no son
+verdad absoluta; solo ayudan a priorizar revision operacional cuando hay un
+sismo y posible impacto urbano.
+
+Perfiles iniciales:
+
+- Chile y Japon: alta amenaza sismica y preparacion relativa alta.
+- Mexico: alta amenaza y preparacion media/alta segun zona.
+- Turquia: amenaza alta y vulnerabilidad estructural variable.
+- Haiti: vulnerabilidad estructural/respuesta alta.
+- Venezuela: amenaza sismica regional relevante, preparacion e infraestructura
+  potencialmente desiguales segun zona.
+- Colombia, Ecuador y Peru: amenaza andina/subduccion y preparacion variable.
+- `unknown`: perfil conservador para pais no clasificado.
+
+La regla `earthquakeEntrapmentRisk` genera hipotesis como:
+
+- `possible_structural_collapse`
+- `possible_people_trapped`
+- `pancake_or_progressive_collapse_risk`
+- `urgent_search_and_rescue_assessment`
+- `medical_triage_pressure`
+- `utility_disruption_risk`
+
+Lenguaje permitido:
+
+```text
+Posible presencia de personas atrapadas bajo escombros.
+Priorizar verificacion SAR en edificios danados.
+Hipotesis basada en magnitud, profundidad, cercania urbana y vulnerabilidad estructural estimada.
+Estimacion operacional, no confirmacion oficial.
+```
+
+ARGUS no debe decir que hay personas atrapadas salvo que exista reporte
+confirmado por fuente oficial o equipo en terreno.

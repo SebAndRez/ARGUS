@@ -12,6 +12,7 @@ import type {
 
 export interface MapLayerState {
   reports: boolean;
+  missingPersons?: boolean;
   demoReports?: boolean;
   usgsEarthquakes?: boolean;
   gdacsAlerts?: boolean;
@@ -31,6 +32,11 @@ export interface MapLayerState {
   terrestrialRoutes?: boolean;
   airRoutes?: boolean;
   maritimeRoutes?: boolean;
+  conflictZones?: boolean;
+  conflictEvents?: boolean;
+  territorialControl?: boolean;
+  crisisNews?: boolean;
+  confirmedDisasters?: boolean;
 }
 
 export type LayerDisplayStatus = "idle" | "loading" | "ready" | "error";
@@ -81,6 +87,7 @@ const layerGroups: Array<{
     label: "Alertas y eventos",
     keys: [
       "reports",
+      "missingPersons",
       "demoReports",
       "usgsEarthquakes",
       "gdacsAlerts",
@@ -108,10 +115,21 @@ const layerGroups: Array<{
     label: "Rutas demo",
     keys: ["terrestrialRoutes", "airRoutes", "maritimeRoutes"],
   },
+  {
+    label: "Conflictos y crisis",
+    keys: [
+      "conflictZones",
+      "conflictEvents",
+      "territorialControl",
+      "crisisNews",
+      "confirmedDisasters",
+    ],
+  },
 ];
 
 const labels: Record<keyof MapLayerState, string> = {
   reports: "Reportes",
+  missingPersons: "Desaparecidos",
   demoReports: "Reportes demo",
   usgsEarthquakes: "Sismos USGS",
   gdacsAlerts: "GDACS Desastres",
@@ -131,6 +149,11 @@ const labels: Record<keyof MapLayerState, string> = {
   terrestrialRoutes: "Rutas terrestres",
   airRoutes: "Rutas aéreas",
   maritimeRoutes: "Rutas marítimas",
+  conflictZones: "CONFLICTOS",
+  conflictEvents: "ATAQUES",
+  territorialControl: "CONTROL",
+  crisisNews: "NOTICIAS",
+  confirmedDisasters: "DESASTRES CONFIRMADOS",
 };
 
 const baseMapOptions: Array<{
@@ -162,11 +185,23 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
   const routesActive = Boolean(
     layers.terrestrialRoutes || layers.airRoutes || layers.maritimeRoutes
   );
+  const conflictActive = Boolean(
+    layers.conflictZones ||
+      layers.conflictEvents ||
+      layers.territorialControl ||
+      layers.crisisNews ||
+      layers.confirmedDisasters
+  );
   const activeSummary = [
     {
       label: "Reportes demo",
       enabled: Boolean(layers.demoReports),
       available: Object.prototype.hasOwnProperty.call(layers, "demoReports"),
+    },
+    {
+      label: "Desaparecidos",
+      enabled: Boolean(layers.missingPersons),
+      available: Object.prototype.hasOwnProperty.call(layers, "missingPersons"),
     },
     {
       label: "Fuentes",
@@ -207,6 +242,11 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
       label: "FIRMS",
       enabled: Boolean(layers.nasaFirms),
       available: Object.prototype.hasOwnProperty.call(layers, "nasaFirms"),
+    },
+    {
+      label: "Conflictos",
+      enabled: conflictActive,
+      available: Object.prototype.hasOwnProperty.call(layers, "conflictZones"),
     },
   ].filter((item) => item.available);
 

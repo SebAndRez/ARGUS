@@ -46,7 +46,33 @@ No se solicitan permisos de Gmail API.
   imagenes externas ni agrega librerias.
 - Si faltan variables Google, `/api/auth/google/start` redirige a `/login` con
   un error controlado.
+- `/login?google=missing_config` muestra `Google OAuth no esta configurado en
+  este entorno`.
+- `/login?google=redirect_mismatch` indica `Redirect URI no autorizado` para
+  revisar Google Cloud Console.
+- `/login?google=google_error`, `token_error`, `profile_error` y
+  `callback_error` diferencian rechazo OAuth, token, perfil y callback.
 - `/app` sin sesion muestra solo un boton compacto `Login`.
+
+## Vercel production
+
+Configurar en Vercel Production:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_REDIRECT_URI`
+
+Redirect exacto:
+
+```text
+https://argus-five-flame.vercel.app/api/auth/google/callback
+```
+
+Origen autorizado:
+
+```text
+https://argus-five-flame.vercel.app
+```
 
 ## Identidad y RUT
 

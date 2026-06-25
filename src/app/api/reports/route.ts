@@ -32,6 +32,7 @@ export async function POST(req: Request) {
   const latitude = Number(body.latitude ?? 0);
   const longitude = Number(body.longitude ?? 0);
   const locationText = body.locationText ? String(body.locationText).trim() : null;
+  const isMissingPerson = category === "missing_person";
 
   if (!title || !description || !latitude || !longitude) {
     return NextResponse.json({ error: "Título, descripción y ubicación son requeridos." }, { status: 400 });
@@ -47,10 +48,13 @@ export async function POST(req: Request) {
       latitude,
       longitude,
       locationText,
-      severity: analysis.severity,
+      severity: isMissingPerson && analysis.severity === "LOW" ? "MEDIUM" : analysis.severity,
+      status: isMissingPerson ? "UNDER_REVIEW" : undefined,
       aiSummary: analysis.aiSummary,
-      aiRecommendation: analysis.aiRecommendation,
-      aiConfidence: analysis.aiConfidence,
+      aiRecommendation: isMissingPerson
+        ? "Validar datos minimos, no exponer contacto personal y coordinar busqueda/rescate si coincide con evento activo."
+        : analysis.aiRecommendation,
+      aiConfidence: isMissingPerson ? Math.min(analysis.aiConfidence, 72) : analysis.aiConfidence,
       falseReportRisk: analysis.falseReportRisk,
     },
   });
@@ -60,7 +64,7 @@ export async function POST(req: Request) {
     action: "CREATE_REPORT",
     targetType: "Report",
     targetId: report.id,
-    metadata: { category, title, locationText, severity: report.severity },
+    metadata: { category, title, locationText, severity: report.severity, missingPerson: isMissingPerson },
   });
 
   return NextResponse.json({ report });

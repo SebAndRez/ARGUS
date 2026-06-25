@@ -111,3 +111,16 @@ Required checks:
 - There are no floating `Ocultar` buttons outside panel headers.
 - There is no horizontal overflow.
 - Analysis blocks show `Estimacion ARGUS` and do not claim certainty.
+- `Vista mapa` exits ARGUS Orbit and returns to the operational 2D map.
+- `Salir de Orbit` behaves the same as `Vista mapa`.
+- Orbit does not keep CAPAS, CLIMA, RIESGO or CERCANOS stacked over the globe on
+  mobile.
+- The `Desaparecidos` layer can be toggled from CAPAS.
+- A missing-person report appears as an `MP` marker and keeps public data
+  minimal.
+- The `CONFLICTOS`, `ATAQUES`, `CONTROL`, `NOTICIAS` and
+  `DESASTRES CONFIRMADOS` toggles are visible in CAPAS.
+- Conflict zones open a compact neutral panel and do not cover SOS, Reportar or
+  the map toolbar on iPhone Safari.
+- Proximity warnings use neutral wording and remain dismissible by disabling the
+  conflict/event layers.

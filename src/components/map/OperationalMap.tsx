@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CrisisEvent } from "@/types/crisis";
 import type { UserLocationStatus } from "@/types/crisis";
 import type { VisualSource } from "@/types/visualSource";
@@ -8,6 +8,12 @@ import type { ArgusLiveCamera } from "@/types/liveCamera";
 import type { RiskProjection } from "@/types/weatherRisk";
 import type { ArgusRoute, BaseMapType, RouteType } from "@/types/map";
 import type { ArgusNormalizedEvent } from "@/types/ingestion";
+import type {
+  ConflictCoordinates,
+  ConflictEvent,
+  ConflictZone,
+} from "@/types/conflictZone";
+import type { NewsEvidence } from "@/types/newsEvidence";
 import { clusterEventsByGrid } from "@/lib/simpleEventClustering";
 import GlobeView from "@/components/map/GlobeView";
 import MapToGlobeTransition from "@/components/map/MapToGlobeTransition";
@@ -22,6 +28,7 @@ import {
 
 interface MapLayerSettings {
   reports: boolean;
+  missingPersons?: boolean;
   demoReports?: boolean;
   usgsEarthquakes?: boolean;
   gdacsAlerts?: boolean;
@@ -41,6 +48,11 @@ interface MapLayerSettings {
   terrestrialRoutes?: boolean;
   airRoutes?: boolean;
   maritimeRoutes?: boolean;
+  conflictZones?: boolean;
+  conflictEvents?: boolean;
+  territorialControl?: boolean;
+  crisisNews?: boolean;
+  confirmedDisasters?: boolean;
 }
 
 interface Props {
@@ -66,9 +78,16 @@ interface Props {
   riskProjections?: RiskProjection[];
   onRiskProjectionSelect?: (projection: RiskProjection) => void;
   routes?: ArgusRoute[];
+  conflictZones?: ConflictZone[];
+  conflictEvents?: ConflictEvent[];
+  newsEvidence?: NewsEvidence[];
+  selectedConflictZoneId?: string;
+  onConflictZoneSelect?: (zone: ConflictZone) => void;
   baseMapType?: BaseMapType;
   centerOnSelected?: boolean;
   centerRequestKey?: number;
+  viewMode?: "map" | "orbit";
+  onViewModeChange?: (mode: "map" | "orbit") => void;
 }
 
 const DEFAULT_CENTER: [number, number] = [-33.4489, -70.6693];
@@ -76,6 +95,9 @@ const GLOBE_ZOOM_THRESHOLD = 2;
 const MAP_RETURN_ZOOM = GLOBE_ZOOM_THRESHOLD + 2;
 
 const isEventVisible = (event: CrisisEvent, layers: MapLayerSettings) => {
+  if (event.category?.toLowerCase() === "missing_person" && !layers.missingPersons) {
+    return false;
+  }
   if (event.status === "RESOLVED" && !layers.resolved) return false;
   if (event.severity === "CRITICAL" && !layers.critical) return false;
   if (event.type === "SOS" && !layers.sos) return false;
@@ -96,6 +118,7 @@ const toMapSeverity = (value: string | null | undefined): ArgusMapSeverity => {
 
 const getInternalEventKind = (event: CrisisEvent): ArgusMapEventKind => {
   if (event.type === "SOS") return "force_report";
+  if (event.category?.toLowerCase() === "missing_person") return "force_report";
   if (event.type === "REPORT") return "citizen_report";
   if (event.category?.toLowerCase().includes("fire")) return "fire";
   if (event.category?.toLowerCase().includes("weather")) return "weather";
@@ -155,6 +178,32 @@ const getVisualSourceConfidence = (source: VisualSource): ArgusMapConfidence => 
   return "reported";
 };
 
+const isBboxCoordinates = (
+  coordinates: ConflictCoordinates
+): coordinates is { north: number; south: number; east: number; west: number } =>
+  !Array.isArray(coordinates) &&
+  typeof coordinates === "object" &&
+  coordinates !== null &&
+  "north" in coordinates &&
+  "south" in coordinates &&
+  "east" in coordinates &&
+  "west" in coordinates;
+
+const isCoordinatePair = (
+  coordinates: ConflictCoordinates
+): coordinates is [number, number] =>
+  Array.isArray(coordinates) &&
+  coordinates.length === 2 &&
+  typeof coordinates[0] === "number" &&
+  typeof coordinates[1] === "number";
+
+const isCoordinatePolygon = (
+  coordinates: ConflictCoordinates
+): coordinates is Array<[number, number]> =>
+  Array.isArray(coordinates) &&
+  coordinates.length > 0 &&
+  Array.isArray(coordinates[0]);
+
 export default function OperationalMap({
   events,
   demoEvents = [],
@@ -175,9 +224,16 @@ export default function OperationalMap({
   riskProjections = [],
   onRiskProjectionSelect,
   routes = [],
+  conflictZones = [],
+  conflictEvents = [],
+  newsEvidence = [],
+  selectedConflictZoneId,
+  onConflictZoneSelect,
   baseMapType = "tactical",
   centerOnSelected = true,
   centerRequestKey = 0,
+  viewMode,
+  onViewModeChange,
 }: Props) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
@@ -187,8 +243,13 @@ export default function OperationalMap({
   const externalEventLayerRef = useRef<any>(null);
   const visualSourceLayerRef = useRef<any>(null);
   const liveCameraLayerRef = useRef<any>(null);
+  const conflictZoneLayerRef = useRef<any>(null);
+  const conflictEventLayerRef = useRef<any>(null);
+  const newsEvidenceLayerRef = useRef<any>(null);
   const userLayerRef = useRef<any>(null);
   const suppressGlobeModeRef = useRef(false);
+  const viewModeRef = useRef(viewMode);
+  const onViewModeChangeRef = useRef(onViewModeChange);
   const lastUsefulMapViewRef = useRef<{
     center: [number, number];
     zoom: number;
@@ -196,6 +257,11 @@ export default function OperationalMap({
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [isGlobeMode, setIsGlobeMode] = useState(false);
+
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+    onViewModeChangeRef.current = onViewModeChange;
+  }, [onViewModeChange, viewMode]);
 
   const visibleEvents = useMemo(
     () => events.filter((event) => isEventVisible(event, layerSettings)),
@@ -270,6 +336,44 @@ export default function OperationalMap({
       layerSettings.usgsEarthquakes,
     ]
   );
+  const visibleConflictZones = useMemo(
+    () =>
+      conflictZones.filter((zone) => {
+        if (!zone.isActive || !layerSettings.conflictZones) return false;
+        if (
+          zone.zoneType === "disaster_confirmed" &&
+          layerSettings.confirmedDisasters === false
+        ) {
+          return false;
+        }
+        if (
+          ["disputed_control", "occupied_area"].includes(zone.zoneType) &&
+          layerSettings.territorialControl === false
+        ) {
+          return false;
+        }
+        return true;
+      }),
+    [
+      conflictZones,
+      layerSettings.confirmedDisasters,
+      layerSettings.conflictZones,
+      layerSettings.territorialControl,
+    ]
+  );
+  const visibleConflictEvents = useMemo(
+    () => (layerSettings.conflictEvents ? conflictEvents : []),
+    [conflictEvents, layerSettings.conflictEvents]
+  );
+  const visibleNewsEvidence = useMemo(
+    () =>
+      layerSettings.crisisNews
+        ? newsEvidence.filter(
+            (item) => typeof item.lat === "number" && typeof item.lng === "number"
+          )
+        : [],
+    [layerSettings.crisisNews, newsEvidence]
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -298,11 +402,17 @@ export default function OperationalMap({
         externalEventLayerRef.current = L.layerGroup().addTo(map);
         visualSourceLayerRef.current = L.layerGroup().addTo(map);
         liveCameraLayerRef.current = L.layerGroup().addTo(map);
+        conflictZoneLayerRef.current = L.layerGroup().addTo(map);
+        conflictEventLayerRef.current = L.layerGroup().addTo(map);
+        newsEvidenceLayerRef.current = L.layerGroup().addTo(map);
         userLayerRef.current = L.layerGroup().addTo(map);
         mapRef.current = map;
         setMapError(null);
         setMapReady(true);
-        setIsGlobeMode(map.getZoom() <= GLOBE_ZOOM_THRESHOLD);
+        const shouldStartInOrbit =
+          viewModeRef.current === "orbit" ||
+          (viewModeRef.current === undefined && map.getZoom() <= GLOBE_ZOOM_THRESHOLD);
+        setIsGlobeMode(shouldStartInOrbit);
 
         const rememberUsefulView = () => {
           const zoom = map.getZoom();
@@ -321,13 +431,16 @@ export default function OperationalMap({
             rememberUsefulView();
             suppressGlobeModeRef.current = false;
             setIsGlobeMode(false);
+            onViewModeChangeRef.current?.("map");
             return;
           }
           if (suppressGlobeModeRef.current) {
             setIsGlobeMode(false);
+            onViewModeChangeRef.current?.("map");
             return;
           }
           setIsGlobeMode(true);
+          onViewModeChangeRef.current?.("orbit");
         };
         map.on("zoomstart", rememberUsefulView);
         map.on("movestart", rememberUsefulView);
@@ -361,6 +474,9 @@ export default function OperationalMap({
       externalEventLayerRef.current = null;
       visualSourceLayerRef.current = null;
       liveCameraLayerRef.current = null;
+      conflictZoneLayerRef.current = null;
+      conflictEventLayerRef.current = null;
+      newsEvidenceLayerRef.current = null;
       userLayerRef.current = null;
     };
   }, []);
@@ -403,6 +519,9 @@ export default function OperationalMap({
     const externalEventLayer = externalEventLayerRef.current;
     const visualSourceLayer = visualSourceLayerRef.current;
     const liveCameraLayer = liveCameraLayerRef.current;
+    const conflictZoneLayer = conflictZoneLayerRef.current;
+    const conflictEventLayer = conflictEventLayerRef.current;
+    const newsEvidenceLayer = newsEvidenceLayerRef.current;
     const userLayer = userLayerRef.current;
 
     eventLayer?.clearLayers();
@@ -410,14 +529,136 @@ export default function OperationalMap({
     externalEventLayer?.clearLayers();
     visualSourceLayer?.clearLayers();
     liveCameraLayer?.clearLayers();
+    conflictZoneLayer?.clearLayers();
+    conflictEventLayer?.clearLayers();
+    newsEvidenceLayer?.clearLayers();
     userLayer?.clearLayers();
+
+    const riskColor: Record<string, string> = {
+      low: "#22d3ee",
+      medium: "#facc15",
+      high: "#fb923c",
+      critical: "#ef4444",
+    };
+
+    visibleConflictZones.forEach((zone) => {
+      const color = riskColor[zone.riskLevel] ?? "#fb923c";
+      let layer: any = null;
+
+      if (zone.geometryType === "bbox" && isBboxCoordinates(zone.coordinates)) {
+        layer = L.rectangle(
+          [
+            [zone.coordinates.south, zone.coordinates.west],
+            [zone.coordinates.north, zone.coordinates.east],
+          ],
+          {
+            color,
+            weight: zone.id === selectedConflictZoneId ? 3 : 1.5,
+            fillColor: color,
+            fillOpacity: zone.zoneType === "disputed_control" ? 0.08 : 0.12,
+            dashArray:
+              zone.controlStatus === "contested" || zone.controlStatus === "disputed"
+                ? "6 6"
+                : undefined,
+          }
+        ).addTo(conflictZoneLayer);
+      } else if (zone.geometryType === "polygon" && isCoordinatePolygon(zone.coordinates)) {
+        layer = L.polygon(zone.coordinates, {
+          color,
+          weight: zone.id === selectedConflictZoneId ? 3 : 1.5,
+          fillColor: color,
+          fillOpacity: 0.1,
+          dashArray:
+            zone.controlStatus === "contested" || zone.controlStatus === "disputed"
+              ? "6 6"
+              : undefined,
+        }).addTo(conflictZoneLayer);
+      } else if (zone.geometryType === "point" && isCoordinatePair(zone.coordinates)) {
+        const markerIcon = L.divIcon(createArgusDivIcon({
+          kind: "risk_assessment",
+          severity: toMapSeverity(zone.riskLevel),
+          confidence: zone.confidence === "high" ? "verified" : zone.confidence === "medium" ? "reported" : "raw",
+          label: "CZ",
+          title: zone.name,
+          active: true,
+          selected: zone.id === selectedConflictZoneId,
+        }));
+        layer = L.marker(zone.coordinates, {
+          icon: markerIcon,
+          title: zone.name,
+        }).addTo(conflictZoneLayer);
+      }
+
+      if (!layer) return;
+      layer.bindTooltip(`${zone.name} · ${zone.riskLevel} · ${zone.confidence}`, {
+        direction: "top",
+        opacity: 0.92,
+      });
+      layer.on("click", () => onConflictZoneSelect?.(zone));
+    });
+
+    visibleConflictEvents.forEach((event) => {
+      const markerIcon = L.divIcon(createArgusDivIcon({
+        kind: event.eventType === "confirmed_disaster" ? "official_source" : "risk_assessment",
+        severity: toMapSeverity(event.severity),
+        confidence: event.confidence === "high" ? "verified" : event.confidence === "medium" ? "reported" : "raw",
+        label: event.eventType === "humanitarian_alert" ? "H" : "ATK",
+        title: event.title,
+        active: true,
+      }));
+      const marker = L.marker([event.lat, event.lng], {
+        icon: markerIcon,
+        title: event.title,
+      }).addTo(conflictEventLayer);
+      marker.bindTooltip(`${event.title} · ${event.sourceName}`, {
+        direction: "top",
+        offset: [0, -18],
+        opacity: 0.92,
+      });
+      const relatedZone = conflictZones.find((zone) => zone.id === event.relatedZoneId);
+      marker.on("click", () => {
+        if (relatedZone) onConflictZoneSelect?.(relatedZone);
+      });
+    });
+
+    visibleNewsEvidence.forEach((item) => {
+      if (typeof item.lat !== "number" || typeof item.lng !== "number") return;
+      const markerIcon = L.divIcon(createArgusDivIcon({
+        kind: "official_source",
+        severity: "info",
+        confidence: item.confidence === "high" ? "verified" : item.confidence === "medium" ? "reported" : "raw",
+        label: "N",
+        title: item.title,
+        active: false,
+      }));
+      const marker = L.marker([item.lat, item.lng], {
+        icon: markerIcon,
+        title: item.title,
+      }).addTo(newsEvidenceLayer);
+      marker.bindTooltip(`${item.sourceName} · ${item.title}`, {
+        direction: "top",
+        offset: [0, -18],
+        opacity: 0.9,
+      });
+      const relatedZone = conflictZones.find((zone) => zone.id === item.linkedZoneId);
+      marker.on("click", () => {
+        if (relatedZone) onConflictZoneSelect?.(relatedZone);
+      });
+    });
 
     visibleEvents.forEach((event) => {
       const iconDefinition = createArgusDivIcon({
         kind: getInternalEventKind(event),
         severity: toMapSeverity(event.severity),
         confidence: event.type === "REPORT" ? "reported" : "verified",
-        label: event.type === "SOS" ? "SOS" : event.type === "ALERT" ? "A" : "R",
+        label:
+          event.category?.toLowerCase() === "missing_person"
+            ? "MP"
+            : event.type === "SOS"
+              ? "SOS"
+              : event.type === "ALERT"
+                ? "A"
+                : "R",
         title: event.title,
         active: event.status !== "RESOLVED",
         selected: event.id === selectedEventId,
@@ -615,14 +856,20 @@ export default function OperationalMap({
     visibleExternalEvents,
     visibleVisualSources,
     visibleLiveCameras,
+    visibleConflictZones,
+    visibleConflictEvents,
+    visibleNewsEvidence,
     selectedEventId,
     selectedVisualSourceId,
     selectedLiveCameraId,
     selectedExternalEventId,
+    selectedConflictZoneId,
     onEventSelect,
     onExternalEventSelect,
     onVisualSourceSelect,
     onLiveCameraSelect,
+    onConflictZoneSelect,
+    conflictZones,
     layerSettings,
     location,
     locationStatus,
@@ -647,9 +894,10 @@ export default function OperationalMap({
     mapRef.current.flyTo([lat, lng], 13, { duration: 0.6 });
   }, [centerRequestKey, location.latitude, location.longitude, mapReady]);
 
-  const exitGlobeMode = () => {
+  const exitGlobeMode = useCallback(() => {
     suppressGlobeModeRef.current = true;
     setIsGlobeMode(false);
+    onViewModeChange?.("map");
     if (!mapRef.current) {
       return;
     }
@@ -663,11 +911,27 @@ export default function OperationalMap({
       setIsGlobeMode(false);
       mapRef.current?.invalidateSize(false);
     });
-  };
+  }, [onViewModeChange]);
+
+  useEffect(() => {
+    if (!viewMode) return;
+    if (viewMode === "orbit") {
+      setIsGlobeMode(true);
+      return;
+    }
+    if (isGlobeMode) {
+      exitGlobeMode();
+      return;
+    }
+    if (mapRef.current) {
+      suppressGlobeModeRef.current = true;
+      mapRef.current.invalidateSize(false);
+    }
+  }, [exitGlobeMode, isGlobeMode, viewMode]);
 
   return (
     <div
-      className={`argus-map-${baseMapType} relative h-full min-h-80 w-full overflow-hidden rounded-lg border border-white/10 bg-slate-950/50 shadow-2xl shadow-black/40 ${
+      className={`argus-map-canvas argus-map-${baseMapType} relative h-full min-h-80 w-full overflow-hidden rounded-lg border border-white/10 bg-slate-950/50 shadow-2xl shadow-black/40 ${
         isGlobeMode ? "argus-orbit-active" : ""
       }`}
       onWheelCapture={(event) => {
@@ -702,6 +966,7 @@ export default function OperationalMap({
         globe={
           <GlobeView
             active={isGlobeMode}
+            className="argus-orbit-canvas"
             events={visibleEvents}
             demoEvents={visibleDemoEvents}
             externalEvents={visibleExternalEvents}

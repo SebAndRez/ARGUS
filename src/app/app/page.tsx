@@ -14,6 +14,8 @@ import WindLayerLegend from "@/components/map/WindLayerLegend";
 import LiveCameraList from "@/components/live-cameras/LiveCameraList";
 import LiveCameraPanel from "@/components/live-cameras/LiveCameraPanel";
 import RiskAssessmentPanel from "@/components/risk/RiskAssessmentPanel";
+import ConflictLegend from "@/components/conflict/ConflictLegend";
+import ConflictZonePanel from "@/components/conflict/ConflictZonePanel";
 import FloatingSOSButton from "@/components/app/FloatingSOSButton";
 import FloatingReportButton from "@/components/app/FloatingReportButton";
 import NearbyEventsSheet from "@/components/app/NearbyEventsSheet";
@@ -25,6 +27,11 @@ import { demoVisualSources } from "@/data/demoVisualSources";
 import { embeddableLiveCameraCount, liveCameras } from "@/data/liveCameras";
 import { demoRoutes } from "@/data/demoRoutes";
 import { demoCrisisEvents } from "@/data/generateDemoCrisisEvents";
+import {
+  curatedConflictEvents,
+  curatedConflictZones,
+  curatedNewsEvidence,
+} from "@/data/conflictZones";
 import {
   demoRiskProjections,
   demoWeatherObservations,
@@ -60,7 +67,9 @@ import type {
   ArgusNormalizedEvent,
 } from "@/types/ingestion";
 import type { ArgusRiskAssessment } from "@/types/riskAssessment";
+import type { ConflictZone } from "@/types/conflictZone";
 import { correlateExternalEvents } from "@/lib/ingestion/correlateExternalEvents";
+import { getConflictProximityWarnings } from "@/lib/conflict/conflictRiskEngine";
 
 const OperationalMap = dynamic(
   () => import("@/components/map/OperationalMap"),
@@ -76,6 +85,7 @@ const OperationalMap = dynamic(
 
 const initialLayers = {
   reports: true,
+  missingPersons: true,
   demoReports: false,
   usgsEarthquakes: false,
   gdacsAlerts: false,
@@ -95,6 +105,11 @@ const initialLayers = {
   terrestrialRoutes: true,
   airRoutes: true,
   maritimeRoutes: true,
+  conflictZones: false,
+  conflictEvents: false,
+  territorialControl: false,
+  crisisNews: false,
+  confirmedDisasters: false,
 };
 
 const initialEventState: CrisisEvent[] = [];
@@ -106,7 +121,10 @@ const defaultVisibleWidgets = {
   risk: false,
 };
 type VisibleWidgetKey = keyof typeof defaultVisibleWidgets;
+type MapViewMode = "map" | "orbit";
+type ActiveMobilePanel = VisibleWidgetKey | null;
 const mobileExclusiveWidgets: VisibleWidgetKey[] = [
+  "hud",
   "layers",
   "weather",
   "nearby",
@@ -140,6 +158,9 @@ export default function AppPage() {
     }
     return "command";
   });
+  const [mapViewMode, setMapViewMode] = useState<MapViewMode>("map");
+  const [activeMobilePanel, setActiveMobilePanel] =
+    useState<ActiveMobilePanel>("hud");
   const [visibleWidgets, setVisibleWidgets] = useState(() => {
     if (typeof window === "undefined") return defaultVisibleWidgets;
     try {
@@ -168,6 +189,8 @@ export default function AppPage() {
   );
   const [selectedExternalEvent, setSelectedExternalEvent] =
     useState<ArgusNormalizedEvent | null>(null);
+  const [selectedConflictZone, setSelectedConflictZone] =
+    useState<ConflictZone | null>(null);
   const [events, setEvents] = useState<CrisisEvent[]>(initialEventState);
   const [demoEvents, setDemoEvents] = useState<CrisisEvent[]>(() => [...demoCrisisEvents]);
   const [layerSettings, setLayerSettings] = useState(initialLayers);
@@ -277,25 +300,30 @@ export default function AppPage() {
       const activePanels = mobileExclusiveWidgets.filter((key) => current[key]);
       if (activePanels.length <= 1) return current;
 
+      const activePanel = activeMobilePanel ?? activePanels[0] ?? null;
       const next = {
         ...current,
-        layers: false,
-        weather: false,
-        nearby: false,
-        risk: false,
+        hud: activePanel === "hud",
+        layers: activePanel === "layers",
+        weather: activePanel === "weather",
+        nearby: activePanel === "nearby",
+        risk: activePanel === "risk",
       };
       persistVisibleWidgets(next);
       return next;
     });
-  }, [isMobileViewport]);
+  }, [activeMobilePanel, isMobileViewport]);
 
   const changeDisplayMode = useCallback(
     (mode: "command" | "map" | "layers") => {
       setDisplayMode(mode);
       if (mode === "map") {
+        setMapViewMode("map");
+        setActiveMobilePanel(null);
         setVisibleWidgets((current) => {
           const next = {
             ...current,
+            hud: !isMobileViewport,
             layers: false,
             weather: false,
             nearby: false,
@@ -305,9 +333,12 @@ export default function AppPage() {
           return next;
         });
       } else if (mode === "layers" && isMobileViewport) {
+        setMapViewMode("map");
+        setActiveMobilePanel("layers");
         setVisibleWidgets((current) => {
           const next = {
             ...current,
+            hud: false,
             layers: true,
             weather: false,
             nearby: false,
@@ -328,6 +359,9 @@ export default function AppPage() {
 
   const setWidgetVisibility = useCallback(
     (key: VisibleWidgetKey, visible: boolean) => {
+      if (isMobileViewport && mobileExclusiveWidgets.includes(key)) {
+        setActiveMobilePanel(visible ? key : null);
+      }
       setVisibleWidgets((current) => {
         const next = { ...current, [key]: visible };
         if (
@@ -346,11 +380,30 @@ export default function AppPage() {
     [isMobileViewport]
   );
 
+  const enterOrbitMode = useCallback(() => {
+    setDisplayMode("map");
+    setMapViewMode("orbit");
+    setActiveMobilePanel(null);
+    setVisibleWidgets((current) => {
+      const next = {
+        ...current,
+        hud: !isMobileViewport,
+        layers: false,
+        weather: false,
+        nearby: false,
+        risk: false,
+      };
+      persistVisibleWidgets(next);
+      return next;
+    });
+  }, [isMobileViewport]);
+
   const selectEvent = useCallback((event: CrisisEvent) => {
     setSelectedVisualSource(null);
     setSelectedLiveCamera(null);
     setSelectedRiskProjection(null);
     setSelectedExternalEvent(null);
+    setSelectedConflictZone(null);
     setSelectedEvent(event);
   }, []);
 
@@ -359,6 +412,7 @@ export default function AppPage() {
     setSelectedLiveCamera(null);
     setSelectedRiskProjection(null);
     setSelectedExternalEvent(null);
+    setSelectedConflictZone(null);
     setSelectedVisualSource(source);
   }, []);
 
@@ -367,6 +421,7 @@ export default function AppPage() {
     setSelectedVisualSource(null);
     setSelectedRiskProjection(null);
     setSelectedExternalEvent(null);
+    setSelectedConflictZone(null);
     setSelectedLiveCamera(camera);
   }, []);
 
@@ -375,6 +430,7 @@ export default function AppPage() {
     setSelectedVisualSource(null);
     setSelectedLiveCamera(null);
     setSelectedExternalEvent(null);
+    setSelectedConflictZone(null);
     setSelectedRiskProjection(projection);
   }, []);
 
@@ -383,7 +439,17 @@ export default function AppPage() {
     setSelectedVisualSource(null);
     setSelectedLiveCamera(null);
     setSelectedRiskProjection(null);
+    setSelectedConflictZone(null);
     setSelectedExternalEvent(event);
+  }, []);
+
+  const selectConflictZone = useCallback((zone: ConflictZone) => {
+    setSelectedEvent(null);
+    setSelectedVisualSource(null);
+    setSelectedLiveCamera(null);
+    setSelectedRiskProjection(null);
+    setSelectedExternalEvent(null);
+    setSelectedConflictZone(zone);
   }, []);
 
   const handleVerifyAction = useCallback(
@@ -438,6 +504,12 @@ export default function AppPage() {
     }
     if (key === "liveCameras" && layerSettings.liveCameras) {
       setSelectedLiveCamera(null);
+    }
+    if (
+      ["conflictZones", "conflictEvents", "territorialControl", "crisisNews"].includes(key) &&
+      layerSettings[key]
+    ) {
+      setSelectedConflictZone(null);
     }
     setLayerSettings((current) => ({
       ...current,
@@ -581,6 +653,24 @@ export default function AppPage() {
         )
     );
   }, [externalCorrelations, selectedExternalEvent]);
+  const activeConflictZones = useMemo(
+    () => (layerSettings.conflictZones ? curatedConflictZones : []),
+    [layerSettings.conflictZones]
+  );
+  const activeConflictEvents = useMemo(
+    () => (layerSettings.conflictEvents ? curatedConflictEvents : []),
+    [layerSettings.conflictEvents]
+  );
+  const conflictProximityWarnings = useMemo(
+    () =>
+      getConflictProximityWarnings(
+        { latitude: location.latitude, longitude: location.longitude },
+        activeConflictZones,
+        activeConflictEvents
+      ),
+    [activeConflictEvents, activeConflictZones, location.latitude, location.longitude]
+  );
+  const topConflictWarning = conflictProximityWarnings[0] ?? null;
   const activeWeatherObservation =
     metWeather ?? demoWeatherObservations[0] ?? null;
   const weatherSourceLabel = activeWeatherObservation
@@ -623,6 +713,13 @@ export default function AppPage() {
       reports: {
         count: events.filter((event) => event.type === "REPORT").length,
         detail: "Reportes ciudadanos",
+      },
+      missingPersons: {
+        count: events.filter(
+          (event) => event.category?.toLowerCase() === "missing_person"
+        ).length,
+        detail: "Reportes ciudadanos de busqueda/rescate",
+        status: "ready",
       },
       demoReports: {
         count: demoEvents.length,
@@ -808,6 +905,40 @@ export default function AppPage() {
         detail: "Referencia en Valparaiso",
         status: "ready",
       },
+      conflictZones: {
+        count: curatedConflictZones.length,
+        detail: layerSettings.conflictZones
+          ? "Zonas abiertas y curadas visibles"
+          : "Capa neutral bajo demanda",
+        status: "ready",
+        emphasis: true,
+      },
+      conflictEvents: {
+        count: curatedConflictEvents.length,
+        detail: layerSettings.conflictEvents
+          ? "Eventos recientes demo visibles"
+          : "Ataques/eventos recientes bajo demanda",
+        status: "ready",
+      },
+      territorialControl: {
+        count: curatedConflictZones.filter((zone) =>
+          ["disputed_control", "occupied_area"].includes(zone.zoneType)
+        ).length,
+        detail: "Control reportado, no definitivo",
+        status: "ready",
+      },
+      crisisNews: {
+        count: curatedNewsEvidence.length,
+        detail: "Evidencia secundaria por fuente",
+        status: "ready",
+      },
+      confirmedDisasters: {
+        count: curatedConflictZones.filter(
+          (zone) => zone.zoneType === "disaster_confirmed"
+        ).length,
+        detail: "Desastres confirmados en capa de crisis",
+        status: "ready",
+      },
       user: {
         detail: gpsStatus === "active" ? "Posicion disponible" : "Ubicacion no confirmada",
         status: gpsStatus === "active" ? "ready" : "idle",
@@ -824,6 +955,8 @@ export default function AppPage() {
       gdacsStatus,
       gdacsUpdatedLabel,
       gpsStatus,
+      layerSettings.conflictEvents,
+      layerSettings.conflictZones,
       layerSettings.demoReports,
       layerSettings.liveCameras,
       metCached,
@@ -1271,6 +1404,14 @@ export default function AppPage() {
     latitude: number;
     longitude: number;
     locationText?: string;
+    missingPerson?: {
+      displayName?: string;
+      ageApprox?: string;
+      lastSeenText?: string;
+      lastSeenAt?: string;
+      status?: string;
+      relatedEventType?: string;
+    };
   }) {
     const res = await fetch("/api/reports", {
       method: "POST",
@@ -1337,12 +1478,19 @@ export default function AppPage() {
         riskProjections={demoRiskProjections}
         onRiskProjectionSelect={selectRiskProjection}
         routes={demoRoutes}
+        conflictZones={curatedConflictZones}
+        conflictEvents={curatedConflictEvents}
+        newsEvidence={curatedNewsEvidence}
+        selectedConflictZoneId={selectedConflictZone?.id}
+        onConflictZoneSelect={selectConflictZone}
         baseMapType={baseMapType}
         centerRequestKey={centerRequestKey}
+        viewMode={mapViewMode}
+        onViewModeChange={setMapViewMode}
       />
 
       <nav
-        className={`argus-view-toolbar pointer-events-auto fixed z-[55] flex max-w-[calc(100%-1rem)] items-center gap-1 overflow-x-auto border border-cyan-300/20 bg-slate-950/95 p-1.5 shadow-xl shadow-black/40 backdrop-blur-xl ${
+        className={`argus-top-bar argus-view-toolbar pointer-events-auto fixed z-[55] flex max-w-[calc(100%-1rem)] items-center gap-1 overflow-x-auto border border-cyan-300/20 bg-slate-950/95 p-1.5 shadow-xl shadow-black/40 backdrop-blur-xl ${
           displayMode === "command"
             ? "argus-view-toolbar-command"
             : "argus-view-toolbar-map"
@@ -1377,9 +1525,20 @@ export default function AppPage() {
         >
           Centrar GPS
         </button>
+        <button
+          type="button"
+          onClick={enterOrbitMode}
+          className={`min-h-9 shrink-0 border px-3 text-xs font-semibold ${
+            mapViewMode === "orbit"
+              ? "border-cyan-300/35 bg-cyan-400/15 text-cyan-100"
+              : "border-white/8 bg-white/[0.03] text-slate-300"
+          }`}
+        >
+          Orbit
+        </button>
       </nav>
 
-      <div className="argus-widget-rail pointer-events-auto fixed z-[54] flex max-w-[calc(100%-1rem)] gap-1 overflow-x-auto border border-white/10 bg-slate-950/88 p-1 shadow-xl shadow-black/35 backdrop-blur-xl">
+      <div className="argus-mobile-panel argus-widget-rail pointer-events-auto fixed z-[54] flex max-w-[calc(100%-1rem)] gap-1 overflow-x-auto border border-white/10 bg-slate-950/88 p-1 shadow-xl shadow-black/35 backdrop-blur-xl">
         {([
           ["hud", "HUD"],
           ["layers", "Capas"],
@@ -1404,7 +1563,7 @@ export default function AppPage() {
       </div>
 
       {displayMode === "command" && visibleWidgets.risk && (
-      <div className="argus-risk-panel-shell pointer-events-auto fixed z-[47] w-[330px] max-w-[calc(100%-1rem)]">
+      <div className="argus-left-panel argus-risk-panel-shell pointer-events-auto fixed z-[47] w-[330px] max-w-[calc(100%-1rem)]">
         <RiskAssessmentPanel
           assessments={riskAssessments}
           status={riskStatus}
@@ -1448,7 +1607,7 @@ export default function AppPage() {
 
       {displayMode === "command" && layerSettings.weatherRisk && activeWeatherObservation && (
         <div
-          className={`argus-mobile-weather-widget pointer-events-auto fixed z-[48] ${
+          className={`argus-left-panel argus-mobile-weather-widget pointer-events-auto fixed z-[48] ${
             visibleWidgets.weather
               ? "argus-mobile-weather-card"
               : "argus-mobile-weather-pill"
@@ -1499,7 +1658,7 @@ export default function AppPage() {
       )}
 
       {(displayMode === "command" || displayMode === "layers") && visibleWidgets.layers && (
-      <div className="argus-layer-panel-shell pointer-events-auto fixed z-[45] w-[310px]">
+      <div className="argus-right-panel argus-layer-panel-shell pointer-events-auto fixed z-[45] w-[310px]">
         <MapLayerControls
           layers={layerSettings}
           onToggle={toggleLayer}
@@ -1520,6 +1679,11 @@ export default function AppPage() {
               <ExternalCorrelationsPanel
                 correlations={externalCorrelations}
                 onSelectEvent={selectExternalEvent}
+              />
+              <ConflictLegend
+                zoneCount={curatedConflictZones.length}
+                eventCount={curatedConflictEvents.length}
+                newsCount={curatedNewsEvidence.length}
               />
             </>
           }
@@ -1634,6 +1798,21 @@ export default function AppPage() {
         </div>
       )}
 
+      {topConflictWarning && (
+        <div className="fixed left-4 top-[30rem] z-40 max-w-sm border border-red-300/25 bg-slate-950/94 px-4 py-3 text-sm text-red-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-[28rem]">
+          <p className="text-[0.58rem] font-bold uppercase tracking-[0.16em] text-red-200/80">
+            Advertencia de proximidad
+          </p>
+          <p className="mt-1 font-semibold">{topConflictWarning.title}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-300">
+            {topConflictWarning.reason}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-amber-100">
+            {topConflictWarning.recommendedAction}
+          </p>
+        </div>
+      )}
+
       {!sessionLoading && !sessionUser ? (
         <a
           href="/login"
@@ -1644,13 +1823,13 @@ export default function AppPage() {
       ) : null}
       </div>
 
-      <div className="argus-action-stack pointer-events-auto fixed z-50">
+      <div className="argus-floating-actions argus-action-stack pointer-events-auto fixed z-50">
         <FloatingSOSButton disabled={!canSOS} onClick={() => setIsHelpOpen(true)} />
         <FloatingReportButton disabled={!canReport} onClick={() => setIsReportOpen(true)} />
       </div>
 
       {displayMode === "command" && visibleWidgets.nearby && (
-      <div className="contents">
+      <div className="argus-bottom-sheet contents">
       <NearbyEventsSheet
         events={nearbyEventPool}
         latitude={location.latitude}
@@ -1699,6 +1878,12 @@ export default function AppPage() {
         event={selectedExternalEvent}
         onClose={() => setSelectedExternalEvent(null)}
         correlations={selectedExternalCorrelations}
+      />
+      <ConflictZonePanel
+        zone={selectedConflictZone}
+        events={curatedConflictEvents}
+        newsEvidence={curatedNewsEvidence}
+        onClose={() => setSelectedConflictZone(null)}
       />
 
       <ReportModal

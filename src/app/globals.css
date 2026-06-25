@@ -56,6 +56,31 @@ html {
   width: 100%;
 }
 
+.argus-top-bar,
+.argus-left-panel,
+.argus-right-panel,
+.argus-bottom-sheet,
+.argus-floating-actions,
+.argus-mobile-panel {
+  max-width: calc(100vw - 1rem);
+}
+
+.argus-map-canvas,
+.argus-orbit-canvas {
+  min-height: 0;
+  min-width: 0;
+}
+
+.argus-right-panel {
+  max-height: calc(100svh - 10rem);
+  overflow: hidden;
+}
+
+.argus-left-panel {
+  max-height: calc(100svh - 12rem);
+  overflow: hidden;
+}
+
 @supports (height: 100svh) {
   .argus-app-shell {
     height: 100svh;

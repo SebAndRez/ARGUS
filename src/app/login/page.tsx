@@ -17,11 +17,14 @@ export default function LoginPage() {
     if (!google) return;
 
     const messages: Record<string, string> = {
-      missing_config: "Google login aun no esta configurado en este entorno.",
+      missing_config: "Google OAuth no esta configurado en este entorno.",
+      redirect_mismatch: "Redirect URI no autorizado. Revisa Google Cloud Console.",
+      google_error: "Google rechazo el inicio de sesion. Intenta nuevamente.",
       invalid_state: "La sesion Google expiro. Intenta nuevamente.",
       token_error: "Google no pudo entregar una sesion valida.",
       profile_error: "No fue posible leer la identidad basica de Google.",
-      callback_error: "No fue posible completar el inicio con Google.",
+      callback_error: "No se pudo completar login con Google.",
+      success: "Login con Google completado.",
     };
     setGoogleMessage(messages[google] ?? "No fue posible iniciar con Google.");
   }, []);

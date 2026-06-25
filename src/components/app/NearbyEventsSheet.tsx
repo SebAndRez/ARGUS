@@ -45,12 +45,15 @@ export default function NearbyEventsSheet({
   onClose,
 }: Props) {
   const nearbyEvents = getNearbyEvents(events, latitude, longitude, maxItems);
+  const nearbyMissingCount = nearbyEvents.filter(
+    ({ event }) => event.category?.toLowerCase() === "missing_person"
+  ).length;
   const hasDemoSummary =
     typeof demoVisibleCount === "number" && typeof demoTotalCount === "number";
   const displayedDemoCount = Math.min(maxItems, demoVisibleCount ?? 0);
 
   return (
-    <aside className="argus-nearby-sheet pointer-events-auto fixed inset-x-0 bottom-0 z-40 mx-auto max-w-5xl overflow-hidden rounded-t-lg border border-white/10 bg-slate-950/92 px-4 pb-4 pt-3 backdrop-blur-xl shadow-[0_-18px_48px_rgba(0,0,0,0.42)] sm:px-6">
+    <aside className="argus-bottom-sheet argus-nearby-sheet pointer-events-auto fixed inset-x-0 bottom-0 z-40 mx-auto max-w-5xl overflow-hidden rounded-t-lg border border-white/10 bg-slate-950/92 px-4 pb-4 pt-3 backdrop-blur-xl shadow-[0_-18px_48px_rgba(0,0,0,0.42)] sm:px-6">
       <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-600/70 sm:hidden" />
 
       <div className="mb-3 flex min-h-7 items-start justify-between gap-3">
@@ -61,6 +64,11 @@ export default function NearbyEventsSheet({
             <p className="mt-1 text-[0.65rem] text-cyan-200/80">
               Mostrando {displayedDemoCount} de {demoTotalCount} reportes demo
               {demoVisibleCount !== demoTotalCount ? ` · ${demoVisibleCount} coinciden con filtros` : ""}
+            </p>
+          )}
+          {nearbyMissingCount > 0 && (
+            <p className="mt-1 text-[0.65rem] text-amber-200/90">
+              Personas desaparecidas reportadas en el area: {nearbyMissingCount}
             </p>
           )}
         </div>

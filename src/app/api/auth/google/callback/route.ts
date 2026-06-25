@@ -37,6 +37,14 @@ function redirectLogin(request: NextRequest, reason: string) {
 }
 
 export async function GET(request: NextRequest) {
+  const oauthError = request.nextUrl.searchParams.get("error");
+  if (oauthError) {
+    return redirectLogin(
+      request,
+      oauthError === "redirect_uri_mismatch" ? "redirect_mismatch" : "google_error"
+    );
+  }
+
   const code = request.nextUrl.searchParams.get("code");
   const state = request.nextUrl.searchParams.get("state");
   const expectedState = request.cookies.get(GOOGLE_STATE_COOKIE)?.value;

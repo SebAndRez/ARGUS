@@ -8,6 +8,12 @@ const KEYWORD_SEVERITY: Record<string, EventSeverity> = {
   humo: "HIGH",
   explosión: "CRITICAL",
   atrapado: "HIGH",
+  atrapada: "HIGH",
+  desaparecido: "HIGH",
+  desaparecida: "HIGH",
+  escombros: "HIGH",
+  derrumbe: "CRITICAL",
+  colapso: "CRITICAL",
   peligro: "HIGH",
 };
 
@@ -19,6 +25,12 @@ const KEYWORD_PRIORITY: Record<string, HelpPriority> = {
   humo: "HIGH",
   explosión: "CRITICAL",
   atrapado: "HIGH",
+  atrapada: "HIGH",
+  desaparecido: "HIGH",
+  desaparecida: "HIGH",
+  escombros: "HIGH",
+  derrumbe: "CRITICAL",
+  colapso: "CRITICAL",
   peligro: "HIGH",
   desastre: "HIGH",
 };
