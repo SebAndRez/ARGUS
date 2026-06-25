@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CrisisEvent } from "@/types/crisis";
 import type { UserLocationStatus } from "@/types/crisis";
 import type { VisualSource } from "@/types/visualSource";
+import type { ArgusLiveCamera } from "@/types/liveCamera";
 import type { RiskProjection } from "@/types/weatherRisk";
 import type { ArgusRoute, BaseMapType, RouteType } from "@/types/map";
 import type { ArgusNormalizedEvent } from "@/types/ingestion";
@@ -35,6 +36,7 @@ interface MapLayerSettings {
   visualSources?: boolean;
   officialSources?: boolean;
   publicCameras?: boolean;
+  liveCameras?: boolean;
   weatherRisk?: boolean;
   terrestrialRoutes?: boolean;
   airRoutes?: boolean;
@@ -58,6 +60,9 @@ interface Props {
   visualSources?: VisualSource[];
   selectedVisualSourceId?: string;
   onVisualSourceSelect?: (source: VisualSource) => void;
+  liveCameras?: ArgusLiveCamera[];
+  selectedLiveCameraId?: string;
+  onLiveCameraSelect?: (camera: ArgusLiveCamera) => void;
   riskProjections?: RiskProjection[];
   onRiskProjectionSelect?: (projection: RiskProjection) => void;
   routes?: ArgusRoute[];
@@ -164,6 +169,9 @@ export default function OperationalMap({
   visualSources = [],
   selectedVisualSourceId,
   onVisualSourceSelect,
+  liveCameras = [],
+  selectedLiveCameraId,
+  onLiveCameraSelect,
   riskProjections = [],
   onRiskProjectionSelect,
   routes = [],
@@ -178,6 +186,7 @@ export default function OperationalMap({
   const demoEventLayerRef = useRef<any>(null);
   const externalEventLayerRef = useRef<any>(null);
   const visualSourceLayerRef = useRef<any>(null);
+  const liveCameraLayerRef = useRef<any>(null);
   const userLayerRef = useRef<any>(null);
   const suppressGlobeModeRef = useRef(false);
   const lastUsefulMapViewRef = useRef<{
@@ -223,6 +232,15 @@ export default function OperationalMap({
     layerSettings.visualSources,
     visualSources,
   ]);
+  const visibleLiveCameras = useMemo(() => {
+    if (!layerSettings.liveCameras) return [];
+
+    return liveCameras.filter((camera) => {
+      const lat = Number(camera.latitude);
+      const lng = Number(camera.longitude);
+      return Number.isFinite(lat) && Number.isFinite(lng);
+    });
+  }, [layerSettings.liveCameras, liveCameras]);
   const visibleRouteTypes = useMemo<Partial<Record<RouteType, boolean>>>(
     () => ({
       terrestrial: Boolean(layerSettings.terrestrialRoutes),
@@ -279,6 +297,7 @@ export default function OperationalMap({
         demoEventLayerRef.current = L.layerGroup().addTo(map);
         externalEventLayerRef.current = L.layerGroup().addTo(map);
         visualSourceLayerRef.current = L.layerGroup().addTo(map);
+        liveCameraLayerRef.current = L.layerGroup().addTo(map);
         userLayerRef.current = L.layerGroup().addTo(map);
         mapRef.current = map;
         setMapError(null);
@@ -341,6 +360,7 @@ export default function OperationalMap({
       demoEventLayerRef.current = null;
       externalEventLayerRef.current = null;
       visualSourceLayerRef.current = null;
+      liveCameraLayerRef.current = null;
       userLayerRef.current = null;
     };
   }, []);
@@ -382,12 +402,14 @@ export default function OperationalMap({
     const demoEventLayer = demoEventLayerRef.current;
     const externalEventLayer = externalEventLayerRef.current;
     const visualSourceLayer = visualSourceLayerRef.current;
+    const liveCameraLayer = liveCameraLayerRef.current;
     const userLayer = userLayerRef.current;
 
     eventLayer?.clearLayers();
     demoEventLayer?.clearLayers();
     externalEventLayer?.clearLayers();
     visualSourceLayer?.clearLayers();
+    liveCameraLayer?.clearLayers();
     userLayer?.clearLayers();
 
     visibleEvents.forEach((event) => {
@@ -522,6 +544,41 @@ export default function OperationalMap({
       });
     });
 
+    visibleLiveCameras.forEach((camera) => {
+      const lat = Number(camera.latitude);
+      const lng = Number(camera.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+      const markerIcon = L.divIcon(createArgusDivIcon({
+        kind: "live_camera",
+        severity: camera.status === "active" ? "info" : "inactive",
+        confidence: camera.provider === "youtube" ? "reported" : "raw",
+        label: camera.markerLabel,
+        title: camera.title,
+        active: camera.status === "active",
+        selected: camera.id === selectedLiveCameraId,
+      }));
+
+      const marker = L.marker([lat, lng], {
+        icon: markerIcon,
+        title: camera.title,
+      }).addTo(liveCameraLayer);
+
+      marker.bindTooltip(
+        `${camera.title} · ${camera.provider.toUpperCase()} · ${
+          camera.embedAllowed ? "embed" : "externa"
+        }`,
+        {
+          direction: "top",
+          offset: [0, -18],
+          opacity: 0.92,
+        }
+      );
+      marker.on("click", () => {
+        onLiveCameraSelect?.(camera);
+      });
+    });
+
     if (layerSettings.user && locationStatus !== "fallback") {
       const userIcon = L.divIcon(createArgusDivIcon({
         kind: "user",
@@ -557,12 +614,15 @@ export default function OperationalMap({
     externalEvents,
     visibleExternalEvents,
     visibleVisualSources,
+    visibleLiveCameras,
     selectedEventId,
     selectedVisualSourceId,
+    selectedLiveCameraId,
     selectedExternalEventId,
     onEventSelect,
     onExternalEventSelect,
     onVisualSourceSelect,
+    onLiveCameraSelect,
     layerSettings,
     location,
     locationStatus,

@@ -164,6 +164,23 @@ Experiencia:
 
 No se realiza scraping, reconocimiento facial, tracking de personas ni descarga automática de logos.
 
+### Visual OSINT / Live Cameras
+
+ARGUS incorpora una capa separada **Camaras en vivo** con fuentes publicas
+versionadas como dataset estatico. Esta capa no reemplaza fuentes oficiales y
+sirve como apoyo visual publico para contexto operacional.
+
+Principios:
+
+- capa apagada por defecto;
+- YouTube embebido con `youtube-nocookie`, audio apagado y `playsinline`;
+- EarthCam, SkylineWebcams u otros sitios se abren externamente si no entregan
+  embed oficial claro;
+- ubicacion y confianza se muestran explicitamente;
+- no hay scraping, rehost, grabacion, reconocimiento facial ni seguimiento de
+  personas;
+- las camaras pueden pasar a una tabla `LiveCamera` futura con revision humana.
+
 ## H. Geolocalización de streams
 
 Una fuente puede ubicarse por evento, recinto, ciudad o país.
@@ -492,6 +509,7 @@ La implementación actual incluye:
 - eventos, SOS y reportes;
 - detalle de evento y verificación local;
 - fuentes visuales demo;
+- capa de camaras publicas en vivo con embed seguro y fallback externo;
 - popup de fuentes;
 - clima, viento y zona estimada de riesgo;
 - rutas demo terrestres, aéreas y marítimas;

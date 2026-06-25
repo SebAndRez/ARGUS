@@ -24,6 +24,8 @@
 - Confirm zooming in or using the exit control returns to the 2D map.
 - Open the layer panel and scroll through every control.
 - Activate visual sources and open a popup.
+- Activate live cameras, open a camera panel and close it.
+- Confirm YouTube cameras load muted or show the external-source fallback.
 - Activate routes and climate/risk.
 - Activate NASA FIRMS and open a thermal event.
 - Confirm the nearby events tray remains usable.
@@ -42,5 +44,7 @@
 - Confirm the layer panel does not cover the entire viewport.
 - Confirm report and SOS forms scroll when the keyboard is open.
 - Confirm widgets can be hidden and restored individually from the module rail.
+- Confirm the live camera panel is usable in iPhone Safari portrait and
+  landscape, with the close button visible.
 - Confirm ReliefWeb is not shown as an active UI layer while the endpoint remains
   available for future work.

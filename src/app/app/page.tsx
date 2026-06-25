@@ -11,6 +11,8 @@ import ExternalEventPopup from "@/components/map/ExternalEventPopup";
 import ExternalCorrelationsPanel from "@/components/map/ExternalCorrelationsPanel";
 import VisualSourcePopup from "@/components/map/VisualSourcePopup";
 import WindLayerLegend from "@/components/map/WindLayerLegend";
+import LiveCameraList from "@/components/live-cameras/LiveCameraList";
+import LiveCameraPanel from "@/components/live-cameras/LiveCameraPanel";
 import FloatingSOSButton from "@/components/app/FloatingSOSButton";
 import FloatingReportButton from "@/components/app/FloatingReportButton";
 import NearbyEventsSheet from "@/components/app/NearbyEventsSheet";
@@ -19,6 +21,7 @@ import HelpRequestModal from "@/components/app/HelpRequestModal";
 import { useSession } from "@/hooks/useSession";
 import { useUserLocation } from "@/hooks/useUserLocation";
 import { demoVisualSources } from "@/data/demoVisualSources";
+import { embeddableLiveCameraCount, liveCameras } from "@/data/liveCameras";
 import { demoRoutes } from "@/data/demoRoutes";
 import { demoCrisisEvents } from "@/data/generateDemoCrisisEvents";
 import {
@@ -44,6 +47,7 @@ import type {
   CrisisEvent,
 } from "@/types/crisis";
 import type { VisualSource } from "@/types/visualSource";
+import type { ArgusLiveCamera } from "@/types/liveCamera";
 import type {
   MetWeatherSourceResponse,
   RiskProjection,
@@ -84,6 +88,7 @@ const initialLayers = {
   visualSources: true,
   officialSources: true,
   publicCameras: true,
+  liveCameras: false,
   weatherRisk: true,
   terrestrialRoutes: true,
   airRoutes: true,
@@ -138,6 +143,8 @@ export default function AppPage() {
   const [centerRequestKey, setCenterRequestKey] = useState(0);
   const [selectedEvent, setSelectedEvent] = useState<CrisisEvent | null>(null);
   const [selectedVisualSource, setSelectedVisualSource] = useState<VisualSource | null>(null);
+  const [selectedLiveCamera, setSelectedLiveCamera] =
+    useState<ArgusLiveCamera | null>(null);
   const [selectedRiskProjection, setSelectedRiskProjection] = useState<RiskProjection | null>(
     demoRiskProjections[0] ?? null
   );
@@ -252,6 +259,7 @@ export default function AppPage() {
 
   const selectEvent = useCallback((event: CrisisEvent) => {
     setSelectedVisualSource(null);
+    setSelectedLiveCamera(null);
     setSelectedRiskProjection(null);
     setSelectedExternalEvent(null);
     setSelectedEvent(event);
@@ -259,14 +267,24 @@ export default function AppPage() {
 
   const selectVisualSource = useCallback((source: VisualSource) => {
     setSelectedEvent(null);
+    setSelectedLiveCamera(null);
     setSelectedRiskProjection(null);
     setSelectedExternalEvent(null);
     setSelectedVisualSource(source);
   }, []);
 
+  const selectLiveCamera = useCallback((camera: ArgusLiveCamera) => {
+    setSelectedEvent(null);
+    setSelectedVisualSource(null);
+    setSelectedRiskProjection(null);
+    setSelectedExternalEvent(null);
+    setSelectedLiveCamera(camera);
+  }, []);
+
   const selectRiskProjection = useCallback((projection: RiskProjection) => {
     setSelectedEvent(null);
     setSelectedVisualSource(null);
+    setSelectedLiveCamera(null);
     setSelectedExternalEvent(null);
     setSelectedRiskProjection(projection);
   }, []);
@@ -274,6 +292,7 @@ export default function AppPage() {
   const selectExternalEvent = useCallback((event: ArgusNormalizedEvent) => {
     setSelectedEvent(null);
     setSelectedVisualSource(null);
+    setSelectedLiveCamera(null);
     setSelectedRiskProjection(null);
     setSelectedExternalEvent(event);
   }, []);
@@ -327,6 +346,9 @@ export default function AppPage() {
       selectedExternalEvent?.sourceId === "nasa_firms"
     ) {
       setSelectedExternalEvent(null);
+    }
+    if (key === "liveCameras" && layerSettings.liveCameras) {
+      setSelectedLiveCamera(null);
     }
     setLayerSettings((current) => ({
       ...current,
@@ -643,6 +665,14 @@ export default function AppPage() {
         detail: "Camaras y transmisiones",
         status: "ready",
       },
+      liveCameras: {
+        count: liveCameras.length,
+        detail: layerSettings.liveCameras
+          ? `${embeddableLiveCameraCount} embebibles · ${liveCameras.length} publicas`
+          : "Capa publica bajo demanda",
+        status: "ready",
+        emphasis: true,
+      },
       weatherRisk: {
         count: demoRiskProjections.length,
         detail:
@@ -692,6 +722,7 @@ export default function AppPage() {
       gdacsUpdatedLabel,
       gpsStatus,
       layerSettings.demoReports,
+      layerSettings.liveCameras,
       metCached,
       metStatus,
       nasaCached,
@@ -1154,6 +1185,9 @@ export default function AppPage() {
         visualSources={demoVisualSources}
         selectedVisualSourceId={selectedVisualSource?.id}
         onVisualSourceSelect={selectVisualSource}
+        liveCameras={liveCameras}
+        selectedLiveCameraId={selectedLiveCamera?.id}
+        onLiveCameraSelect={selectLiveCamera}
         riskProjections={demoRiskProjections}
         onRiskProjectionSelect={selectRiskProjection}
         routes={demoRoutes}
@@ -1283,6 +1317,12 @@ export default function AppPage() {
           showActiveSummary
           supplementalPanel={
             <>
+              <LiveCameraList
+                cameras={liveCameras}
+                active={Boolean(layerSettings.liveCameras)}
+                selectedCameraId={selectedLiveCamera?.id}
+                onSelect={selectLiveCamera}
+              />
               {/* ReliefWeb temporarily hidden from UI until ingest reliability is fixed. */}
               <ExternalCorrelationsPanel
                 correlations={externalCorrelations}
@@ -1459,6 +1499,10 @@ export default function AppPage() {
       )}
 
       <VisualSourcePopup source={selectedVisualSource} onClose={() => setSelectedVisualSource(null)} />
+      <LiveCameraPanel
+        camera={selectedLiveCamera}
+        onClose={() => setSelectedLiveCamera(null)}
+      />
       <ExternalEventPopup
         event={selectedExternalEvent}
         onClose={() => setSelectedExternalEvent(null)}

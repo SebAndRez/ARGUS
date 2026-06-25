@@ -26,6 +26,7 @@ export interface MapLayerState {
   visualSources?: boolean;
   officialSources?: boolean;
   publicCameras?: boolean;
+  liveCameras?: boolean;
   weatherRisk?: boolean;
   terrestrialRoutes?: boolean;
   airRoutes?: boolean;
@@ -93,7 +94,14 @@ const layerGroups: Array<{
   },
   {
     label: "Fuentes y contexto",
-    keys: ["visualSources", "officialSources", "publicCameras", "weatherRisk", "user"],
+    keys: [
+      "visualSources",
+      "officialSources",
+      "publicCameras",
+      "liveCameras",
+      "weatherRisk",
+      "user",
+    ],
   },
   {
     label: "Rutas demo",
@@ -117,6 +125,7 @@ const labels: Record<keyof MapLayerState, string> = {
   visualSources: "Fuentes visuales",
   officialSources: "Fuentes oficiales",
   publicCameras: "Cámaras públicas",
+  liveCameras: "Camaras en vivo",
   weatherRisk: "Clima y riesgo",
   terrestrialRoutes: "Rutas terrestres",
   airRoutes: "Rutas aéreas",
@@ -161,6 +170,11 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
       label: "Fuentes",
       enabled: Boolean(layers.visualSources),
       available: Object.prototype.hasOwnProperty.call(layers, "visualSources"),
+    },
+    {
+      label: "Camaras",
+      enabled: Boolean(layers.liveCameras),
+      available: Object.prototype.hasOwnProperty.call(layers, "liveCameras"),
     },
     {
       label: "Rutas",
