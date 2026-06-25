@@ -25,6 +25,23 @@ YouTube se embebe con `youtube-nocookie.com`, `mute=1` y `playsinline=1`.
 EarthCam, SkylineWebcams u otras paginas web quedan como `embedAllowed=false`
 salvo que exista un embed oficial claro.
 
+## Lote ampliado YouTube
+
+El lote ampliado agrega 214 camaras YouTube unicas al catalogo, separadas en
+`src/data/expandedLiveCameras.ts` para mantener legible la semilla base.
+
+- La deduplicacion principal usa `provider + videoId`.
+- Se omitio 1 duplicado dentro del lote depurado.
+- 78 fuentes quedaron con `status: "needs_review"` por ubicacion imprecisa,
+  naturaleza de dashboard/monitor externo o valor operativo pendiente.
+- Las coordenadas son aproximadas a ciudad, infraestructura o zona publica; no
+  representan precision quirurgica.
+- Las categorias cubren aeropuertos, puertos, ciudades, playas, transporte,
+  ferrocarril, clima, espacio, turismo, monumentos y casos pendientes.
+
+Las camaras pueden caer, cambiar de video, restringir embed o dejar de transmitir.
+ARGUS debe tratarlas como apoyo visual publico, no como confirmacion oficial.
+
 ## Reglas de seguridad
 
 ARGUS no realiza:

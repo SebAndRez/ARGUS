@@ -25,6 +25,7 @@ interface Props {
   maxItems?: number;
   demoVisibleCount?: number;
   demoTotalCount?: number;
+  onClose?: () => void;
 }
 
 function eventTypeLabel(type: CrisisEvent["type"]) {
@@ -41,6 +42,7 @@ export default function NearbyEventsSheet({
   maxItems = 20,
   demoVisibleCount,
   demoTotalCount,
+  onClose,
 }: Props) {
   const nearbyEvents = getNearbyEvents(events, latitude, longitude, maxItems);
   const hasDemoSummary =
@@ -51,7 +53,7 @@ export default function NearbyEventsSheet({
     <aside className="argus-nearby-sheet pointer-events-auto fixed inset-x-0 bottom-0 z-40 mx-auto max-w-5xl overflow-hidden rounded-t-lg border border-white/10 bg-slate-950/92 px-4 pb-4 pt-3 backdrop-blur-xl shadow-[0_-18px_48px_rgba(0,0,0,0.42)] sm:px-6">
       <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-600/70 sm:hidden" />
 
-      <div className="mr-40 mb-3 flex min-h-7 items-center justify-between gap-3 2xl:mr-0">
+      <div className="mb-3 flex min-h-7 items-start justify-between gap-3">
         <div>
           <p className="text-[0.65rem] font-semibold uppercase text-cyan-300/80">Perímetro cercano</p>
           <p className="mt-1 text-xs text-slate-400">Ordenado por distancia</p>
@@ -65,9 +67,18 @@ export default function NearbyEventsSheet({
         <span className="shrink-0 rounded-md border border-white/10 bg-slate-900/80 px-2.5 py-1 text-[0.65rem] font-semibold uppercase text-slate-300">
           {events.length} activos
         </span>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 border border-white/10 bg-slate-950/70 px-2.5 py-1 text-[0.56rem] font-bold uppercase text-slate-400 hover:text-white"
+          >
+            Ocultar
+          </button>
+        )}
       </div>
 
-      <div className="mr-40 overflow-hidden 2xl:mr-0">
+      <div className="overflow-hidden">
         <div className="argus-nearby-sheet-scroll flex snap-x snap-mandatory gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {nearbyEvents.map(({ event, distanceKm }) => {
             const severity = ALERT_SEVERITY_PRESENTATION[event.severity];

@@ -13,6 +13,7 @@ import VisualSourcePopup from "@/components/map/VisualSourcePopup";
 import WindLayerLegend from "@/components/map/WindLayerLegend";
 import LiveCameraList from "@/components/live-cameras/LiveCameraList";
 import LiveCameraPanel from "@/components/live-cameras/LiveCameraPanel";
+import RiskAssessmentPanel from "@/components/risk/RiskAssessmentPanel";
 import FloatingSOSButton from "@/components/app/FloatingSOSButton";
 import FloatingReportButton from "@/components/app/FloatingReportButton";
 import NearbyEventsSheet from "@/components/app/NearbyEventsSheet";
@@ -58,6 +59,7 @@ import type {
   ArgusIngestionSourceResponse,
   ArgusNormalizedEvent,
 } from "@/types/ingestion";
+import type { ArgusRiskAssessment } from "@/types/riskAssessment";
 import { correlateExternalEvents } from "@/lib/ingestion/correlateExternalEvents";
 
 const OperationalMap = dynamic(
@@ -101,6 +103,7 @@ const defaultVisibleWidgets = {
   layers: true,
   weather: true,
   nearby: true,
+  risk: false,
 };
 
 export default function AppPage() {
@@ -221,6 +224,12 @@ export default function AppPage() {
   const [metErrorMessage, setMetErrorMessage] = useState<string | null>(null);
   const [metCached, setMetCached] = useState(false);
   const [metRetryVersion, setMetRetryVersion] = useState(0);
+  const [riskAssessments, setRiskAssessments] = useState<ArgusRiskAssessment[]>([]);
+  const [riskStatus, setRiskStatus] = useState<
+    "idle" | "loading" | "loaded" | "error"
+  >("idle");
+  const [riskErrorMessage, setRiskErrorMessage] = useState<string | null>(null);
+  const [riskRefreshVersion, setRiskRefreshVersion] = useState(0);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -1118,6 +1127,49 @@ export default function AppPage() {
     setMetRetryVersion((current) => current + 1);
   };
 
+  useEffect(() => {
+    if (!visibleWidgets.risk) return;
+
+    const controller = new AbortController();
+    setRiskStatus("loading");
+    setRiskErrorMessage(null);
+
+    async function loadRiskAssessments() {
+      try {
+        const response = await fetch("/api/risk-assessments?limit=40", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = (await response.json()) as {
+          assessments?: ArgusRiskAssessment[];
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(payload.error || "No fue posible calcular prediccion.");
+        }
+        setRiskAssessments(
+          Array.isArray(payload.assessments) ? payload.assessments : []
+        );
+        setRiskStatus("loaded");
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return;
+        setRiskStatus("error");
+        setRiskErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "No fue posible calcular prediccion."
+        );
+      }
+    }
+
+    loadRiskAssessments();
+    return () => controller.abort();
+  }, [riskRefreshVersion, visibleWidgets.risk]);
+
+  const refreshRiskAssessments = () => {
+    setRiskRefreshVersion((current) => current + 1);
+  };
+
   async function createReport(payload: {
     category: string;
     title: string;
@@ -1238,6 +1290,7 @@ export default function AppPage() {
           ["hud", "HUD"],
           ["layers", "Capas"],
           ["weather", "Clima"],
+          ["risk", "Riesgo"],
           ["nearby", "Cercanos"],
         ] as const).map(([key, label]) => (
           <button
@@ -1256,15 +1309,20 @@ export default function AppPage() {
         ))}
       </div>
 
+      {displayMode === "command" && visibleWidgets.risk && (
+      <div className="argus-risk-panel-shell pointer-events-auto fixed z-[47] w-[330px] max-w-[calc(100%-1rem)]">
+        <RiskAssessmentPanel
+          assessments={riskAssessments}
+          status={riskStatus}
+          errorMessage={riskErrorMessage}
+          onRefresh={refreshRiskAssessments}
+          onToggleCollapsed={() => setWidgetVisibility("risk", false)}
+        />
+      </div>
+      )}
+
       {displayMode === "command" && visibleWidgets.hud && (
       <div className="argus-safe-top pointer-events-auto fixed left-1/2 z-40 w-[calc(100%-1.5rem)] max-w-6xl -translate-x-1/2">
-        <button
-          type="button"
-          onClick={() => setWidgetVisibility("hud", false)}
-          className="absolute right-2 top-2 z-10 border border-white/10 bg-slate-950/80 px-2 py-1 text-[0.56rem] font-bold uppercase text-slate-400 hover:text-white"
-        >
-          Ocultar
-        </button>
         <ArgusOperationalHUD
           mode="citizen"
           role="civil"
@@ -1274,18 +1332,12 @@ export default function AppPage() {
           activeLayerCount={activeLayerCount}
           eventCount={nearbyEventPool.length}
           criticalCount={criticalCount}
+          onClose={() => setWidgetVisibility("hud", false)}
         />
       </div>
       )}
       {displayMode === "command" && visibleWidgets.weather && (
       <div className="contents">
-      <button
-        type="button"
-        onClick={() => setWidgetVisibility("weather", false)}
-        className="argus-weather-hide-button pointer-events-auto fixed z-[46] border border-white/10 bg-slate-950/86 px-2 py-1 text-[0.56rem] font-bold uppercase text-slate-400 shadow-lg shadow-black/25 backdrop-blur-xl hover:text-white"
-      >
-        Ocultar clima
-      </button>
       <WindLayerLegend
         observation={activeWeatherObservation}
         selectedProjection={selectedRiskProjection}
@@ -1295,22 +1347,17 @@ export default function AppPage() {
         thermalEventCount={
           layerSettings.nasaFirms ? nasaEvents.length : 0
         }
+        onClose={() => setWidgetVisibility("weather", false)}
       />
       </div>
       )}
 
       {(displayMode === "command" || displayMode === "layers") && visibleWidgets.layers && (
       <div className="argus-layer-panel-shell pointer-events-auto fixed z-[45] w-[310px]">
-        <button
-          type="button"
-          onClick={() => setWidgetVisibility("layers", false)}
-          className="absolute right-2 top-2 z-10 border border-white/10 bg-slate-950/80 px-2 py-1 text-[0.56rem] font-bold uppercase text-slate-400 hover:text-white"
-        >
-          Ocultar
-        </button>
         <MapLayerControls
           layers={layerSettings}
           onToggle={toggleLayer}
+          onClose={() => setWidgetVisibility("layers", false)}
           baseMapType={baseMapType}
           onBaseMapChange={setBaseMapType}
           layerMeta={layerMeta}
@@ -1453,18 +1500,12 @@ export default function AppPage() {
 
       {displayMode === "command" && visibleWidgets.nearby && (
       <div className="contents">
-      <button
-        type="button"
-        onClick={() => setWidgetVisibility("nearby", false)}
-        className="argus-nearby-hide-button pointer-events-auto fixed z-[51] border border-white/10 bg-slate-950/86 px-2 py-1 text-[0.56rem] font-bold uppercase text-slate-400 shadow-lg shadow-black/25 backdrop-blur-xl hover:text-white"
-      >
-        Ocultar cercanos
-      </button>
       <NearbyEventsSheet
         events={nearbyEventPool}
         latitude={location.latitude}
         longitude={location.longitude}
         onSelect={selectEvent}
+        onClose={() => setWidgetVisibility("nearby", false)}
         maxItems={20}
         demoVisibleCount={
           layerSettings.demoReports ? filteredDemoEvents.length : undefined

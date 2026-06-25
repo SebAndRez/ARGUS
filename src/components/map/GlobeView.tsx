@@ -113,11 +113,11 @@ const createEarthTexture = () => {
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.fillStyle = "rgba(8, 47, 73, 0.72)";
-  ctx.strokeStyle = "rgba(103, 232, 249, 0.22)";
-  ctx.lineWidth = 2;
+  ctx.fillStyle = "rgba(14, 76, 96, 0.86)";
+  ctx.strokeStyle = "rgba(125, 211, 252, 0.34)";
+  ctx.lineWidth = 1.8;
 
-  const drawBlob = (points: Array<[number, number]>) => {
+  const drawLand = (points: Array<[number, number]>) => {
     ctx.beginPath();
     points.forEach(([x, y], index) => {
       if (index === 0) ctx.moveTo(x, y);
@@ -128,43 +128,57 @@ const createEarthTexture = () => {
     ctx.stroke();
   };
 
-  drawBlob([
-    [190, 105],
-    [265, 120],
-    [285, 185],
-    [245, 240],
-    [290, 330],
-    [260, 420],
-    [205, 342],
-    [170, 260],
-    [125, 218],
-    [132, 150],
+  const drawMapLine = (points: Array<[number, number]>) => {
+    ctx.beginPath();
+    points.forEach(([x, y], index) => {
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  };
+
+  // Americas
+  drawLand([
+    [148, 94], [222, 75], [300, 106], [316, 160], [284, 204],
+    [248, 234], [260, 290], [308, 335], [292, 407], [254, 474],
+    [216, 414], [190, 346], [154, 303], [122, 244], [92, 214],
+    [104, 150],
   ]);
-  drawBlob([
-    [455, 132],
-    [540, 112],
-    [638, 145],
-    [700, 220],
-    [665, 310],
-    [575, 326],
-    [520, 260],
-    [432, 255],
-    [390, 190],
+  drawLand([
+    [276, 230], [334, 254], [360, 318], [344, 390], [306, 454],
+    [270, 480], [284, 410], [300, 340], [248, 288],
   ]);
-  drawBlob([
-    [665, 210],
-    [785, 190],
-    [890, 250],
-    [840, 340],
-    [715, 318],
+
+  // Europe, Africa and Asia
+  drawLand([
+    [452, 112], [540, 88], [620, 108], [686, 146], [724, 202],
+    [694, 268], [626, 302], [560, 286], [528, 228], [468, 224],
+    [414, 184],
   ]);
-  drawBlob([
-    [770, 365],
-    [895, 374],
-    [925, 430],
-    [825, 455],
-    [740, 430],
+  drawLand([
+    [522, 224], [584, 244], [636, 324], [618, 416], [570, 468],
+    [520, 408], [490, 310],
   ]);
+  drawLand([
+    [692, 156], [804, 156], [914, 218], [944, 286], [884, 350],
+    [752, 322], [690, 260],
+  ]);
+
+  // Australia and south-east islands
+  drawLand([
+    [760, 366], [858, 360], [922, 404], [902, 454], [804, 462],
+    [742, 426],
+  ]);
+  drawLand([[946, 348], [984, 362], [992, 398], [956, 392]]);
+  drawLand([[506, 74], [564, 68], [600, 92], [540, 100]]);
+  drawLand([[422, 472], [486, 462], [560, 478], [512, 498], [446, 496]]);
+
+  ctx.strokeStyle = "rgba(14, 165, 233, 0.22)";
+  ctx.lineWidth = 1;
+  drawMapLine([[120, 216], [184, 226], [236, 242], [302, 286]]);
+  drawMapLine([[460, 184], [530, 204], [612, 224], [700, 222], [808, 238]]);
+  drawMapLine([[560, 300], [604, 350], [598, 420]]);
+  drawMapLine([[752, 250], [820, 288], [884, 302]]);
 
   ctx.strokeStyle = "rgba(34, 211, 238, 0.1)";
   ctx.lineWidth = 1;

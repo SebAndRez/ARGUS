@@ -499,6 +499,23 @@ Evolución futura:
 - timeline operacional;
 - logística e infraestructura crítica.
 
+## Predictive Risk And Knowledge Foundation
+
+ARGUS incorpora una base v1 de prediccion situacional. No predice eventos
+naturales con certeza; estima consecuencias probables con evidencia disponible.
+
+Capacidades iniciales:
+
+- assessments de tsunami, impacto sismico, humo/incendio e impacto humanitario;
+- evidencia por fuente y confianza;
+- persistencia de assessments y revisiones;
+- contexto historico/doctrinal para Chile y doctrina general de desastres;
+- APIs `/api/risk-assessments`, `/api/knowledge/facts` y
+  `/api/knowledge/documents`;
+- panel **Prediccion ARGUS** en `/app`.
+
+La historia y doctrina elevan vigilancia, no confirman eventos actuales.
+
 ## Estado actual
 
 La implementación actual incluye:

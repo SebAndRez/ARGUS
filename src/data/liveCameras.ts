@@ -1,4 +1,5 @@
 import { buildYouTubeEmbedUrl, extractYouTubeVideoId } from "@/lib/liveCameras/youtube";
+import { expandedLiveCameras, expandedLiveCameraStats } from "@/data/expandedLiveCameras";
 import type { ArgusLiveCamera } from "@/types/liveCamera";
 
 type LiveCameraSeed = Omit<
@@ -17,11 +18,16 @@ const youtubeCamera = (seed: LiveCameraSeed): ArgusLiveCamera => {
 
   return {
     ...seed,
+    providerName: seed.providerName ?? "YouTube",
+    videoId: seed.videoId ?? videoId ?? undefined,
+    lat: seed.latitude,
+    lng: seed.longitude,
     locationPrecision: seed.locationPrecision ?? "approximate",
     locationConfidence: seed.locationConfidence ?? 70,
     embedAllowed: Boolean(embedUrl),
     embedUrl,
-    status: embedUrl ? "active" : "unknown",
+    embedStatus: embedUrl ? "allowed" : "unknown",
+    status: seed.status ?? (embedUrl ? "active" : "unknown"),
   };
 };
 
@@ -29,13 +35,17 @@ const externalCamera = (
   seed: LiveCameraSeed & { provider: "earthcam" | "skylinewebcams" | "earthtv" | "other" }
 ): ArgusLiveCamera => ({
   ...seed,
+  providerName: seed.providerName ?? seed.provider,
+  lat: seed.latitude,
+  lng: seed.longitude,
   locationPrecision: seed.locationPrecision ?? "approximate",
   locationConfidence: seed.locationConfidence ?? 65,
   embedAllowed: false,
+  embedStatus: "restricted",
   status: seed.status ?? "embed_restricted",
 });
 
-export const liveCameras: ArgusLiveCamera[] = [
+const baseLiveCameras: ArgusLiveCamera[] = [
   youtubeCamera({
     id: "cam-washington-monument",
     title: "Washington Monument",
@@ -418,6 +428,42 @@ export const liveCameras: ArgusLiveCamera[] = [
     tags: ["street", "earthcam", "external"],
   }),
 ];
+
+function getLiveCameraDedupeKey(camera: ArgusLiveCamera) {
+  if (camera.provider === "youtube") {
+    const videoId = camera.videoId ?? extractYouTubeVideoId(camera.sourceUrl);
+    if (videoId) return `youtube:${videoId}`;
+  }
+
+  return `${camera.provider}:${camera.sourceUrl}`;
+}
+
+function dedupeLiveCameras(cameras: ArgusLiveCamera[]) {
+  const seen = new Set<string>();
+  const unique: ArgusLiveCamera[] = [];
+
+  for (const camera of cameras) {
+    const key = getLiveCameraDedupeKey(camera);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(camera);
+  }
+
+  return unique;
+}
+
+export const liveCameras: ArgusLiveCamera[] = dedupeLiveCameras([
+  ...baseLiveCameras,
+  ...expandedLiveCameras,
+]);
+
+export const liveCameraCatalogStats = {
+  base: baseLiveCameras.length,
+  expanded: expandedLiveCameraStats.total,
+  expandedNeedsReview: expandedLiveCameraStats.needsReview,
+  duplicateTitlesOmitted: expandedLiveCameraStats.duplicateTitlesOmitted,
+  total: liveCameras.length,
+} as const;
 
 export const embeddableLiveCameraCount = liveCameras.filter(
   (camera) => camera.embedAllowed

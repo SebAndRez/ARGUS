@@ -47,6 +47,7 @@ export interface LayerDisplayMeta {
 interface Props<TLayers extends MapLayerState> {
   layers: TLayers;
   onToggle: (key: keyof TLayers) => void;
+  onClose?: () => void;
   baseMapType?: BaseMapType;
   onBaseMapChange?: (type: BaseMapType) => void;
   showLegend?: boolean;
@@ -146,6 +147,7 @@ const baseMapOptions: Array<{
 export default function MapLayerControls<TLayers extends MapLayerState>({
   layers,
   onToggle,
+  onClose,
   baseMapType,
   onBaseMapChange,
   showLegend = true,
@@ -217,9 +219,20 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
           </p>
           <p className="mt-1 text-sm font-semibold text-white">Control operacional</p>
         </div>
-        <span className="border border-cyan-300/20 bg-cyan-400/8 px-2 py-1 text-[0.58rem] font-bold uppercase text-cyan-200">
-          Demo
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="border border-cyan-300/20 bg-cyan-400/8 px-2 py-1 text-[0.58rem] font-bold uppercase text-cyan-200">
+            Demo
+          </span>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="border border-white/10 bg-slate-950/70 px-2 py-1 text-[0.56rem] font-bold uppercase text-slate-400 hover:text-white"
+            >
+              Ocultar
+            </button>
+          )}
+        </div>
       </div>
 
       {baseMapType && onBaseMapChange && (

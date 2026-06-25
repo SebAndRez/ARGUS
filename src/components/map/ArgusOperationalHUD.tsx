@@ -16,6 +16,7 @@ interface Props {
   activeLayerCount?: number;
   eventCount?: number;
   criticalCount?: number;
+  onClose?: () => void;
 }
 
 interface TimeState {
@@ -58,6 +59,7 @@ export default function ArgusOperationalHUD({
   activeLayerCount,
   eventCount,
   criticalCount,
+  onClose,
 }: Props) {
   const [timeState, setTimeState] = useState<TimeState>({
     time: "--:--",
@@ -114,9 +116,20 @@ export default function ArgusOperationalHUD({
             {mode === "citizen" ? "Modo ciudadano" : "Centro de mando"}
           </p>
         </div>
-        <span className="border border-white/10 bg-slate-900/80 px-2.5 py-1 text-[0.62rem] font-semibold uppercase text-slate-300">
-          {roleLabels[role]}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="border border-white/10 bg-slate-900/80 px-2.5 py-1 text-[0.62rem] font-semibold uppercase text-slate-300">
+            {roleLabels[role]}
+          </span>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="border border-white/10 bg-slate-950/70 px-2 py-1 text-[0.56rem] font-bold uppercase text-slate-400 hover:text-white"
+            >
+              Ocultar
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="mt-3 flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

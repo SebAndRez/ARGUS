@@ -10,6 +10,7 @@ interface Props {
   fallbackActive?: boolean;
   cached?: boolean;
   thermalEventCount?: number;
+  onClose?: () => void;
 }
 
 export default function WindLayerLegend({
@@ -19,6 +20,7 @@ export default function WindLayerLegend({
   fallbackActive = false,
   cached = false,
   thermalEventCount = 0,
+  onClose,
 }: Props) {
   if (!visible || !observation) return null;
 
@@ -65,6 +67,15 @@ export default function WindLayerLegend({
         >
           {isExternalForecast ? (cached ? "MET · CACHÉ" : "MET · REAL") : "FALLBACK"}
         </span>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="pointer-events-auto shrink-0 border border-white/10 bg-slate-950/70 px-2 py-1 text-[0.56rem] font-bold uppercase text-slate-400 hover:text-white"
+          >
+            Ocultar
+          </button>
+        )}
       </div>
 
       <div className="mt-4 grid grid-cols-[auto_1fr] items-center gap-3">

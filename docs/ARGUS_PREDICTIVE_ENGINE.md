@@ -1,0 +1,52 @@
+# ARGUS Predictive Engine
+
+ARGUS Predictive Engine v1 no predice eventos naturales con certeza. Analiza
+consecuencias probables a partir de fuentes externas, correlaciones y contexto
+historico/doctrinal.
+
+## Principios
+
+- Habla en hipotesis: watch, posible, probable, reducido o confirmado por
+  fuente oficial.
+- No usa LLM externo ni OpenAI API en esta version.
+- No reemplaza alertas oficiales.
+- Cada assessment incluye probabilidad, confianza, evidencia y accion
+  recomendada.
+- La historia se usa como contexto secundario, no como confirmacion actual.
+
+## Reglas v1
+
+- Terremoto costero M6.5+ -> vigilancia tsunami hasta confirmacion NOAA/SHOA.
+- NOAA warning/advisory/watch eleva la hipotesis; no threat/information la
+  reduce.
+- Terremoto M6+ superficial -> revision de impacto e infraestructura.
+- NASA FIRMS + FRP/confianza alta -> posible humo o incendio, aclarando que un
+  foco termico no confirma incendio.
+- GDACS severo + ReliefWeb -> posible impacto humanitario.
+- La doctrina general ayuda a pensar cadenas de eventos: terremoto + tsunami,
+  incendio + viento + humo, volcan + lluvia + lahar, accidente industrial +
+  viento + poblacion expuesta.
+
+## Ejemplos
+
+- Terremoto M7.1 superficial + NOAA sin warning: posible riesgo de tsunami
+  pendiente de confirmacion oficial.
+- Foco termico FIRMS con FRP alto: posible humo/incendio, revisar viento y
+  reportes oficiales.
+- GDACS orange/red + contexto ReliefWeb: posible impacto humanitario.
+
+## Limitaciones
+
+- No hay modelo real de tsunami.
+- No hay modelo cientifico de dispersion de humo.
+- No hay RAG ni embeddings.
+- No hay notificaciones push.
+- La doctrina no eleva un assessment a `confirmed`; solo aporta contexto y
+  preguntas operativas.
+
+## Futuro
+
+- RAG con documentos curados.
+- Auditoria detallada de reglas y umbrales.
+- Comparacion historica de falsos positivos/falsos negativos.
+- Sintesis con IA citando fuentes y con revision humana.

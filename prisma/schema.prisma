@@ -149,3 +149,104 @@ model ExternalEventCorrelation {
   @@index([kind])
   @@index([createdAt])
 }
+
+model RiskAssessment {
+  id                      String   @id @default(cuid())
+  riskType                String
+  status                  String
+  probabilityBand         String
+  probabilityScore        Int
+  confidence              Int
+  severity                String
+  title                   String
+  summary                 String
+  recommendedAction       String
+  timeframe               String?
+  relatedExternalEventIds Json
+  evidence                Json
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  nextReviewAt            DateTime?
+  metadata                Json?
+
+  @@index([riskType])
+  @@index([status])
+  @@index([probabilityBand])
+  @@index([createdAt])
+}
+
+model RiskAssessmentRevision {
+  id                       String   @id @default(cuid())
+  assessmentId             String
+  previousStatus           String?
+  newStatus                String
+  previousProbabilityScore Int?
+  newProbabilityScore      Int
+  reason                   String
+  evidence                 Json?
+  createdAt                DateTime @default(now())
+}
+
+model HazardKnowledgeDocument {
+  id               String   @id @default(cuid())
+  title            String
+  sourceName       String
+  sourceUrl        String
+  publisher        String?
+  country          String?
+  hazardType       String
+  language         String?
+  publishedYear    Int?
+  notes            String?
+  documentCategory String?
+  ingestionStatus  String?  @default("queued")
+  priority         Int?     @default(3)
+  reliabilityScore Int?     @default(80)
+  publicationYear  Int?
+  institution      String?
+  countryFocus     String?
+  regionFocus      String?
+  hazardTypes      Json?
+  tags             Json?
+  limitationNote   String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model HazardKnowledgeFact {
+  id                    String    @id @default(cuid())
+  documentId            String?
+  hazardType            String
+  knowledgeType         String
+  title                 String
+  summary               String
+  country               String?
+  region                String?
+  latitude              Float?
+  longitude             Float?
+  year                  Int?
+  eventDate             DateTime?
+  magnitude             Float?
+  magnitudeLabel        String?
+  depthKm               Float?
+  ruptureLengthKm       Float?
+  maxSeaLevelVariationM Float?
+  affectedCoastKm       Float?
+  casualtiesText        String?
+  confidence            Int
+  tags                  Json?
+  sourceName            String
+  sourceUrl             String
+  documentCategory      String?
+  relevanceScore        Int?      @default(50)
+  limitationNote        String?
+  extractionStatus      String?   @default("manual_review")
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([hazardType])
+  @@index([country])
+  @@index([region])
+  @@index([year])
+  @@index([magnitude])
+}

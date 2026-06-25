@@ -26,6 +26,12 @@
 - Activate visual sources and open a popup.
 - Activate live cameras, open a camera panel and close it.
 - Confirm YouTube cameras load muted or show the external-source fallback.
+- Confirm the expanded live camera catalog can be searched/scrolled without
+  horizontal overflow.
+- Open at least one camera marked `needs_review` and confirm the panel still
+  shows source, location confidence and close control.
+- Confirm closing a live camera returns focus to the map without moving layers
+  or losing zoom.
 - Activate routes and climate/risk.
 - Activate NASA FIRMS and open a thermal event.
 - Confirm the nearby events tray remains usable.

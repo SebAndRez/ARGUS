@@ -82,6 +82,11 @@ html {
   top: calc(8.75rem + env(safe-area-inset-top));
 }
 
+.argus-risk-panel-shell {
+  left: max(0.75rem, env(safe-area-inset-left));
+  top: calc(18rem + env(safe-area-inset-top));
+}
+
 .argus-nearby-sheet {
   padding-bottom: calc(1rem + env(safe-area-inset-bottom));
 }
@@ -383,6 +388,13 @@ html {
     -webkit-overflow-scrolling: touch;
   }
 
+  .argus-risk-panel-shell {
+    bottom: calc(8.5rem + env(safe-area-inset-bottom));
+    left: max(0.5rem, env(safe-area-inset-left));
+    top: auto;
+    width: min(20rem, calc(100% - 1rem));
+  }
+
   .argus-nearby-sheet {
     max-height: 31vh;
     max-height: 31svh;
@@ -407,6 +419,11 @@ html {
   .argus-layer-panel-shell .argus-tactical-panel {
     max-height: inherit;
     -webkit-overflow-scrolling: touch;
+  }
+
+  .argus-risk-panel-shell {
+    bottom: calc(0.75rem + env(safe-area-inset-bottom));
+    top: auto;
   }
 
   .argus-nearby-sheet {
