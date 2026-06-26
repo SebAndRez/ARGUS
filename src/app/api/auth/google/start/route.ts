@@ -6,6 +6,7 @@ const GOOGLE_STATE_COOKIE = "argus-google-oauth-state";
 
 function getGoogleConfig(request: Request) {
   const url = new URL(request.url);
+
   return {
     clientId: process.env.GOOGLE_CLIENT_ID,
     redirectUri:
@@ -21,7 +22,8 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/login?google=missing_config", request.url));
   }
 
-  const state = randomBytes(24).toString("hex");
+  const state = randomBytes(32).toString("hex");
+
   const params = new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
@@ -33,6 +35,7 @@ export async function GET(request: Request) {
   });
 
   const response = NextResponse.redirect(`${GOOGLE_AUTH_URL}?${params.toString()}`);
+
   response.cookies.set({
     name: GOOGLE_STATE_COOKIE,
     value: state,
