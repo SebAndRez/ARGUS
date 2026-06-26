@@ -124,3 +124,10 @@ Required checks:
   the map toolbar on iPhone Safari.
 - Proximity warnings use neutral wording and remain dismissible by disabling the
   conflict/event layers.
+- The `Modulos` button is visible without covering SOS or Reportar.
+- Open `Modulos`, open Fenix, close Fenix, open AURA and close AURA.
+- AURA Basic opens as a compact panel with internal scroll.
+- `SOS Medico` does not permanently cover SOS, Reportar, Clima or CAPAS.
+- COMANDO / Command Center content remains contained and does not create
+  horizontal overflow.
+- Test modules at 360, 390, 414 and 430 px wide.

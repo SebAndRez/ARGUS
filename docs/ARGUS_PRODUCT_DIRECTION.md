@@ -641,3 +641,23 @@ ARGUS no debe presentar control territorial, fronteras ni reportes de fuentes
 abiertas como certeza. Liveuamap queda solo como referencia manual sin scraping.
 ACLED queda deshabilitado hasta tener API key y revision de terminos. GDELT y
 ReliefWeb se tratan como senales/contexto y no como instrucciones operativas.
+
+## Modulos sobre ARGUS Core
+
+ARGUS Core mantiene el mapa limpio: reportes, SOS, riesgo, comando y fuentes.
+Fenix Twin y AURA Medic Mesh viven como modulos desplegables desde `Modulos`.
+
+Fenix Twin tiene una vista publica simple y una capa institucional avanzada
+para simulacion, rutas criticas, refugios y planes de accion.
+
+AURA Medic Mesh tiene AURA Basic dentro de ARGUS libre: SOS medico, ficha
+opcional, QR medico local y puntos medicos demo. AURA Pro queda como capa futura
+institucional/profesional; no se implementa triage real ni datos clinicos reales
+en esta fase.
+
+## Crisis Command Center
+
+ARGUS evoluciona hacia un Crisis Command Center. El publico ve instrucciones
+simples; analistas y operadores ven evidencia, prioridad P0-P4, timeline,
+limitaciones y acciones prudentes. ARGUS AI sigue siendo motor de reglas y
+scoring sin tokens externos en esta fase.

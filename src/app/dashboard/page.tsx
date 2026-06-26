@@ -4,6 +4,7 @@ import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react
 import OperationalMap from "@/components/map/OperationalMap";
 import ArgusOperationalHUD from "@/components/map/ArgusOperationalHUD";
 import DashboardCommandPanel from "@/components/dashboard/DashboardCommandPanel";
+import CommandCenterPanel from "@/components/command/CommandCenterPanel";
 import EventDetailPanel from "@/components/map/EventDetailPanel";
 import VisualSourcePopup from "@/components/map/VisualSourcePopup";
 import DashboardUsersPanel from "@/components/dashboard/DashboardUsersPanel";
@@ -322,6 +323,7 @@ export default function DashboardPage() {
 
         <div className="grid min-h-0 min-w-0 auto-rows-max content-start gap-6 xl:h-full xl:overflow-y-auto xl:overscroll-contain xl:pr-1">
           <EventDetailPanel event={selectedEvent} onCenter={setSelectedEvent} />
+          <CommandCenterPanel />
           <DashboardUsersPanel users={users} />
           <AuditLogPanel logs={logs} />
 

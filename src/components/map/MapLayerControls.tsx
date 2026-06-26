@@ -28,6 +28,7 @@ export interface MapLayerState {
   officialSources?: boolean;
   publicCameras?: boolean;
   liveCameras?: boolean;
+  medicalPoints?: boolean;
   weatherRisk?: boolean;
   terrestrialRoutes?: boolean;
   airRoutes?: boolean;
@@ -107,6 +108,7 @@ const layerGroups: Array<{
       "officialSources",
       "publicCameras",
       "liveCameras",
+      "medicalPoints",
       "weatherRisk",
       "user",
     ],
@@ -145,6 +147,7 @@ const labels: Record<keyof MapLayerState, string> = {
   officialSources: "Fuentes oficiales",
   publicCameras: "Cámaras públicas",
   liveCameras: "Camaras en vivo",
+  medicalPoints: "Puntos medicos",
   weatherRisk: "Clima y riesgo",
   terrestrialRoutes: "Rutas terrestres",
   airRoutes: "Rutas aéreas",
@@ -212,6 +215,11 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
       label: "Camaras",
       enabled: Boolean(layers.liveCameras),
       available: Object.prototype.hasOwnProperty.call(layers, "liveCameras"),
+    },
+    {
+      label: "Medico",
+      enabled: Boolean(layers.medicalPoints),
+      available: Object.prototype.hasOwnProperty.call(layers, "medicalPoints"),
     },
     {
       label: "Rutas",

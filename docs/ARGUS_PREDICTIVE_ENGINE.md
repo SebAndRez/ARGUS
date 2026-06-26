@@ -133,3 +133,12 @@ Estimacion operacional, no confirmacion oficial.
 
 ARGUS no debe decir que hay personas atrapadas salvo que exista reporte
 confirmado por fuente oficial o equipo en terreno.
+## Command Center Integration
+
+ARGUS predictive output now feeds a Command Center concept through incident
+views, evidence scoring, P0-P4 operational priority, timelines and visible
+limitations. This remains a rules-based ARGUS engine without external LLM calls,
+tokens, embeddings or vector databases.
+
+Predictions and priorities are operational estimates for human review. They do
+not confirm events, issue evacuation orders or replace official sources.

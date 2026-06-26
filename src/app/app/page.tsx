@@ -16,6 +16,9 @@ import LiveCameraPanel from "@/components/live-cameras/LiveCameraPanel";
 import RiskAssessmentPanel from "@/components/risk/RiskAssessmentPanel";
 import ConflictLegend from "@/components/conflict/ConflictLegend";
 import ConflictZonePanel from "@/components/conflict/ConflictZonePanel";
+import ArgusModuleLauncher from "@/components/modules/ArgusModuleLauncher";
+import AuraMedicalButton from "@/components/medical/AuraMedicalButton";
+import AuraMedicalPanel from "@/components/medical/AuraMedicalPanel";
 import FloatingSOSButton from "@/components/app/FloatingSOSButton";
 import FloatingReportButton from "@/components/app/FloatingReportButton";
 import NearbyEventsSheet from "@/components/app/NearbyEventsSheet";
@@ -32,6 +35,7 @@ import {
   curatedConflictZones,
   curatedNewsEvidence,
 } from "@/data/conflictZones";
+import { demoMedicalPoints } from "@/data/medicalPoints";
 import {
   demoRiskProjections,
   demoWeatherObservations,
@@ -68,6 +72,7 @@ import type {
 } from "@/types/ingestion";
 import type { ArgusRiskAssessment } from "@/types/riskAssessment";
 import type { ConflictZone } from "@/types/conflictZone";
+import type { MedicalAidRequest } from "@/types/medical";
 import { correlateExternalEvents } from "@/lib/ingestion/correlateExternalEvents";
 import { getConflictProximityWarnings } from "@/lib/conflict/conflictRiskEngine";
 
@@ -101,6 +106,7 @@ const initialLayers = {
   officialSources: true,
   publicCameras: true,
   liveCameras: false,
+  medicalPoints: false,
   weatherRisk: true,
   terrestrialRoutes: true,
   airRoutes: true,
@@ -271,6 +277,9 @@ export default function AppPage() {
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isAuraOpen, setIsAuraOpen] = useState(false);
+  const [medicalAidRequest, setMedicalAidRequest] =
+    useState<MedicalAidRequest | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const location = useUserLocation();
   const { user: sessionUser, loading: sessionLoading } = useSession();
@@ -397,6 +406,21 @@ export default function AppPage() {
       return next;
     });
   }, [isMobileViewport]);
+
+  const collapseSecondaryPanels = useCallback(() => {
+    setActiveMobilePanel(null);
+    setVisibleWidgets((current) => {
+      const next = {
+        ...current,
+        layers: false,
+        weather: false,
+        nearby: false,
+        risk: false,
+      };
+      persistVisibleWidgets(next);
+      return next;
+    });
+  }, []);
 
   const selectEvent = useCallback((event: CrisisEvent) => {
     setSelectedVisualSource(null);
@@ -873,6 +897,14 @@ export default function AppPage() {
         status: "ready",
         emphasis: true,
       },
+      medicalPoints: {
+        count: demoMedicalPoints.length,
+        detail: layerSettings.medicalPoints
+          ? "Puntos medicos demo visibles"
+          : "AURA Basic bajo demanda",
+        status: "ready",
+        emphasis: true,
+      },
       weatherRisk: {
         count: demoRiskProjections.length,
         detail:
@@ -959,6 +991,7 @@ export default function AppPage() {
       layerSettings.conflictZones,
       layerSettings.demoReports,
       layerSettings.liveCameras,
+      layerSettings.medicalPoints,
       metCached,
       metStatus,
       nasaCached,
@@ -1475,6 +1508,8 @@ export default function AppPage() {
         liveCameras={liveCameras}
         selectedLiveCameraId={selectedLiveCamera?.id}
         onLiveCameraSelect={selectLiveCamera}
+        medicalPoints={demoMedicalPoints}
+        medicalAidRequest={medicalAidRequest}
         riskProjections={demoRiskProjections}
         onRiskProjectionSelect={selectRiskProjection}
         routes={demoRoutes}
@@ -1561,6 +1596,15 @@ export default function AppPage() {
           </button>
         ))}
       </div>
+
+      <ArgusModuleLauncher
+        location={{ latitude: location.latitude, longitude: location.longitude }}
+        onOpen={collapseSecondaryPanels}
+        onMedicalAidCreated={(request) => {
+          setMedicalAidRequest(request);
+          setLayerSettings((current) => ({ ...current, medicalPoints: true }));
+        }}
+      />
 
       {displayMode === "command" && visibleWidgets.risk && (
       <div className="argus-left-panel argus-risk-panel-shell pointer-events-auto fixed z-[47] w-[330px] max-w-[calc(100%-1rem)]">
@@ -1827,6 +1871,24 @@ export default function AppPage() {
         <FloatingSOSButton disabled={!canSOS} onClick={() => setIsHelpOpen(true)} />
         <FloatingReportButton disabled={!canReport} onClick={() => setIsReportOpen(true)} />
       </div>
+
+      <AuraMedicalButton
+        onClick={() => {
+          collapseSecondaryPanels();
+          setIsAuraOpen(true);
+        }}
+      />
+
+      {isAuraOpen && (
+        <AuraMedicalPanel
+          location={{ latitude: location.latitude, longitude: location.longitude }}
+          onClose={() => setIsAuraOpen(false)}
+          onMedicalAidCreated={(request) => {
+            setMedicalAidRequest(request);
+            setLayerSettings((current) => ({ ...current, medicalPoints: true }));
+          }}
+        />
+      )}
 
       {displayMode === "command" && visibleWidgets.nearby && (
       <div className="argus-bottom-sheet contents">

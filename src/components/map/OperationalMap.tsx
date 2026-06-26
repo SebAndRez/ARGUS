@@ -8,6 +8,7 @@ import type { ArgusLiveCamera } from "@/types/liveCamera";
 import type { RiskProjection } from "@/types/weatherRisk";
 import type { ArgusRoute, BaseMapType, RouteType } from "@/types/map";
 import type { ArgusNormalizedEvent } from "@/types/ingestion";
+import type { MedicalAidRequest, MedicalPoint } from "@/types/medical";
 import type {
   ConflictCoordinates,
   ConflictEvent,
@@ -44,6 +45,7 @@ interface MapLayerSettings {
   officialSources?: boolean;
   publicCameras?: boolean;
   liveCameras?: boolean;
+  medicalPoints?: boolean;
   weatherRisk?: boolean;
   terrestrialRoutes?: boolean;
   airRoutes?: boolean;
@@ -75,6 +77,8 @@ interface Props {
   liveCameras?: ArgusLiveCamera[];
   selectedLiveCameraId?: string;
   onLiveCameraSelect?: (camera: ArgusLiveCamera) => void;
+  medicalPoints?: MedicalPoint[];
+  medicalAidRequest?: MedicalAidRequest | null;
   riskProjections?: RiskProjection[];
   onRiskProjectionSelect?: (projection: RiskProjection) => void;
   routes?: ArgusRoute[];
@@ -221,6 +225,8 @@ export default function OperationalMap({
   liveCameras = [],
   selectedLiveCameraId,
   onLiveCameraSelect,
+  medicalPoints = [],
+  medicalAidRequest = null,
   riskProjections = [],
   onRiskProjectionSelect,
   routes = [],
@@ -243,6 +249,7 @@ export default function OperationalMap({
   const externalEventLayerRef = useRef<any>(null);
   const visualSourceLayerRef = useRef<any>(null);
   const liveCameraLayerRef = useRef<any>(null);
+  const medicalLayerRef = useRef<any>(null);
   const conflictZoneLayerRef = useRef<any>(null);
   const conflictEventLayerRef = useRef<any>(null);
   const newsEvidenceLayerRef = useRef<any>(null);
@@ -307,6 +314,15 @@ export default function OperationalMap({
       return Number.isFinite(lat) && Number.isFinite(lng);
     });
   }, [layerSettings.liveCameras, liveCameras]);
+  const visibleMedicalPoints = useMemo(() => {
+    if (!layerSettings.medicalPoints) return [];
+
+    return medicalPoints.filter((point) => {
+      const lat = Number(point.latitude);
+      const lng = Number(point.longitude);
+      return Number.isFinite(lat) && Number.isFinite(lng);
+    });
+  }, [layerSettings.medicalPoints, medicalPoints]);
   const visibleRouteTypes = useMemo<Partial<Record<RouteType, boolean>>>(
     () => ({
       terrestrial: Boolean(layerSettings.terrestrialRoutes),
@@ -402,6 +418,7 @@ export default function OperationalMap({
         externalEventLayerRef.current = L.layerGroup().addTo(map);
         visualSourceLayerRef.current = L.layerGroup().addTo(map);
         liveCameraLayerRef.current = L.layerGroup().addTo(map);
+        medicalLayerRef.current = L.layerGroup().addTo(map);
         conflictZoneLayerRef.current = L.layerGroup().addTo(map);
         conflictEventLayerRef.current = L.layerGroup().addTo(map);
         newsEvidenceLayerRef.current = L.layerGroup().addTo(map);
@@ -474,6 +491,7 @@ export default function OperationalMap({
       externalEventLayerRef.current = null;
       visualSourceLayerRef.current = null;
       liveCameraLayerRef.current = null;
+      medicalLayerRef.current = null;
       conflictZoneLayerRef.current = null;
       conflictEventLayerRef.current = null;
       newsEvidenceLayerRef.current = null;
@@ -519,6 +537,7 @@ export default function OperationalMap({
     const externalEventLayer = externalEventLayerRef.current;
     const visualSourceLayer = visualSourceLayerRef.current;
     const liveCameraLayer = liveCameraLayerRef.current;
+    const medicalLayer = medicalLayerRef.current;
     const conflictZoneLayer = conflictZoneLayerRef.current;
     const conflictEventLayer = conflictEventLayerRef.current;
     const newsEvidenceLayer = newsEvidenceLayerRef.current;
@@ -529,6 +548,7 @@ export default function OperationalMap({
     externalEventLayer?.clearLayers();
     visualSourceLayer?.clearLayers();
     liveCameraLayer?.clearLayers();
+    medicalLayer?.clearLayers();
     conflictZoneLayer?.clearLayers();
     conflictEventLayer?.clearLayers();
     newsEvidenceLayer?.clearLayers();
@@ -820,6 +840,41 @@ export default function OperationalMap({
       });
     });
 
+    visibleMedicalPoints.forEach((point) => {
+      const markerIcon = L.divIcon(createArgusDivIcon({
+        kind: "official_source",
+        severity: point.status === "operational" ? "info" : "medium",
+        confidence: point.source === "demo" ? "reported" : "official",
+        label: "MED",
+        title: point.name,
+        active: point.status === "operational",
+      }));
+      const marker = L.marker([point.latitude, point.longitude], {
+        icon: markerIcon,
+        title: point.name,
+      }).addTo(medicalLayer);
+      marker.bindTooltip(`${point.name} - ${point.type}`, {
+        direction: "top",
+        offset: [0, -18],
+        opacity: 0.92,
+      });
+    });
+
+    if (medicalAidRequest) {
+      const markerIcon = L.divIcon(createArgusDivIcon({
+        kind: "force_report",
+        severity: toMapSeverity(medicalAidRequest.severity),
+        confidence: "reported",
+        label: "SOS",
+        title: "SOS Medico",
+        active: medicalAidRequest.status !== "resolved",
+      }));
+      L.marker([medicalAidRequest.latitude, medicalAidRequest.longitude], {
+        icon: markerIcon,
+        title: "SOS Medico",
+      }).addTo(medicalLayer);
+    }
+
     if (layerSettings.user && locationStatus !== "fallback") {
       const userIcon = L.divIcon(createArgusDivIcon({
         kind: "user",
@@ -856,6 +911,7 @@ export default function OperationalMap({
     visibleExternalEvents,
     visibleVisualSources,
     visibleLiveCameras,
+    visibleMedicalPoints,
     visibleConflictZones,
     visibleConflictEvents,
     visibleNewsEvidence,
@@ -868,6 +924,7 @@ export default function OperationalMap({
     onExternalEventSelect,
     onVisualSourceSelect,
     onLiveCameraSelect,
+    medicalAidRequest,
     onConflictZoneSelect,
     conflictZones,
     layerSettings,
