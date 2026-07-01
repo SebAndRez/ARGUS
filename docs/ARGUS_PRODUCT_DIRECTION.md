@@ -745,3 +745,18 @@ sources. The product direction is:
 - Treat GDELT, ACLED, Liveuamap, Reuters/Bloomberg and other curated/media
   sources as review-required until terms and contracts are clear.
 - Build scheduler/backoff later; no infinite jobs in web runtime.
+
+## Android-first Mobile Safety
+
+ARGUS Web/PWA remains the command/map experience, but real Safety Agent
+operation requires native mobile apps. Android is the first target because it
+supports Foreground Service, persistent notification, WorkManager, FCM and more
+reliable background sensing than mobile web.
+
+Mobile events must stay preliminary:
+
+- possible crash is not confirmed crash,
+- possible fall is not confirmed injury,
+- possible quake is not official earthquake alert,
+- no response is not automatically missing person,
+- AURA/Missing Persons escalation requires consent and authorized review.

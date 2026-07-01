@@ -507,3 +507,33 @@ Estado:
   curadas.
 
 No se creo scheduler real ni jobs infinitos.
+
+## Update - Sprint 5 Mobile App / Android-first
+
+Se preparo arquitectura mobile sin crear app nativa ni push real:
+
+- `src/types/mobileApiContracts.ts`
+- `src/app/api/mobile/device/register/route.ts`
+- `src/app/api/mobile/device/capabilities/route.ts`
+- `src/app/api/mobile/events/route.ts`
+- `src/app/api/mobile/check-in/route.ts`
+- `src/app/api/mobile/push/preview/route.ts`
+- `src/lib/mobile/pushPayloadBuilder.ts`
+- `src/lib/mobile/offlineQueueContract.ts`
+- `src/components/mobile/MobileAppReadinessPanel.tsx`
+- `public/manifest.webmanifest`
+- `docs/ARGUS_MOBILE_APP_READINESS.md`
+- `docs/mobile/ARGUS_MOBILE_ARCHITECTURE.md`
+- `docs/mobile/PUSH_NOTIFICATION_PLAN.md`
+- `docs/mobile/OFFLINE_QUEUE_PLAN.md`
+- `docs/mobile/MOBILE_UX_SPEC.md`
+- `docs/mobile/APP_STORE_READINESS.md`
+- `docs/ARGUS_PWA_CHECKLIST.md`
+
+Estado:
+
+- PWA: parcial, manifest basico.
+- Android native: arquitectura y contratos preparados; app real pendiente.
+- iOS native: especificacion preparada; app real pendiente.
+- Push: preview de payloads, sin envio real.
+- Offline queue: contrato y plan, sin implementacion cliente real.

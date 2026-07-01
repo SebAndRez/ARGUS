@@ -5,6 +5,12 @@ import "leaflet/dist/leaflet.css";
 export const metadata: Metadata = {
   title: "A.R.G.U.S. — ARGUS GRID",
   description: "Plataforma operacional geoespacial tipo OSIRIS para crisis y monitoreo táctico.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "ARGUS",
+  },
 };
 
 export const viewport: Viewport = {

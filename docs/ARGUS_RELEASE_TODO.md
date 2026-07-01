@@ -201,3 +201,31 @@ Prioridad sugerida para investigar sin borrar funcionalidad existente.
   Impacto: no usar en produccion sin terminos claros.
   Solucion: contratos/API oficiales o mantener como referencia.
   Esfuerzo: L.
+
+## P0 - Mobile Antes De Produccion
+
+- Problema: no existe app Android real.
+  Archivo/componente: `docs/mobile/ANDROID_SAFETY_AGENT_SPEC.md`.
+  Impacto: RoadSense/FallSense/background no son reales en web.
+  Solucion: implementar app nativa Android con Foreground Service.
+  Esfuerzo: XL.
+
+- Problema: no hay FCM/APNs.
+  Archivo/componente: `src/lib/mobile/pushPayloadBuilder.ts`.
+  Impacto: push preview no envia notificaciones reales.
+  Solucion: configurar FCM/APNs, tokens hash, rate limits y consentimiento.
+  Esfuerzo: L.
+
+- Problema: offline queue es contrato, no runtime real.
+  Archivo/componente: `src/lib/mobile/offlineQueueContract.ts`.
+  Impacto: no hay resiliencia offline mobile.
+  Solucion: cola local cifrada nativa con WorkManager.
+  Esfuerzo: L.
+
+## P1 - Mobile QA
+
+- Problema: manifest usa SVG existentes, no iconos PNG/maskable finales.
+  Archivo/componente: `public/manifest.webmanifest`.
+  Impacto: installability PWA puede ser parcial.
+  Solucion: crear iconos 192/512 PNG maskable y apple touch icon.
+  Esfuerzo: S.

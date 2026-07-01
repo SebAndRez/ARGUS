@@ -2,6 +2,7 @@ import ArgusLimitationsNotice from "@/components/command/ArgusLimitationsNotice"
 import CommandOverviewCards from "@/components/command/CommandOverviewCards";
 import IncidentCommandCard from "@/components/command/IncidentCommandCard";
 import SourceHealthPanel from "@/components/command/SourceHealthPanel";
+import MobileAppReadinessPanel from "@/components/mobile/MobileAppReadinessPanel";
 import SourceStatusPanel from "@/components/sources/SourceStatusPanel";
 import { buildDemoIncidents } from "@/lib/command/incidentBuilder";
 import { getCommandSourceHealth } from "@/lib/command/sourceHealthService";
@@ -30,6 +31,7 @@ export default function CommandCenterPanel() {
         <IncidentCommandCard incident={incidents[0]} />
         <SourceHealthPanel sources={sources} />
         <SourceStatusPanel />
+        <MobileAppReadinessPanel />
         <ArgusLimitationsNotice />
       </div>
     </section>
