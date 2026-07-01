@@ -476,3 +476,34 @@ Riesgo clave:
 - PWA ready: parcial; requiere QA real en iPhone/Android y politicas nativas.
 - Production ready: no.
 - Preview ready: si, con etiquetas demo/experimental y sin promesas oficiales.
+
+## Update - Sprint 4 Source Operations
+
+Se agrego monitoreo operacional de fuentes:
+
+- `src/lib/sources/sourceRegistry.ts`
+- `src/lib/sources/sourceHealthEngine.ts`
+- `src/app/api/sources/status/route.ts`
+- `src/lib/ingest/ingestJobTypes.ts`
+- `src/lib/ingest/ingestJobRegistry.ts`
+- `src/lib/ingest/retryPolicy.ts`
+- `src/lib/ingest/deduplicationEngine.ts`
+- `src/lib/ingest/eventNormalizer.ts`
+- `src/components/sources/*`
+- `scripts/auditSources.ts`
+- `scripts/auditIngestEndpoints.ts`
+- `docs/ARGUS_SOURCE_OPERATIONS_AUDIT.md`
+- `docs/ARGUS_SOURCE_RELIABILITY.md`
+
+`/api/ingest/status` ahora incluye `sourceHealth` y `/api/sources/status`
+entrega registry sanitizado sin keys ni secretos.
+
+Estado:
+
+- Real: USGS, GDACS, NOAA, MET Norway, NASA FIRMS si key, ReliefWeb si app name.
+- Demo/runtime: QuakeSense, Sensor Safety, camaras curadas, routing demo, medical
+  points demo.
+- Needs review: GDELT, ACLED, Liveuamap, Reuters/Bloomberg y fuentes pagadas o
+  curadas.
+
+No se creo scheduler real ni jobs infinitos.

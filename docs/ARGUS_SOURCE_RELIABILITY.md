@@ -1,36 +1,31 @@
 # ARGUS Source Reliability
 
-ARGUS separates source availability from source reliability. A source can be
-visible in the UI while still disabled, manual-only or not configured.
+## Taxonomia
 
-## Source Classes
+- `OFFICIAL`: fuente institucional o tecnica reconocida.
+- `TECHNICAL`: fuente tecnica abierta, requiere contexto.
+- `HUMANITARIAN`: fuente humanitaria curada.
+- `MEDIA`: noticias o senales abiertas; requiere contraste.
+- `CITIZEN`: reporte ciudadano, preliminar.
+- `SENSOR`: senal de dispositivo, experimental.
+- `CURATED`: dato curado/manual.
+- `DEMO`: dato de demostracion.
+- `UNKNOWN`: no clasificado.
 
-- official: public agencies, emergency authorities or institutional feeds.
-- technical: scientific, humanitarian or sensor-oriented feeds.
-- osint: open-source signals requiring verification.
-- major_media: recognized media used as secondary evidence.
-- manual_reference: human reference only; no automated extraction.
+## Estados Operacionales
 
-## Conflict And Crisis Sources
+- `ACTIVE`: disponible o configurada.
+- `DEGRADED`: stale, error parcial o fuera de intervalo.
+- `DISABLED`: apagada.
+- `DEMO_ONLY`: no real.
+- `NEEDS_KEY`: requiere key o app name.
+- `NEEDS_REVIEW`: requiere revision legal/terminos.
+- `ERROR`: error reciente.
 
-- GDELT: active, free, open-source signal. Use as context, not final truth.
-- ReliefWeb: active humanitarian/disaster context. Good for impact narratives.
-- Liveuamap: manual reference only. ARGUS does not scrape it.
-- ACLED: disabled until an API key and terms review exist.
-- Major media: secondary evidence, not an operational command source.
+## Reglas
 
-## Reliability Rules
-
-- Do not infer intent or assign blame from one source.
-- Do not claim control territory with certainty from open-source signals.
-- Do not invent coordinates when a provider lacks location precision.
-- Do not show a marker as official unless the source category supports it.
-- Always keep user-facing wording neutral and defensive.
-
-## Future Work
-
-- Source health history.
-- Analyst approval state.
-- Evidence hashes and audit records.
-- Persistent snapshots for provider responses.
-- Cross-source confidence scoring with explicit uncertainty.
+- Oficial no significa infalible ni reemplazo de autoridad local.
+- Ciudadano no significa falso; significa preliminar.
+- Sensor no es confirmacion oficial.
+- Demo no debe alimentar decisiones reales.
+- Media/conflict requiere contraste y contexto.

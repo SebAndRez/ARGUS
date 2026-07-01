@@ -73,7 +73,12 @@ export async function GET() {
         "ARGUS estima, no confirma sin fuente oficial.",
         "QuakeSense y Mobile Safety son experimentales; requieren revision humana.",
         "Sensor Safety Suite es demo/runtime y no reemplaza servicios de emergencia.",
+        ...sources
+          .filter((source) => source.status === "DEGRADED" || source.status === "DISABLED")
+          .slice(0, 3)
+          .map((source) => `${source.name}: ${source.freshnessLabel}`),
       ],
+      sourceHealth: sources,
       updatedAt: new Date().toISOString(),
     },
   });

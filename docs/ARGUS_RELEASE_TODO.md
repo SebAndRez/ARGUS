@@ -181,3 +181,23 @@ Prioridad sugerida para investigar sin borrar funcionalidad existente.
   Impacto: proteccion comercial incompleta.
   Solucion: watermarking, contratos y portal partner.
   Esfuerzo: L.
+
+## P1 - Source Operations
+
+- Problema: jobs de ingesta son declarativos, no programados.
+  Archivo/componente: `src/lib/ingest/ingestJobRegistry.ts`.
+  Impacto: health depende de consultas bajo demanda.
+  Solucion: scheduler controlado con backoff y auditoria.
+  Esfuerzo: M.
+
+- Problema: health no persiste stale/error historico por fuente.
+  Archivo/componente: `src/lib/sources/sourceHealthEngine.ts`.
+  Impacto: Command Center no tiene tendencia temporal.
+  Solucion: tabla/source run o extension de `IngestionRun`.
+  Esfuerzo: M.
+
+- Problema: fuentes conflict/media requieren revision legal.
+  Archivo/componente: `docs/ARGUS_SOURCE_OPERATIONS_AUDIT.md`.
+  Impacto: no usar en produccion sin terminos claros.
+  Solucion: contratos/API oficiales o mantener como referencia.
+  Esfuerzo: L.

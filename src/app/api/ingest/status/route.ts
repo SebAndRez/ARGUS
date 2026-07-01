@@ -5,6 +5,7 @@ import {
   getLatestSourceCacheMetadataByPrefix,
   getSourceCacheMetadata,
 } from "@/lib/ingestion/sourceCache";
+import { buildSourceHealthSummary } from "@/lib/sources/sourceHealthEngine";
 
 const CACHE_KEYS = {
   usgs_earthquake: "ingestion:usgs_earthquake",
@@ -105,6 +106,14 @@ export async function GET() {
 
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
+    sourceHealth: buildSourceHealthSummary(
+      sources.map((source) => ({
+        sourceId: source.sourceId,
+        cache: source.cache,
+        persistedCount: source.persistedCount,
+        latestRun: source.latestIngestionRun,
+      }))
+    ),
     sources,
   });
 }

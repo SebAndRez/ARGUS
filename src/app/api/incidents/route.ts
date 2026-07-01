@@ -6,6 +6,7 @@ import { buildIncidentFromQuakeSenseCluster } from "@/lib/quakesense/quakesenseI
 import { getQuakeSenseClusters } from "@/lib/quakesense/quakesenseMemoryStore";
 import { buildIncidentFromSensorSafetyDetection } from "@/lib/sensor-safety/sensorSafetyIncidentAdapter";
 import { getSensorSafetyDetections } from "@/lib/sensor-safety/sensorSafetyStore";
+import { buildSourceHealthSummary } from "@/lib/sources/sourceHealthEngine";
 import type {
   IncidentCommandView,
   IncidentPriority,
@@ -41,6 +42,10 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     source: "demo_fallback",
     count: incidents.slice(0, limit).length,
+    sourceQuality: {
+      note: "La confianza operacional se afecta por fuentes demo, stale o no oficiales.",
+      summary: buildSourceHealthSummary(),
+    },
     incidents: incidents.slice(0, limit),
   });
 }

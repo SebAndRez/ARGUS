@@ -731,3 +731,17 @@ Current direction:
 - Plan RLS in staging before production.
 - Keep SOS available even when account trust, profile completeness or
   verification are limited.
+
+## Real Data Operations
+
+ARGUS source operations now track real, configured, demo and review-required
+sources. The product direction is:
+
+- Use USGS, GDACS, NOAA, MET Norway, NASA FIRMS and ReliefWeb through legal,
+  cached, rate-aware ingestion.
+- Keep citizen reports, SOS, QuakeSense and Safety signals clearly labeled by
+  confidence and source type.
+- Maintain source health, stale warnings and key-required states.
+- Treat GDELT, ACLED, Liveuamap, Reuters/Bloomberg and other curated/media
+  sources as review-required until terms and contracts are clear.
+- Build scheduler/backoff later; no infinite jobs in web runtime.
