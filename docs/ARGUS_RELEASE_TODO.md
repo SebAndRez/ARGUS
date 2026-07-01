@@ -1,0 +1,117 @@
+# ARGUS Release TODO
+
+Prioridad sugerida para investigar sin borrar funcionalidad existente.
+
+## P0 - Bloqueantes De Release Limpio
+
+- Configurar ESLint para ignorar `.vercel/output`, `.next` y artefactos
+  generados. Estado: implementado, validar con `npm.cmd run lint`.
+- Revisar scripts destructivos de `package.json`:
+  - `db:setup`
+  - `db:reset`
+  Estado: renombrados a comandos locales y protegidos con guard.
+- Decidir politica oficial: lint debe pasar antes de deploy productivo o solo
+  build/smoke por ahora.
+
+## P1 - Calidad TypeScript / React
+
+- Reemplazar `any` en rutas admin/users/report/help y `prisma/seed.ts`.
+  Estado: errores directos corregidos.
+- Revisar reglas `react-hooks/set-state-in-effect` en:
+  - `src/app/app/page.tsx`
+  - `src/app/login/page.tsx`
+  - `src/hooks/useArgusEventAnalysis.ts`
+  - `src/hooks/useUserLocation.ts`
+  - `src/hooks/useQuakeSenseMotion.ts`
+- Revisar acceso a refs durante render en `OperationalMap`.
+  Estado: acceso directo a refs durante render corregido con estado de instancia.
+
+## P1 - Warnings Restantes
+
+- `react-hooks/set-state-in-effect` queda como warning, no error, por patrones
+  existentes en mapa/GPS/login que requieren refactor dedicado.
+- `src/app/api/events/route.ts` mantiene `severityMap` usado solo como tipo.
+- `src/components/app/HelpRequestModal.tsx` mantiene `err` sin uso.
+- `src/lib/prediction/riskEngine.ts` mantiene import sin uso.
+- `src/lib/prisma.ts` mantiene eslint-disable redundante.
+- `src/services/reputationService.ts` recibe `reason` para futura auditoria pero
+  no lo usa todavia.
+
+## P1 - Producto / Seguridad
+
+- Separar visualmente en UI lo que es real, demo, runtime y futuro.
+- Agregar banner o microcopy persistente para QuakeSense experimental.
+- Confirmar politica de retencion para senales QuakeSense y Safety Checks antes
+  de persistirlas.
+- Mantener sanciones y reputacion fuera de cualquier automatismo QuakeSense o
+  Safety.
+- Revisar Trust & Achievements antes de version publica: endpoints, perfil
+  publico, ausencia de datos sensibles y no gamificacion de SOS.
+- Revisar Sensor Safety Suite antes de version publica: todo RoadSense/FallSense
+  real requiere app nativa, permisos y politica de privacidad.
+
+## P2 - Supabase
+
+- Implementar RLS y roles cuando el producto pase de demo a datos reales.
+- Documentar backups y recuperacion.
+- Agregar auditoria avanzada para cambios administrativos.
+- Validar que migraciones usen `DIRECT_URL` y runtime use pooler.
+
+## P2 - QA Visual
+
+- Probar manualmente en iPhone Safari:
+  - `Modulos -> ARGUS QuakeSense`.
+  - `Probar demo`.
+  - capa `Sacudida ciudadana`.
+  - `Mobile Safety Agent`.
+  - modal Safety Check.
+  - capa `Safety Checks`.
+- Confirmar que SOS y Reportar no quedan tapados por modulos.
+- Confirmar que el mapa no tiene overflow en 360, 390, 414 y 430 px.
+
+## P3 - Futuro Controlado
+
+- Persistencia real de QuakeSense/Safety solo despues de politica de privacidad.
+- Jobs/reintentos para fuentes externas.
+- Correlacion QuakeSense con USGS/CSN/SENAPRED/SHOA cuando existan datos.
+- Native Android/iOS solo despues de especificacion de permisos, bateria y
+  privacidad.
+
+## P1 - Guia De Uso Y Onboarding
+
+- Revisar manualmente `/app/como-usar` en 360, 390, 414 y 430 px.
+- Agregar tutorial interactivo inicial cuando el flujo principal este estable.
+- Preparar version offline o imprimible de la guia.
+- Crear guia institucional y guia para comunidades rurales.
+- Crear version para colegios, empresas y equipos voluntarios.
+- Evaluar videos o infografias livianas.
+- Traducir a otros idiomas cuando el contenido base este cerrado.
+
+## P0 - Perfil, Privacidad Y Datos Sensibles
+
+- No persistir datos medicos/contactos de emergencia hasta implementar RLS,
+  roles y auditoria.
+- Crear modelos Prisma separados para perfil publico, contacto privado, contacto
+  de emergencia, perfil medico y privacidad.
+- Implementar endpoints autenticados de perfil solo cuando haya pruebas de acceso
+  negativo.
+- Implementar exportacion/borrado de datos personales.
+- Agregar consentimiento versionado.
+- Definir flujo para unidades verificadas antes de mostrar datos
+  `AUTHORIZED_UNITS_ONLY`.
+
+## P1 - Perfil UX
+
+- Conectar `/app/perfil` a backend seguro por secciones.
+- Agregar validacion por campo y estados de guardado reales.
+- Integrar preferencias con Safety Check cuando exista persistencia.
+- Preparar lectura segura por SOS/AURA solo en emergencia y con autorizacion.
+- Confirmar que reputacion no penaliza perfil incompleto.
+
+## P1 - Validaciones Pendientes De Esta Corrida
+
+- Repetir `git diff --check` desde terminal normal porque el sandbox no obtuvo
+  aprobacion para acceso Git elevado.
+- Repetir `git status --short` antes de cualquier commit.
+- Repetir `npx.cmd prisma migrate status` con red normal si se necesita cerrar
+  gate de base de datos; esta tarea no modifico Prisma ni ejecuto migraciones.

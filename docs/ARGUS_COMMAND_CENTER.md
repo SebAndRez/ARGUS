@@ -1,5 +1,18 @@
 # ARGUS Command Center
 
+## Experimental Citizen Signals
+
+ARGUS command APIs can include `earthquake_sensor` and `mobile_safety`
+incidents generated from QuakeSense clusters and Safety Checks. These entries
+are explicitly experimental and demo-scoped.
+
+Operational rules:
+
+- Treat QuakeSense as an alerta preliminar, not a confirmed earthquake.
+- Treat Safety Checks as user response workflow, not automatic dispatch.
+- Do not mark P0 based only on citizen motion sensors or safety check silence.
+- Human review and official source correlation are required for escalation.
+
 ARGUS Command Center turns events, reports and source context into operational
 incident views. This phase uses a TypeScript/demo fallback and does not add a
 Prisma migration.

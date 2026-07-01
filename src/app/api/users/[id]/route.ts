@@ -5,7 +5,11 @@ import { logAuditEvent } from "@/services/auditService";
 
 const ALLOWED_ROLES = ["OPERATOR", "ADMIN"];
 
-export async function PATCH(req: Request, ctx: any) {
+type RouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+export async function PATCH(req: Request, ctx: RouteContext) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Usuario no autenticado." }, { status: 401 });
@@ -15,7 +19,7 @@ export async function PATCH(req: Request, ctx: any) {
     return NextResponse.json({ error: "Acceso no autorizado." }, { status: 403 });
   }
 
-  const userId = ctx.params?.id;
+  const { id: userId } = await ctx.params;
   const body = await req.json();
   const role = body.role ? String(body.role).trim() : undefined;
   const accountStatus = body.accountStatus ? String(body.accountStatus).trim() : undefined;
@@ -32,8 +36,8 @@ export async function PATCH(req: Request, ctx: any) {
   const updated = await prisma.user.update({
     where: { id: userId },
     data: {
-      role: role as any,
-      accountStatus: accountStatus as any,
+      role,
+      accountStatus,
       updatedAt: new Date(),
     },
   });

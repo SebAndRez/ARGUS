@@ -15,6 +15,8 @@ import type {
   ConflictZone,
 } from "@/types/conflictZone";
 import type { NewsEvidence } from "@/types/newsEvidence";
+import type { SafetyCheck } from "@/types/mobileSafety";
+import type { QuakeSenseCluster } from "@/types/quakesense";
 import { clusterEventsByGrid } from "@/lib/simpleEventClustering";
 import GlobeView from "@/components/map/GlobeView";
 import MapToGlobeTransition from "@/components/map/MapToGlobeTransition";
@@ -46,6 +48,8 @@ interface MapLayerSettings {
   publicCameras?: boolean;
   liveCameras?: boolean;
   medicalPoints?: boolean;
+  quakeSense?: boolean;
+  safetyChecks?: boolean;
   weatherRisk?: boolean;
   terrestrialRoutes?: boolean;
   airRoutes?: boolean;
@@ -79,6 +83,8 @@ interface Props {
   onLiveCameraSelect?: (camera: ArgusLiveCamera) => void;
   medicalPoints?: MedicalPoint[];
   medicalAidRequest?: MedicalAidRequest | null;
+  quakeSenseClusters?: QuakeSenseCluster[];
+  safetyChecks?: SafetyCheck[];
   riskProjections?: RiskProjection[];
   onRiskProjectionSelect?: (projection: RiskProjection) => void;
   routes?: ArgusRoute[];
@@ -227,6 +233,8 @@ export default function OperationalMap({
   onLiveCameraSelect,
   medicalPoints = [],
   medicalAidRequest = null,
+  quakeSenseClusters = [],
+  safetyChecks = [],
   riskProjections = [],
   onRiskProjectionSelect,
   routes = [],
@@ -242,18 +250,20 @@ export default function OperationalMap({
   onViewModeChange,
 }: Props) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<any>(null);
+  const mapRef = useRef<import("leaflet").Map | null>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
-  const eventLayerRef = useRef<any>(null);
-  const demoEventLayerRef = useRef<any>(null);
-  const externalEventLayerRef = useRef<any>(null);
-  const visualSourceLayerRef = useRef<any>(null);
-  const liveCameraLayerRef = useRef<any>(null);
-  const medicalLayerRef = useRef<any>(null);
-  const conflictZoneLayerRef = useRef<any>(null);
-  const conflictEventLayerRef = useRef<any>(null);
-  const newsEvidenceLayerRef = useRef<any>(null);
-  const userLayerRef = useRef<any>(null);
+  const eventLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
+  const demoEventLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
+  const externalEventLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
+  const visualSourceLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
+  const liveCameraLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
+  const medicalLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
+  const quakeSenseLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
+  const safetyCheckLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
+  const conflictZoneLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
+  const conflictEventLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
+  const newsEvidenceLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
+  const userLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
   const suppressGlobeModeRef = useRef(false);
   const viewModeRef = useRef(viewMode);
   const onViewModeChangeRef = useRef(onViewModeChange);
@@ -264,6 +274,9 @@ export default function OperationalMap({
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [isGlobeMode, setIsGlobeMode] = useState(false);
+  const [mapInstance, setMapInstance] = useState<import("leaflet").Map | null>(null);
+  const [leafletInstance, setLeafletInstance] =
+    useState<typeof import("leaflet") | null>(null);
 
   useEffect(() => {
     viewModeRef.current = viewMode;
@@ -323,6 +336,30 @@ export default function OperationalMap({
       return Number.isFinite(lat) && Number.isFinite(lng);
     });
   }, [layerSettings.medicalPoints, medicalPoints]);
+  const visibleQuakeSenseClusters = useMemo(
+    () =>
+      layerSettings.quakeSense
+        ? quakeSenseClusters.filter(
+            (cluster) =>
+              Number.isFinite(cluster.centerLat) &&
+              Number.isFinite(cluster.centerLng)
+          )
+        : [],
+    [layerSettings.quakeSense, quakeSenseClusters]
+  );
+  const visibleSafetyChecks = useMemo(
+    () =>
+      layerSettings.safetyChecks
+        ? safetyChecks.filter(
+            (check) =>
+              typeof check.lastApproxLat === "number" &&
+              Number.isFinite(check.lastApproxLat) &&
+              typeof check.lastApproxLng === "number" &&
+              Number.isFinite(check.lastApproxLng)
+          )
+        : [],
+    [layerSettings.safetyChecks, safetyChecks]
+  );
   const visibleRouteTypes = useMemo<Partial<Record<RouteType, boolean>>>(
     () => ({
       terrestrial: Boolean(layerSettings.terrestrialRoutes),
@@ -419,11 +456,15 @@ export default function OperationalMap({
         visualSourceLayerRef.current = L.layerGroup().addTo(map);
         liveCameraLayerRef.current = L.layerGroup().addTo(map);
         medicalLayerRef.current = L.layerGroup().addTo(map);
+        quakeSenseLayerRef.current = L.layerGroup().addTo(map);
+        safetyCheckLayerRef.current = L.layerGroup().addTo(map);
         conflictZoneLayerRef.current = L.layerGroup().addTo(map);
         conflictEventLayerRef.current = L.layerGroup().addTo(map);
         newsEvidenceLayerRef.current = L.layerGroup().addTo(map);
         userLayerRef.current = L.layerGroup().addTo(map);
         mapRef.current = map;
+        setMapInstance(map);
+        setLeafletInstance(L);
         setMapError(null);
         setMapReady(true);
         const shouldStartInOrbit =
@@ -486,12 +527,16 @@ export default function OperationalMap({
         mapRef.current.remove();
         mapRef.current = null;
       }
+      setMapInstance(null);
+      setLeafletInstance(null);
       eventLayerRef.current = null;
       demoEventLayerRef.current = null;
       externalEventLayerRef.current = null;
       visualSourceLayerRef.current = null;
       liveCameraLayerRef.current = null;
       medicalLayerRef.current = null;
+      quakeSenseLayerRef.current = null;
+      safetyCheckLayerRef.current = null;
       conflictZoneLayerRef.current = null;
       conflictEventLayerRef.current = null;
       newsEvidenceLayerRef.current = null;
@@ -538,10 +583,29 @@ export default function OperationalMap({
     const visualSourceLayer = visualSourceLayerRef.current;
     const liveCameraLayer = liveCameraLayerRef.current;
     const medicalLayer = medicalLayerRef.current;
+    const quakeSenseLayer = quakeSenseLayerRef.current;
+    const safetyCheckLayer = safetyCheckLayerRef.current;
     const conflictZoneLayer = conflictZoneLayerRef.current;
     const conflictEventLayer = conflictEventLayerRef.current;
     const newsEvidenceLayer = newsEvidenceLayerRef.current;
     const userLayer = userLayerRef.current;
+
+    if (
+      !eventLayer ||
+      !demoEventLayer ||
+      !externalEventLayer ||
+      !visualSourceLayer ||
+      !liveCameraLayer ||
+      !medicalLayer ||
+      !quakeSenseLayer ||
+      !safetyCheckLayer ||
+      !conflictZoneLayer ||
+      !conflictEventLayer ||
+      !newsEvidenceLayer ||
+      !userLayer
+    ) {
+      return;
+    }
 
     eventLayer?.clearLayers();
     demoEventLayer?.clearLayers();
@@ -549,6 +613,8 @@ export default function OperationalMap({
     visualSourceLayer?.clearLayers();
     liveCameraLayer?.clearLayers();
     medicalLayer?.clearLayers();
+    quakeSenseLayer?.clearLayers();
+    safetyCheckLayer?.clearLayers();
     conflictZoneLayer?.clearLayers();
     conflictEventLayer?.clearLayers();
     newsEvidenceLayer?.clearLayers();
@@ -563,7 +629,7 @@ export default function OperationalMap({
 
     visibleConflictZones.forEach((zone) => {
       const color = riskColor[zone.riskLevel] ?? "#fb923c";
-      let layer: any = null;
+      let layer: import("leaflet").Layer | null = null;
 
       if (zone.geometryType === "bbox" && isBboxCoordinates(zone.coordinates)) {
         layer = L.rectangle(
@@ -875,6 +941,79 @@ export default function OperationalMap({
       }).addTo(medicalLayer);
     }
 
+    visibleQuakeSenseClusters.forEach((cluster) => {
+      const severity =
+        cluster.severity === "high"
+          ? "high"
+          : cluster.severity === "medium"
+            ? "medium"
+            : "info";
+      const markerIcon = L.divIcon(createArgusDivIcon({
+        kind: "earthquake",
+        severity,
+        confidence:
+          cluster.status === "MULTI_DEVICE_PATTERN" ||
+          cluster.status === "OFFICIAL_CORRELATED"
+            ? "multi_source"
+            : "reported",
+        label: `QS${cluster.signalCount}`,
+        title: "ARGUS QuakeSense",
+        active: true,
+      }));
+      const marker = L.marker([cluster.centerLat, cluster.centerLng], {
+        icon: markerIcon,
+        title: "ARGUS QuakeSense",
+      }).addTo(quakeSenseLayer);
+      marker.bindTooltip(
+        `Alerta preliminar ARGUS · ${cluster.signalCount} señales · ${cluster.confidence}%`,
+        {
+          direction: "top",
+          offset: [0, -18],
+          opacity: 0.94,
+        }
+      );
+    });
+
+    visibleSafetyChecks.forEach((check) => {
+      if (
+        typeof check.lastApproxLat !== "number" ||
+        typeof check.lastApproxLng !== "number"
+      ) {
+        return;
+      }
+      const severity =
+        check.status === "ESCALATED" ||
+        check.status === "USER_TRAPPED" ||
+        check.status === "USER_NEEDS_HELP"
+          ? "high"
+          : check.status === "USER_SAFE"
+            ? "low"
+            : "medium";
+      const label =
+        check.status === "USER_SAFE"
+          ? "OK"
+          : check.status === "USER_NEEDS_HELP" || check.status === "ESCALATED"
+            ? "HELP"
+            : "SC";
+      const markerIcon = L.divIcon(createArgusDivIcon({
+        kind: "force_report",
+        severity,
+        confidence: "reported",
+        label,
+        title: "Safety Check",
+        active: check.status !== "USER_SAFE",
+      }));
+      const marker = L.marker([check.lastApproxLat, check.lastApproxLng], {
+        icon: markerIcon,
+        title: "Safety Check",
+      }).addTo(safetyCheckLayer);
+      marker.bindTooltip(`Safety Check · ${check.status}`, {
+        direction: "top",
+        offset: [0, -18],
+        opacity: 0.94,
+      });
+    });
+
     if (layerSettings.user && locationStatus !== "fallback") {
       const userIcon = L.divIcon(createArgusDivIcon({
         kind: "user",
@@ -912,6 +1051,8 @@ export default function OperationalMap({
     visibleVisualSources,
     visibleLiveCameras,
     visibleMedicalPoints,
+    visibleQuakeSenseClusters,
+    visibleSafetyChecks,
     visibleConflictZones,
     visibleConflictEvents,
     visibleNewsEvidence,
@@ -1007,14 +1148,14 @@ export default function OperationalMap({
               projections={riskProjections}
               visible={Boolean(layerSettings.weatherRisk)}
               onProjectionSelect={onRiskProjectionSelect}
-              map={mapReady ? mapRef.current : null}
-              leaflet={mapReady ? leafletRef.current : null}
+              map={mapReady ? mapInstance : null}
+              leaflet={mapReady ? leafletInstance : null}
             />
             <RouteLayerOverlay
               routes={routes}
               visibleTypes={visibleRouteTypes}
-              map={mapReady ? mapRef.current : null}
-              leaflet={mapReady ? leafletRef.current : null}
+              map={mapReady ? mapInstance : null}
+              leaflet={mapReady ? leafletInstance : null}
             />
             <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-slate-950/90 to-transparent" />
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-950/90 to-transparent" />

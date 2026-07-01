@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import ArgusMapLegend from "@/components/map/ArgusMapLegend";
 import DemoEventFilterControls from "@/components/map/DemoEventFilterControls";
+import ProductStatusLegend from "@/components/status/ProductStatusLegend";
 import type { BaseMapType } from "@/types/map";
 import type {
   DemoLifecycleFilter,
@@ -29,6 +30,8 @@ export interface MapLayerState {
   publicCameras?: boolean;
   liveCameras?: boolean;
   medicalPoints?: boolean;
+  quakeSense?: boolean;
+  safetyChecks?: boolean;
   weatherRisk?: boolean;
   terrestrialRoutes?: boolean;
   airRoutes?: boolean;
@@ -109,6 +112,8 @@ const layerGroups: Array<{
       "publicCameras",
       "liveCameras",
       "medicalPoints",
+      "quakeSense",
+      "safetyChecks",
       "weatherRisk",
       "user",
     ],
@@ -148,6 +153,8 @@ const labels: Record<keyof MapLayerState, string> = {
   publicCameras: "Cámaras públicas",
   liveCameras: "Camaras en vivo",
   medicalPoints: "Puntos medicos",
+  quakeSense: "Sacudida ciudadana",
+  safetyChecks: "Safety Checks",
   weatherRisk: "Clima y riesgo",
   terrestrialRoutes: "Rutas terrestres",
   airRoutes: "Rutas aéreas",
@@ -220,6 +227,16 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
       label: "Medico",
       enabled: Boolean(layers.medicalPoints),
       available: Object.prototype.hasOwnProperty.call(layers, "medicalPoints"),
+    },
+    {
+      label: "QuakeSense",
+      enabled: Boolean(layers.quakeSense),
+      available: Object.prototype.hasOwnProperty.call(layers, "quakeSense"),
+    },
+    {
+      label: "Safety",
+      enabled: Boolean(layers.safetyChecks),
+      available: Object.prototype.hasOwnProperty.call(layers, "safetyChecks"),
     },
     {
       label: "Rutas",
@@ -426,6 +443,8 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
       )}
 
       {supplementalPanel}
+
+      <ProductStatusLegend />
 
       {showLegend && <div className="mt-4"><ArgusMapLegend /></div>}
     </div>

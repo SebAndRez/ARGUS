@@ -661,3 +661,41 @@ ARGUS evoluciona hacia un Crisis Command Center. El publico ve instrucciones
 simples; analistas y operadores ven evidencia, prioridad P0-P4, timeline,
 limitaciones y acciones prudentes. ARGUS AI sigue siendo motor de reglas y
 scoring sin tokens externos en esta fase.
+
+## QuakeSense And Mobile Safety
+
+ARGUS QuakeSense and Mobile Safety Agent add a citizen-safety layer on top of
+the map-first product. They are not official seismic systems and must never be
+presented as earthquake prediction.
+
+Current scope:
+
+- Web/PWA motion sensing demo for possible shaking.
+- Runtime-only clustering of citizen signals.
+- Preliminary map layer `Sacudida ciudadana`.
+- Web/PWA demo safety check workflow.
+- Map layer `Safety Checks`.
+
+Future scope:
+
+- Native Android/iOS agents.
+- Offline safety response queue.
+- Push/critical notification review.
+- Correlation with CSN, SENAPRED, SHOA, USGS, GDACS and NOAA.
+- Human-reviewed escalation and audit trails.
+
+## Trust And Achievements
+
+ARGUS can use cosmetic achievements to encourage useful participation, but
+operational credibility remains evidence-based. Reportes validados pesan mas
+que volumen. SOS, Missing Persons and personal emergencies are not gamified.
+
+Credibilidad ARGUS can help review reports, but does not determine emergency
+priority by itself and cannot replace official confirmation.
+
+## Sensor Safety Suite
+
+ARGUS Sensor Safety Suite prepares a future native mobile safety app. RoadSense,
+FallSense, Route Guardian, Dead Man Switch and Black Box are demo/runtime in
+web/PWA and must be labeled as experimental. Real background operation requires
+Android/iOS native implementation, platform permissions and privacy review.

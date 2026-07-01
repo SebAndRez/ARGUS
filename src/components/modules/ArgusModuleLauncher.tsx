@@ -1,22 +1,38 @@
 "use client";
 
 import { useState } from "react";
+import MobileSafetyPanel from "@/components/mobile-safety/MobileSafetyPanel";
 import AuraMedicalPanel from "@/components/medical/AuraMedicalPanel";
 import FenixTwinModulePanel from "@/components/modules/FenixTwinModulePanel";
+import QuakeSensePanel from "@/components/quakesense/QuakeSensePanel";
+import SensorSafetyPanel from "@/components/sensor-safety/SensorSafetyPanel";
 import type { MedicalAidRequest } from "@/types/medical";
+import type { SafetyCheck } from "@/types/mobileSafety";
+import type { QuakeSenseCluster } from "@/types/quakesense";
 
-type ModuleState = "closed" | "menu" | "fenix" | "aura";
+type ModuleState =
+  | "closed"
+  | "menu"
+  | "fenix"
+  | "aura"
+  | "quakesense"
+  | "safety"
+  | "sensorSafety";
 
 interface Props {
   location: { latitude: number; longitude: number };
   onOpen?: () => void;
   onMedicalAidCreated?: (request: MedicalAidRequest) => void;
+  onQuakeSenseDemoCluster?: (cluster: QuakeSenseCluster) => void;
+  onSafetyCheckCreated?: (check: SafetyCheck) => void;
 }
 
 export default function ArgusModuleLauncher({
   location,
   onOpen,
   onMedicalAidCreated,
+  onQuakeSenseDemoCluster,
+  onSafetyCheckCreated,
 }: Props) {
   const [state, setState] = useState<ModuleState>("closed");
 
@@ -65,6 +81,36 @@ export default function ArgusModuleLauncher({
                 SOS medico, ficha opcional y puntos cercanos
               </span>
             </button>
+            <button
+              type="button"
+              onClick={() => openState("quakesense")}
+              className="argus-module-card"
+            >
+              <span className="text-sm font-semibold text-white">ARGUS QuakeSense</span>
+              <span className="text-[0.65rem] text-slate-400">
+                Sensor ciudadano sismico experimental
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openState("safety")}
+              className="argus-module-card"
+            >
+              <span className="text-sm font-semibold text-white">Mobile Safety Agent</span>
+              <span className="text-[0.65rem] text-slate-400">
+                Check-in post-sismo y arquitectura movil
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openState("sensorSafety")}
+              className="argus-module-card"
+            >
+              <span className="text-sm font-semibold text-white">Sensor Safety</span>
+              <span className="text-[0.65rem] text-slate-400">
+                Sismos, accidentes, caidas y check-in
+              </span>
+            </button>
           </div>
         )}
       </div>
@@ -90,6 +136,36 @@ export default function ArgusModuleLauncher({
           onClose={() => setState("closed")}
           onMedicalAidCreated={onMedicalAidCreated}
         />
+      )}
+
+      {state === "quakesense" && (
+        <div className="argus-module-drawer pointer-events-auto fixed z-[60]">
+          <QuakeSensePanel
+            location={location}
+            onClose={() => setState("closed")}
+            onDemoCluster={onQuakeSenseDemoCluster}
+          />
+        </div>
+      )}
+
+      {state === "safety" && (
+        <div className="argus-module-drawer pointer-events-auto fixed z-[60]">
+          <MobileSafetyPanel
+            location={location}
+            onClose={() => setState("closed")}
+            onSafetyCheckCreated={onSafetyCheckCreated}
+          />
+        </div>
+      )}
+
+      {state === "sensorSafety" && (
+        <div className="argus-module-drawer pointer-events-auto fixed z-[60]">
+          <SensorSafetyPanel
+            location={location}
+            onClose={() => setState("closed")}
+            onSafetyCheckCreated={onSafetyCheckCreated}
+          />
+        </div>
       )}
     </>
   );

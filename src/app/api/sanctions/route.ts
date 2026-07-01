@@ -50,7 +50,7 @@ export async function POST(req: Request) {
   const sanction = await prisma.sanction.create({
     data: {
       userId,
-      type: type as any,
+      type,
       reason,
       createdById: user.id,
     },

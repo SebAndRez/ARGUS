@@ -73,6 +73,8 @@ import type {
 import type { ArgusRiskAssessment } from "@/types/riskAssessment";
 import type { ConflictZone } from "@/types/conflictZone";
 import type { MedicalAidRequest } from "@/types/medical";
+import type { SafetyCheck } from "@/types/mobileSafety";
+import type { QuakeSenseCluster } from "@/types/quakesense";
 import { correlateExternalEvents } from "@/lib/ingestion/correlateExternalEvents";
 import { getConflictProximityWarnings } from "@/lib/conflict/conflictRiskEngine";
 
@@ -107,6 +109,8 @@ const initialLayers = {
   publicCameras: true,
   liveCameras: false,
   medicalPoints: false,
+  quakeSense: false,
+  safetyChecks: false,
   weatherRisk: true,
   terrestrialRoutes: true,
   airRoutes: true,
@@ -280,6 +284,10 @@ export default function AppPage() {
   const [isAuraOpen, setIsAuraOpen] = useState(false);
   const [medicalAidRequest, setMedicalAidRequest] =
     useState<MedicalAidRequest | null>(null);
+  const [quakeSenseClusters, setQuakeSenseClusters] = useState<
+    QuakeSenseCluster[]
+  >([]);
+  const [safetyChecks, setSafetyChecks] = useState<SafetyCheck[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const location = useUserLocation();
   const { user: sessionUser, loading: sessionLoading } = useSession();
@@ -905,6 +913,24 @@ export default function AppPage() {
         status: "ready",
         emphasis: true,
       },
+      quakeSense: {
+        count: quakeSenseClusters.length,
+        detail:
+          quakeSenseClusters.length > 0
+            ? "Alerta preliminar experimental"
+            : "Sensor ciudadano Web/PWA",
+        status: quakeSenseClusters.length > 0 ? "ready" : "idle",
+        emphasis: true,
+      },
+      safetyChecks: {
+        count: safetyChecks.length,
+        detail:
+          safetyChecks.length > 0
+            ? "Check-ins post-sismo demo"
+            : "Arquitectura movil futura",
+        status: safetyChecks.length > 0 ? "ready" : "idle",
+        emphasis: true,
+      },
       weatherRisk: {
         count: demoRiskProjections.length,
         detail:
@@ -992,6 +1018,8 @@ export default function AppPage() {
       layerSettings.demoReports,
       layerSettings.liveCameras,
       layerSettings.medicalPoints,
+      quakeSenseClusters.length,
+      safetyChecks.length,
       metCached,
       metStatus,
       nasaCached,
@@ -1510,6 +1538,8 @@ export default function AppPage() {
         onLiveCameraSelect={selectLiveCamera}
         medicalPoints={demoMedicalPoints}
         medicalAidRequest={medicalAidRequest}
+        quakeSenseClusters={quakeSenseClusters}
+        safetyChecks={safetyChecks}
         riskProjections={demoRiskProjections}
         onRiskProjectionSelect={selectRiskProjection}
         routes={demoRoutes}
@@ -1571,6 +1601,18 @@ export default function AppPage() {
         >
           Orbit
         </button>
+        <a
+          href="/app/como-usar"
+          className="inline-flex min-h-9 shrink-0 items-center border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200 hover:border-cyan-300/30 hover:text-cyan-100"
+        >
+          Guia
+        </a>
+        <a
+          href="/app/perfil"
+          className="inline-flex min-h-9 shrink-0 items-center border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200 hover:border-cyan-300/30 hover:text-cyan-100"
+        >
+          Perfil
+        </a>
       </nav>
 
       <div className="argus-mobile-panel argus-widget-rail pointer-events-auto fixed z-[54] flex max-w-[calc(100%-1rem)] gap-1 overflow-x-auto border border-white/10 bg-slate-950/88 p-1 shadow-xl shadow-black/35 backdrop-blur-xl">
@@ -1603,6 +1645,20 @@ export default function AppPage() {
         onMedicalAidCreated={(request) => {
           setMedicalAidRequest(request);
           setLayerSettings((current) => ({ ...current, medicalPoints: true }));
+        }}
+        onQuakeSenseDemoCluster={(cluster) => {
+          setQuakeSenseClusters((current) => [
+            cluster,
+            ...current.filter((item) => item.id !== cluster.id),
+          ]);
+          setLayerSettings((current) => ({ ...current, quakeSense: true }));
+        }}
+        onSafetyCheckCreated={(check) => {
+          setSafetyChecks((current) => [
+            check,
+            ...current.filter((item) => item.id !== check.id),
+          ]);
+          setLayerSettings((current) => ({ ...current, safetyChecks: true }));
         }}
       />
 

@@ -5,13 +5,18 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "db:migrate": "prisma migrate deploy",
+    "release:check": "npm run lint && npm run build && npm run db:validate && npm run db:generate && git diff --check",
     "start": "next start",
     "lint": "eslint",
-    "db:setup": "prisma generate && prisma db push && npm run db:seed",
+    "db:validate": "prisma validate",
+    "db:generate": "prisma generate",
+    "db:migrate:status": "prisma migrate status",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate": "prisma migrate deploy",
+    "db:setup:local": "tsx scripts/guardLocalDatabase.ts && prisma generate && prisma db push && npm run db:seed",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "db:reset": "prisma db push --force-reset && npm run db:seed"
+    "db:reset:local:danger": "tsx scripts/guardLocalDatabase.ts && prisma db push --force-reset && npm run db:seed"
   },
   "dependencies": {
     "@prisma/client": "^4.16.2",

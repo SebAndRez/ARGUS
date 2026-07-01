@@ -9,6 +9,8 @@ export type IncidentType =
   | "citizen_report"
   | "sos"
   | "medical"
+  | "earthquake_sensor"
+  | "mobile_safety"
   | "infrastructure"
   | "conflict"
   | "unknown";
@@ -35,6 +37,7 @@ export type EvidenceSourceType =
   | "OFFICIAL"
   | "TECHNICAL"
   | "CITIZEN"
+  | "SENSOR_SAFETY"
   | "CAMERA"
   | "WEATHER"
   | "HISTORICAL"
@@ -48,6 +51,13 @@ export type EvidenceKind =
   | "CAMERA_AVAILABLE"
   | "HISTORICAL_CONTEXT"
   | "CORRELATION"
+  | "SENSOR_SHAKE_PATTERN"
+  | "SAFETY_CHECK"
+  | "POSSIBLE_VEHICLE_CRASH"
+  | "POSSIBLE_FALL"
+  | "NO_RESPONSE_CHECK_IN"
+  | "USER_NEEDS_HELP"
+  | "USER_SAFE"
   | "STATUS_UPDATE";
 
 export type Incident = {

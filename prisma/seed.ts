@@ -1,6 +1,8 @@
 import { prisma } from "../src/lib/prisma";
 import { formatPublicAlias, generateGovernmentIdHash } from "../src/services/govIdentity/govIdentityProvider";
 
+type SeedUser = Awaited<ReturnType<typeof prisma.user.create>>;
+
 async function main() {
   const users = [
     { name: "Ciudadano Activo", email: "ciudadano.activo@demo.cl", role: "CITIZEN", accountStatus: "ACTIVE", governmentId: "11111111-1" },
@@ -18,7 +20,7 @@ async function main() {
   await prisma.sanction.deleteMany();
   await prisma.user.deleteMany();
 
-  const createdUsers = [];
+  const createdUsers: SeedUser[] = [];
   for (const userData of users) {
     const user = await prisma.user.create({
       data: {
@@ -27,14 +29,14 @@ async function main() {
         phone: null,
         governmentIdHash: generateGovernmentIdHash(userData.governmentId),
         publicAlias: formatPublicAlias(userData.name),
-        role: userData.role as any,
-        accountStatus: userData.accountStatus as any,
+        role: userData.role,
+        accountStatus: userData.accountStatus,
       },
     });
     createdUsers.push(user);
   }
 
-  const [activo, observado, limitado, suspendido, baneado] = createdUsers;
+  const [activo, observado, limitado, suspendido] = createdUsers;
 
   const reports = [
     {
@@ -124,7 +126,7 @@ async function main() {
     { actorUserId: activo.id, action: "SEED", targetType: "Database", metadata: JSON.stringify({ source: "seed" }) },
     { actorUserId: observado.id, action: "SEED", targetType: "Database", metadata: JSON.stringify({ source: "seed" }) },
   ]) {
-    await prisma.auditLog.create({ data: a as any });
+    await prisma.auditLog.create({ data: a });
   }
 }
 

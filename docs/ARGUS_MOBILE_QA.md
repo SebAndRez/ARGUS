@@ -1,5 +1,44 @@
 # ARGUS GRID Mobile QA
 
+## QuakeSense And Safety Agent
+
+- Open `/app` on iPhone Safari and Chrome mobile.
+- Open `Modulos`.
+- Open `ARGUS QuakeSense`.
+- Confirm the panel explains experimental status and official-source limits.
+- Tap `Probar demo`.
+- Confirm the `Sacudida ciudadana` layer turns on and shows a QS marker.
+- Open `Mobile Safety Agent`.
+- Tap `Simular sacudida`.
+- Confirm the blocking Safety Check modal appears.
+- Tap `Estoy bien` and confirm the modal closes.
+- Confirm the `Safety Checks` layer turns on and shows a marker.
+- Confirm SOS and Reportar remain accessible after closing modules.
+
+No mobile QA run should require real background sensing, push notifications or
+real emergency contacts.
+
+## Trust Profile
+
+- Open `/profile`.
+- Confirm medals fit on mobile.
+- Confirm Credibilidad ARGUS badge is compact.
+- Confirm no email, RUT, phone, medical data or private location appears.
+- Confirm text says achievements are not emergency priority.
+
+## Sensor Safety Suite
+
+- Open `Modulos`.
+- Open `Sensor Safety`.
+- Simulate possible vehicle accident.
+- Confirm Safety Check modal appears.
+- Respond `Estoy bien`.
+- Simulate possible fall.
+- Simulate abnormal route stop.
+- Simulate no response.
+- Confirm `Safety Checks` layer can show demo state.
+- Confirm SOS and Reportar remain accessible after closing the panel.
+
 ## Browsers and orientation
 
 - Open `/app` in iPhone Safari.
