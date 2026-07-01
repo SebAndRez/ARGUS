@@ -311,3 +311,168 @@ Manual follow-up before commit:
 - Re-run `git status --short`.
 - Optionally re-run `npx.cmd prisma migrate status` from a terminal with normal
   network access.
+
+## Update - Sprint 1 Release Gate / Preview Controlada
+
+Fecha: 2026-07-01.
+
+Estado general: LISTO PARA PREVIEW CONTROLADA, no production-ready.
+
+### Validaciones Ejecutadas
+
+- Rama: `phase-3-ui-ux`.
+- Working tree inicial: limpio.
+- Ultimo commit antes del sprint: `ac3f2c7`.
+- `npx.cmd prisma validate`: paso.
+- `npx.cmd prisma generate`: paso.
+- `npx.cmd next build`: paso.
+- `npm.cmd run lint`: paso con 15 warnings conocidos y 0 errores.
+- `git diff --check`: paso; solo warnings LF/CRLF de Windows.
+- `npm.cmd run release:check`: paso.
+- Secret scan sobre archivos versionables/no ignorados: sin hallazgos.
+- `npx.cmd prisma migrate status`: paso con red permitida; 4 migraciones y DB al dia.
+
+### Rutas Smoke
+
+Pasaron HTTP 200:
+
+- `/`
+- `/app`
+- `/login`
+- `/register`
+- `/dashboard`
+- `/dashboard/fenix`
+- `/app/como-usar`
+- `/app/perfil`
+- `/legal/terms`
+- `/legal/privacy`
+- `/legal/data-license`
+- `/legal/institutional-access`
+
+### APIs Smoke
+
+Sin roturas criticas con red permitida:
+
+- `/api/auth/me`
+- `/api/session`
+- `/api/reports`
+- `/api/help-requests`
+- `/api/missing-persons`
+- `/api/external-events`
+- `/api/events`
+- `/api/ingest/status`
+- `/api/conflict-zones`
+- `/api/conflict-events`
+- `/api/news-evidence`
+- `/api/risk-assessments?limit=3`
+- `/api/knowledge/facts?hazardType=tsunami&country=Chile`
+- `/api/knowledge/documents?hazardType=tsunami&country=Chile`
+- `/api/command/overview`
+- `/api/command/sources`
+- `/api/incidents`
+- `/api/incidents?limit=5`
+- `/api/fenix/scenarios`
+- `/api/fenix/shelters`
+- `/api/routing-intelligence/routes`
+- `/api/medical-points`
+- `/api/quakesense/clusters`
+- `/api/mobile-safety/settings`
+- `/api/sensor-safety/settings`
+- `/api/trust/profile` devolvio 401 JSON valido, esperado sin sesion.
+
+Endpoints GET con 405 esperado por ser POST-only/no GET:
+
+- `/api/fenix/simulation`
+- `/api/fenix/action-plan`
+- `/api/medical-aid`
+
+### Google OAuth Code Check
+
+- `state` se genera una vez en start route.
+- Callback valida `state`.
+- Callback borra cookie temporal.
+- Scopes: `openid email profile`.
+- No usa `gapi/platform.js`.
+- No guarda access token en frontend.
+- Login tiene mensajes para `missing_config`, `redirect_mismatch`,
+  `org_internal`, `invalid_state`, `token_error`, `callback_error`.
+
+## Update - Sprint 2 Product Lock / Legal / Access Hardening
+
+Se agrego base legal/comercial/tecnica de acceso:
+
+- `docs/ARGUS_PLATFORM_LOCK.md`
+- `docs/legal/TERMS_OF_USE_DRAFT.md`
+- `docs/legal/PRIVACY_POLICY_DRAFT.md`
+- `docs/legal/ARGUS_DATA_LICENSE_DRAFT.md`
+- `src/types/accessControl.ts`
+- `src/lib/access/accessPolicy.ts`
+- `src/lib/access/accessAudit.ts`
+- `src/lib/security/securityHeaders.ts`
+- `src/lib/security/rateLimitPolicy.ts`
+- `src/components/legal/LegalNoticeBanner.tsx`
+- `src/components/legal/ArgusLegalFooter.tsx`
+- paginas `/legal/terms`, `/legal/privacy`, `/legal/data-license`,
+  `/legal/institutional-access`
+- `POST /api/access/request`
+- `public/robots.txt`
+
+Protege ahora:
+
+- Separacion ARGUS Core / Mobile / Command / API / Data.
+- No scraping, no reventa, no extraccion masiva.
+- Uso institucional/API requiere autorizacion formal.
+- Dashboard/Fenix muestran aviso legal discreto.
+- APIs sensibles pueden usar headers noindex/no-store.
+
+Pendiente:
+
+- API keys reales.
+- Rate limit real con storage.
+- Contratos definitivos.
+- Revision legal formal.
+- Watermarking de datos.
+
+## Update - Sprint 3 Security / RLS / Auth / Roles / Sensitive Data
+
+Se agrego base de seguridad sin aplicar RLS destructivo:
+
+- `docs/ARGUS_SECURITY_AUDIT.md`
+- `docs/SUPABASE_RLS_STRATEGY.md`
+- `docs/ARGUS_CONSENT_MODEL.md`
+- `docs/ARGUS_DATA_RIGHTS_PLAN.md`
+- `src/types/rbac.ts`
+- `src/lib/security/rbac.ts`
+- `src/lib/security/apiGuards.ts`
+- `src/lib/security/sanitizers.ts`
+- `src/types/privacyConsent.ts`
+
+Audit read-only de usuarios:
+
+- users: 1
+- usersWithGoogleSub: 1
+- usersWithoutGoogleSub: 0
+- usersWithEmailVerifiedAt: 1
+- usersWithoutGovIdHash: 1
+- usersWithEmptyRole: 0
+- usersWithEmptyAccountStatus: 0
+- possibleDuplicateEmailGroups: 0
+- possibleDuplicateGovIdHashGroups: 0
+- usersByStatus: ACTIVE = 1
+- usersByRole: CITIZEN = 1
+
+No se imprimieron emails, documento/hash, telefonos ni secretos.
+
+Riesgo clave:
+
+- RLS profundo no debe aplicarse todavia porque ARGUS usa cookie custom
+  server-side, no Supabase Auth. Activar policies genericas basadas en
+  `auth.uid()` podria romper Prisma/runtime. Recomendacion: proteger por API
+  server ahora y migrar a Supabase Auth/claims o staging RLS por fases.
+
+## Recomendacion Actual
+
+- Web ready: si, para preview controlada.
+- PWA ready: parcial; requiere QA real en iPhone/Android y politicas nativas.
+- Production ready: no.
+- Preview ready: si, con etiquetas demo/experimental y sin promesas oficiales.

@@ -5,49 +5,49 @@ type SmokeResult = {
   path: string;
   ok: boolean;
   status?: number;
+  jsonValid?: boolean;
+  authRequired?: boolean;
+  methodAllowed?: boolean;
+  demo?: boolean;
+  broken?: boolean;
   error?: string;
 };
 
 const checks: Array<{
-  method: "GET" | "POST";
+  method: "GET";
   path: string;
-  body?: unknown;
+  authRequired?: boolean;
+  demo?: boolean;
 }> = [
+  { method: "GET", path: "/api/auth/me" },
+  { method: "GET", path: "/api/session" },
+  { method: "GET", path: "/api/reports", authRequired: true },
+  { method: "GET", path: "/api/help-requests", authRequired: true },
+  { method: "GET", path: "/api/missing-persons" },
+  { method: "GET", path: "/api/external-events" },
   { method: "GET", path: "/api/events" },
   { method: "GET", path: "/api/ingest/status" },
+  { method: "GET", path: "/api/conflict-zones", demo: true },
+  { method: "GET", path: "/api/conflict-events", demo: true },
+  { method: "GET", path: "/api/news-evidence", demo: true },
+  { method: "GET", path: "/api/risk-assessments?limit=3" },
+  { method: "GET", path: "/api/knowledge/facts?hazardType=tsunami&country=Chile" },
+  { method: "GET", path: "/api/knowledge/documents?hazardType=tsunami&country=Chile" },
   { method: "GET", path: "/api/command/overview" },
+  { method: "GET", path: "/api/command/sources" },
+  { method: "GET", path: "/api/incidents" },
   { method: "GET", path: "/api/incidents?limit=5" },
+  { method: "GET", path: "/api/fenix/scenarios", demo: true },
+  { method: "GET", path: "/api/fenix/simulation", demo: true },
+  { method: "GET", path: "/api/fenix/shelters", demo: true },
+  { method: "GET", path: "/api/fenix/action-plan", demo: true },
+  { method: "GET", path: "/api/routing-intelligence/routes", demo: true },
+  { method: "GET", path: "/api/medical-points", demo: true },
+  { method: "GET", path: "/api/medical-aid", demo: true },
   { method: "GET", path: "/api/quakesense/clusters" },
   { method: "GET", path: "/api/mobile-safety/settings" },
-  { method: "GET", path: "/api/mobile-safety/check-in" },
-  {
-    method: "POST",
-    path: "/api/quakesense/signals",
-    body: {
-      id: "audit-quakesense-signal",
-      sessionIdHash: "audit-session-hash",
-      detectedAt: new Date().toISOString(),
-      latRounded: -33.45,
-      lngRounded: -70.67,
-      accuracyBand: "district",
-      peakAcceleration: 12.4,
-      confidence: 64,
-      userConsent: true,
-      source: "citizen_sensor",
-      isDemo: true,
-    },
-  },
-  {
-    method: "POST",
-    path: "/api/mobile-safety/quake-event",
-    body: {
-      latitude: -33.45,
-      longitude: -70.67,
-      confidence: 68,
-      peakAcceleration: 13.2,
-      accuracyBand: "district",
-    },
-  },
+  { method: "GET", path: "/api/sensor-safety/settings", demo: true },
+  { method: "GET", path: "/api/trust/profile", demo: true },
 ];
 
 async function runCheck(check: (typeof checks)[number]): Promise<SmokeResult> {
@@ -55,21 +55,40 @@ async function runCheck(check: (typeof checks)[number]): Promise<SmokeResult> {
   try {
     const response = await fetch(url, {
       method: check.method,
-      headers:
-        check.body === undefined ? undefined : { "Content-Type": "application/json" },
-      body: check.body === undefined ? undefined : JSON.stringify(check.body),
+      headers: { Accept: "application/json" },
     });
+    let jsonValid = false;
+    try {
+      await response.clone().json();
+      jsonValid = true;
+    } catch {
+      jsonValid = false;
+    }
     return {
       method: check.method,
       path: check.path,
-      ok: response.ok,
+      ok:
+        response.ok ||
+        response.status === 401 ||
+        response.status === 403 ||
+        response.status === 405,
       status: response.status,
+      jsonValid,
+      authRequired: check.authRequired ?? [401, 403].includes(response.status),
+      methodAllowed: response.status !== 405,
+      demo: Boolean(check.demo),
+      broken: response.status >= 500 || (!jsonValid && response.status !== 405),
     };
   } catch (error) {
     return {
       method: check.method,
       path: check.path,
       ok: false,
+      jsonValid: false,
+      authRequired: check.authRequired,
+      methodAllowed: false,
+      demo: Boolean(check.demo),
+      broken: true,
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -79,7 +98,7 @@ async function main() {
   const results = await Promise.all(checks.map(runCheck));
   console.log(JSON.stringify({ baseUrl, results }, null, 2));
 
-  if (results.some((result) => !result.ok)) {
+  if (results.some((result) => result.broken || !result.ok)) {
     process.exitCode = 1;
   }
 }

@@ -699,3 +699,35 @@ ARGUS Sensor Safety Suite prepares a future native mobile safety app. RoadSense,
 FallSense, Route Guardian, Dead Man Switch and Black Box are demo/runtime in
 web/PWA and must be labeled as experimental. Real background operation requires
 Android/iOS native implementation, platform permissions and privacy review.
+
+## Platform Lock And Access Layers
+
+ARGUS now separates product surfaces into:
+
+- ARGUS Core: citizen map, reports, SOS, alerts and guide.
+- ARGUS Mobile: Safety Agent, QuakeSense, RoadSense, FallSense and check-ins.
+- ARGUS Command: institutional dashboard, audit, Fenix, AURA Pro and advanced
+  analysis.
+- ARGUS API: closed partner/institutional API with keys, rate limits and audit.
+- ARGUS Data License: no resale, no scraping, no mass extraction and no
+  institutional or governmental reuse without formal permission.
+
+Uso ciudadano remains possible through Core. Institutional, governmental,
+commercial or automated use requires explicit authorization and contract. Demo,
+runtime and experimental modules must stay labeled and must not be presented as
+official authority.
+
+## Security And Sensitive Data Direction
+
+Sensitive data includes user identity, government ID hash, precise location,
+reports, SOS, emergency contacts, optional medical data, Safety Check, missing
+persons, sensor signals and Command Center context.
+
+Current direction:
+
+- Protect sensitive data through server API, RBAC and sanitizers.
+- Do not persist medical/emergency profile data before RLS, audit and consent.
+- Do not expose Supabase client access to sensitive tables.
+- Plan RLS in staging before production.
+- Keep SOS available even when account trust, profile completeness or
+  verification are limited.

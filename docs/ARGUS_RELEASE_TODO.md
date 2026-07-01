@@ -115,3 +115,69 @@ Prioridad sugerida para investigar sin borrar funcionalidad existente.
 - Repetir `git status --short` antes de cualquier commit.
 - Repetir `npx.cmd prisma migrate status` con red normal si se necesita cerrar
   gate de base de datos; esta tarea no modifico Prisma ni ejecuto migraciones.
+
+## P0 - Antes De Produccion Publica
+
+- Problema: login local demo por email no es autenticacion fuerte.
+  Archivo/componente: `src/app/api/auth/login/route.ts`.
+  Impacto: acceso no apto para produccion abierta.
+  Solucion: password/OAuth completo, magic link o Supabase Auth.
+  Esfuerzo: M.
+
+- Problema: datos medicos/contactos de emergencia no deben persistirse sin RLS.
+  Archivo/componente: futuro perfil/AURA.
+  Impacto: riesgo legal y privacidad.
+  Solucion: modelos separados, RLS, auditoria, consentimiento versionado.
+  Esfuerzo: L.
+
+- Problema: Command Center sensible requiere RBAC enforcement endpoint por
+  endpoint.
+  Archivo/componente: `/api/command/*`, `/api/incidents`, `/dashboard`.
+  Impacto: posible exposicion institucional si crece el dataset.
+  Solucion: integrar `apiGuards` y pruebas de acceso negativo.
+  Esfuerzo: M.
+
+## P1 - Preview Controlada
+
+- Problema: warnings React Compiler siguen activos.
+  Archivo/componente: `src/app/app/page.tsx`, `src/hooks/*`,
+  `src/components/map/OperationalMap.tsx`.
+  Impacto: no bloquea build, pero ensucia gate.
+  Solucion: refactor acotado de effects.
+  Esfuerzo: M.
+
+- Problema: endpoints POST-only aparecen como 405 en smoke GET.
+  Archivo/componente: `/api/fenix/simulation`, `/api/fenix/action-plan`,
+  `/api/medical-aid`.
+  Impacto: no es crash, pero conviene documentar methods.
+  Solucion: agregar `OPTIONS`/docs o GET health.
+  Esfuerzo: S.
+
+- Problema: visual mobile no fue validado con dispositivo real en esta corrida.
+  Archivo/componente: `/app`, `/dashboard`, modulos.
+  Impacto: preview movil requiere QA real.
+  Solucion: probar iPhone Safari/Chrome Android y capturar checklist.
+  Esfuerzo: M.
+
+## P2 - Legal / API / Data
+
+- Problema: documentos legales son drafts.
+  Archivo/componente: `docs/legal/*`.
+  Impacto: no apto para produccion comercial sin revision.
+  Solucion: revision legal y publicacion de versiones finales.
+  Esfuerzo: M.
+
+- Problema: rate limits y API keys son conceptuales.
+  Archivo/componente: `src/lib/security/rateLimitPolicy.ts`,
+  `src/app/api/access/request/route.ts`.
+  Impacto: API no debe abrirse publicamente.
+  Solucion: implementar storage, API keys, quotas, audit logs.
+  Esfuerzo: L.
+
+## P3 - Futuro
+
+- Problema: Data License no tiene watermarking ni contratos activos.
+  Archivo/componente: ARGUS Data.
+  Impacto: proteccion comercial incompleta.
+  Solucion: watermarking, contratos y portal partner.
+  Esfuerzo: L.

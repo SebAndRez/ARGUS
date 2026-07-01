@@ -25,6 +25,11 @@ const prisma = new PrismaClient();
 async function main() {
   const [
     users,
+    usersWithGoogleSub,
+    usersWithEmailVerifiedAt,
+    usersWithoutGovIdHash,
+    usersWithEmptyRole,
+    usersWithEmptyAccountStatus,
     reports,
     helpRequests,
     auditLogs,
@@ -33,6 +38,11 @@ async function main() {
     riskAssessments,
   ] = await Promise.all([
     prisma.user.count(),
+    prisma.user.count({ where: { googleSub: { not: null } } }),
+    prisma.user.count({ where: { emailVerifiedAt: { not: null } } }),
+    prisma.user.count({ where: { governmentIdHash: null } }),
+    prisma.user.count({ where: { role: "" } }),
+    prisma.user.count({ where: { accountStatus: "" } }),
     prisma.report.count(),
     prisma.helpRequest.count(),
     prisma.auditLog.count(),
@@ -49,6 +59,17 @@ async function main() {
     by: ["role"],
     _count: { _all: true },
   });
+  const emailRows = await prisma.user.findMany({
+    select: { email: true },
+  });
+  const normalizedEmailCounts = new Map<string, number>();
+  emailRows.forEach((row) => {
+    const normalized = row.email.trim().toLowerCase();
+    normalizedEmailCounts.set(normalized, (normalizedEmailCounts.get(normalized) ?? 0) + 1);
+  });
+  const possibleDuplicateEmailGroups = Array.from(normalizedEmailCounts.values()).filter(
+    (count) => count > 1
+  ).length;
 
   console.log(
     JSON.stringify(
@@ -56,6 +77,15 @@ async function main() {
         checkedAt: new Date().toISOString(),
         counts: {
           users,
+          usersWithGoogleSub,
+          usersWithoutGoogleSub: users - usersWithGoogleSub,
+          usersWithEmailVerifiedAt,
+          usersWithoutEmailVerifiedAt: users - usersWithEmailVerifiedAt,
+          usersWithoutGovIdHash,
+          usersWithEmptyRole,
+          usersWithEmptyAccountStatus,
+          possibleDuplicateEmailGroups,
+          possibleDuplicateGovIdHashGroups: 0,
           reports,
           helpRequests,
           auditLogs,

@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /dashboard/
+Disallow: /admin/
+Disallow: /profile/
+Disallow: /app/perfil
+Disallow: /legal/institutional-access
+
+# Robots reduce indexacion accidental, pero no son una capa de seguridad.

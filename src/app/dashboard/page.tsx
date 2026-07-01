@@ -9,6 +9,7 @@ import EventDetailPanel from "@/components/map/EventDetailPanel";
 import VisualSourcePopup from "@/components/map/VisualSourcePopup";
 import DashboardUsersPanel from "@/components/dashboard/DashboardUsersPanel";
 import AuditLogPanel from "@/components/dashboard/AuditLogPanel";
+import LegalNoticeBanner from "@/components/legal/LegalNoticeBanner";
 import type {
   LayerDisplayMeta,
   MapLayerState,
@@ -297,6 +298,9 @@ export default function DashboardPage() {
             Mi Perfil
           </a>
         </nav>
+        <div className="mt-3">
+          <LegalNoticeBanner />
+        </div>
       </header>
 
       {statusMessage && (

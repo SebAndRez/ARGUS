@@ -79,3 +79,6 @@ linterna, botiquin y contactos offline.
 - Guia para colegios y empresas.
 - Videos o infografias.
 - Integracion futura con app nativa.
+- Terminos de uso y privacidad finales antes de produccion publica.
+- Licencia de datos y reglas de acceso institucional/API.
+- RLS, RBAC y consentimientos versionados para datos sensibles reales.
