@@ -1,4 +1,4 @@
-import { prisma } from "../src/lib/prisma";
+import { loadEnvConfig } from "@next/env";
 
 const ALLOWED_ROLES = new Set([
   "OPERATOR",
@@ -7,6 +7,21 @@ const ALLOWED_ROLES = new Set([
   "SUPER_ADMIN",
   "INSTITUTIONAL_ADMIN",
 ]);
+const DATABASE_URL_ERROR =
+  "DATABASE_URL local no está cargada o no es PostgreSQL. Revisa .env.local.";
+
+function loadAndValidateLocalEnv() {
+  loadEnvConfig(process.cwd());
+  const databaseUrl = process.env.DATABASE_URL;
+  if (
+    !databaseUrl ||
+    (!databaseUrl.startsWith("postgresql://") &&
+      !databaseUrl.startsWith("postgres://"))
+  ) {
+    console.error(DATABASE_URL_ERROR);
+    process.exit(1);
+  }
+}
 
 function readArg(name: string) {
   const index = process.argv.indexOf(name);
@@ -40,34 +55,38 @@ async function main() {
     process.exit(1);
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email },
-    select: { id: true, email: true, role: true },
-  });
+  loadAndValidateLocalEnv();
+  const { prisma } = await import("../src/lib/prisma");
 
-  if (!user) {
-    console.error(`User not found: ${maskEmail(email)}`);
-    process.exit(1);
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, role: true },
+    });
+
+    if (!user) {
+      console.error(`User not found: ${maskEmail(email)}`);
+      process.exit(1);
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: { role },
+      select: { email: true, role: true },
+    });
+
+    console.log("Role promotion complete.");
+    console.log(`User: ${maskEmail(updated.email)}`);
+    console.log(`Old role: ${user.role}`);
+    console.log(`New role: ${updated.role}`);
+    console.log("Ask the user to sign out and sign in again if the current session still shows the previous role.");
+  } finally {
+    await prisma.$disconnect();
   }
-
-  const updated = await prisma.user.update({
-    where: { id: user.id },
-    data: { role },
-    select: { email: true, role: true },
-  });
-
-  console.log("Role promotion complete.");
-  console.log(`User: ${maskEmail(updated.email)}`);
-  console.log(`Old role: ${user.role}`);
-  console.log(`New role: ${updated.role}`);
-  console.log("Ask the user to sign out and sign in again if the current session still shows the previous role.");
 }
 
 main()
   .catch((error) => {
     console.error(error instanceof Error ? error.message : "Unknown error.");
     process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
   });
