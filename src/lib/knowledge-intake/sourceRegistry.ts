@@ -55,5 +55,8 @@ export function getKnowledgeSourceStats() {
     manual: sources.filter((source) => source.status === "manual").length,
     disabled: sources.filter((source) => source.status === "disabled").length,
     requiresReview: sources.filter((source) => source.status === "requiresReview").length,
+    requiresConfiguration: sources.filter((source) => source.status === "requiresConfiguration").length,
+    requiresApiKey: sources.filter((source) => source.status === "requiresApiKey").length,
+    stub: sources.filter((source) => source.status === "stub").length,
   };
 }

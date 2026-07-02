@@ -11,11 +11,20 @@ import { demoKnowledgeIncidents } from "@/data/knowledgeIntakeDemo";
 import { getAllKnowledgeSources, getKnowledgeSourceStats } from "@/lib/knowledge-intake/sourceRegistry";
 import type { ArgusIncidentKnowledge } from "@/types/knowledgeIntake";
 
+const domainStats = (() => {
+  const counts = new Map<string, number>();
+  demoKnowledgeIncidents.forEach((incident) => counts.set(incident.domain, (counts.get(incident.domain) ?? 0) + 1));
+  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8);
+})();
+
 export default function KnowledgeIntakePanel() {
   const sources = useMemo(() => getAllKnowledgeSources(), []);
   const stats = useMemo(() => getKnowledgeSourceStats(), []);
   const [filter, setFilter] = useState<KnowledgeDomainFilterValue>("all");
   const [previewIncident, setPreviewIncident] = useState<ArgusIncidentKnowledge | null>(null);
+  const [liveStatus, setLiveStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [liveMessage, setLiveMessage] = useState("Sin prueba en vivo ejecutada.");
+  const [liveIncidents, setLiveIncidents] = useState<ArgusIncidentKnowledge[]>([]);
 
   const filteredIncidents = useMemo(() => {
     const domains = domainFilterMap[filter];
@@ -26,11 +35,29 @@ export default function KnowledgeIntakePanel() {
     });
   }, [filter]);
   const selectedIncident = previewIncident ?? filteredIncidents[0] ?? demoKnowledgeIncidents[0];
-  const domainStats = useMemo(() => {
-    const counts = new Map<string, number>();
-    demoKnowledgeIncidents.forEach((incident) => counts.set(incident.domain, (counts.get(incident.domain) ?? 0) + 1));
-    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  }, []);
+  const realActiveSources = sources.filter((source) => source.status === "active");
+  const stubSources = sources.filter((source) => source.status === "planned" || source.status === "stub");
+  const requiresKeySources = sources.filter((source) => source.status === "requiresApiKey");
+  const requiresConfigSources = sources.filter((source) => source.status === "requiresConfiguration");
+  async function runLiveTest(source: "usgs" | "reliefweb") {
+    setLiveStatus("loading");
+    setLiveMessage(`Probando ${source.toUpperCase()}...`);
+    try {
+      const endpoint =
+        source === "usgs"
+          ? "/api/knowledge-intake/live/usgs?feed=relevant&limit=8"
+          : "/api/knowledge-intake/live/reliefweb?limit=6";
+      const response = await fetch(endpoint, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message ?? data.error ?? `Fallo ${source}`);
+      setLiveIncidents(data.incidents ?? []);
+      setLiveStatus("ready");
+      setLiveMessage(`${data.sourceName ?? source} entrego ${data.count ?? 0} incidente(s) normalizado(s).`);
+    } catch (error) {
+      setLiveStatus("error");
+      setLiveMessage(error instanceof Error ? error.message : "No se pudo ejecutar prueba en vivo.");
+    }
+  }
 
   return (
     <div className="grid gap-6">
@@ -51,6 +78,46 @@ export default function KnowledgeIntakePanel() {
             <Metric label="Incidentes" value={demoKnowledgeIncidents.length} />
           </div>
         </div>
+        <div className="mt-5 grid gap-3 rounded-lg border border-white/10 bg-black/20 p-4 md:grid-cols-3">
+          <div>
+            <p className="text-xs uppercase text-emerald-200">Activas reales</p>
+            <p className="mt-1 text-2xl font-semibold text-white">{realActiveSources.length}</p>
+            <p className="mt-1 text-xs text-slate-400">USGS, ReliefWeb y fuentes ya operativas del ecosistema.</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase text-amber-200">Stub/planificadas</p>
+            <p className="mt-1 text-2xl font-semibold text-white">{stubSources.length}</p>
+            <p className="mt-1 text-xs text-slate-400">Registradas sin ingesta automatica real.</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase text-rose-200">Requieren config/key</p>
+            <p className="mt-1 text-2xl font-semibold text-white">{requiresKeySources.length + requiresConfigSources.length}</p>
+            <p className="mt-1 text-xs text-slate-400">
+              {[...requiresKeySources, ...requiresConfigSources].map((source) => source.name).join(", ") || "Ninguna"}
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-cyan-300/15 bg-cyan-400/10 p-4">
+          <button
+            type="button"
+            onClick={() => runLiveTest("usgs")}
+            disabled={liveStatus === "loading"}
+            className="rounded bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+          >
+            Probar USGS
+          </button>
+          <button
+            type="button"
+            onClick={() => runLiveTest("reliefweb")}
+            disabled={liveStatus === "loading"}
+            className="rounded border border-cyan-300/30 bg-slate-950 px-4 py-2 text-sm font-semibold text-cyan-100 disabled:cursor-wait disabled:opacity-60"
+          >
+            Probar ReliefWeb
+          </button>
+          <span className={`text-sm ${liveStatus === "error" ? "text-rose-100" : liveStatus === "ready" ? "text-emerald-100" : "text-slate-300"}`}>
+            {liveMessage}
+          </span>
+        </div>
         <div className="mt-5">
           <KnowledgeDomainFilter value={filter} onChange={setFilter} />
         </div>
@@ -65,7 +132,7 @@ export default function KnowledgeIntakePanel() {
             </section>
           )}
           <div className="grid gap-4">
-            {(previewIncident ? [previewIncident, ...filteredIncidents] : filteredIncidents).slice(0, 8).map((incident) => (
+            {(previewIncident ? [previewIncident, ...liveIncidents, ...filteredIncidents] : [...liveIncidents, ...filteredIncidents]).slice(0, 8).map((incident) => (
               <IncidentKnowledgeCard key={incident.id} incident={incident} />
             ))}
           </div>

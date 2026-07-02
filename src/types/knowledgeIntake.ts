@@ -86,7 +86,10 @@ export type ArgusKnowledgeSourceStatus =
   | "planned"
   | "manual"
   | "disabled"
-  | "requiresReview";
+  | "requiresReview"
+  | "requiresConfiguration"
+  | "requiresApiKey"
+  | "stub";
 
 export type ArgusKnowledgeSourceKind =
   | "live"
@@ -284,6 +287,13 @@ export type ArgusIncidentTechnicalFactors = {
   depthKm?: number;
   burnedAreaHa?: number;
   waveHeightM?: number;
+  place?: string;
+  tsunamiFlag?: boolean;
+  brightness?: number;
+  satellite?: string;
+  instrument?: string;
+  frp?: number;
+  firmsConfidence?: string | number;
 };
 
 export type ArgusLessonLearned = {

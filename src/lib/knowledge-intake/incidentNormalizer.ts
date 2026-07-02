@@ -18,6 +18,54 @@ function domainFromText(text: string): ArgusHazardDomain {
   return entities.domains[0] ?? "unknown";
 }
 
+function isHazardDomain(value: unknown): value is ArgusHazardDomain {
+  return (
+    typeof value === "string" &&
+    [
+      "natural_disaster",
+      "earthquake",
+      "tsunami",
+      "volcano",
+      "flood",
+      "storm",
+      "hurricane",
+      "tornado",
+      "landslide",
+      "avalanche",
+      "drought",
+      "heatwave",
+      "coldwave",
+      "wildfire",
+      "urban_fire",
+      "industrial_fire",
+      "transport_accident",
+      "road_accident",
+      "rail_accident",
+      "aviation_accident",
+      "maritime_accident",
+      "pipeline_accident",
+      "chemical_accident",
+      "industrial_accident",
+      "explosion",
+      "mining_accident",
+      "dam_failure",
+      "bridge_collapse",
+      "building_collapse",
+      "power_grid_failure",
+      "telecom_failure",
+      "water_system_failure",
+      "nuclear_radiological",
+      "biological_hazard",
+      "public_health",
+      "mass_gathering_incident",
+      "civil_unrest",
+      "conflict_zone",
+      "humanitarian_crisis",
+      "unknown",
+    ].includes(value)
+  );
+}
+
 function severityFromText(text: string): ArgusIncidentSeverity {
   if (/critical|critico|evacuacion|tsunami|radiolog|fatal|explosion/i.test(text)) return "critical";
   if (/grave|alto|incendio|quimic|colapso|heridos|60\s?km/i.test(text)) return "high";
@@ -47,7 +95,9 @@ function recommendationFor(domain: ArgusHazardDomain, severity: ArgusIncidentSev
 export function normalizeKnowledgeInput(envelope: ArgusKnowledgeInputEnvelope): ArgusIncidentKnowledge {
   const text = envelope.rawText?.trim() ?? "";
   const entities = extractKnowledgeEntities(text);
-  const domain = domainFromText(text);
+  const domain = isHazardDomain(envelope.rawMetadata?.suggestedDomain)
+    ? envelope.rawMetadata.suggestedDomain
+    : domainFromText(text);
   const severity = severityFromText(text);
   const source = envelope.sourceId ? getSourceById(envelope.sourceId) : undefined;
   const sourceReliabilityScore = source?.reliabilityScore.finalScore ?? 45;
@@ -77,6 +127,7 @@ export function normalizeKnowledgeInput(envelope: ArgusKnowledgeInputEnvelope): 
     occurredAt: entities.dates[0],
     detectedAt: envelope.receivedAt,
     country: envelope.country,
+    region: envelope.rawMetadata?.region?.toString(),
     locality: entities.places[0],
     casualties: entities.casualties.length ? { unknownText: entities.casualties.join(", ") } : undefined,
     impact: {

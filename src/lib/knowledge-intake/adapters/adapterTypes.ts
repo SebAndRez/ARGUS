@@ -3,7 +3,7 @@ import type { ArgusKnowledgeInputEnvelope } from "@/types/knowledgeIntake";
 export type KnowledgeAdapterResult = {
   adapterId: string;
   sourceId: string;
-  status: "ready" | "planned" | "requiresConfiguration" | "disabled";
+  status: "ready" | "planned" | "requiresConfiguration" | "requiresApiKey" | "disabled" | "error";
   message: string;
   envelopes: ArgusKnowledgeInputEnvelope[];
 };
