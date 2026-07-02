@@ -833,3 +833,9 @@ The first implementation is intentionally safe:
 
 The protected operator route `/dashboard/knowledge-intake` exposes the module
 for review without changing citizen SOS/report flows.
+
+ARGUS Knowledge Intake now has a PostgreSQL-backed learning memory for ingestion
+runs, normalized incidents, evidence, documents, chunks, lessons and review
+records. USGS can run in preview mode or persistent mode. ReliefWeb and NASA
+FIRMS remain integrated but gated by `RELIEFWEB_APP_NAME` and
+`NASA_FIRMS_MAP_KEY`.

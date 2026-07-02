@@ -4,6 +4,7 @@ import { firmsAdapter } from "@/lib/knowledge-intake/adapters/firmsAdapter";
 import { reliefwebAdapter } from "@/lib/knowledge-intake/adapters/reliefwebAdapter";
 import { usgsAdapter } from "@/lib/knowledge-intake/adapters/usgsAdapter";
 import { planKnowledgeIngestion } from "@/lib/knowledge-intake/ingestionPlanner";
+import { getKnowledgeHealthFromDb } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
 import { getAllKnowledgeSources } from "@/lib/knowledge-intake/sourceRegistry";
 import { getKnowledgeSourceStats } from "@/lib/knowledge-intake/sourceRegistry";
 import type { ArgusKnowledgeInputType } from "@/types/knowledgeIntake";
@@ -12,6 +13,16 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const stats = getKnowledgeSourceStats();
+  const dbHealth = await getKnowledgeHealthFromDb().catch((error) => ({
+    error: error instanceof Error ? error.message : "Knowledge DB health unavailable",
+    persistedSources: 0,
+    latestIngestionRuns: [],
+    persistedIncidents: 0,
+    persistedDocuments: 0,
+    persistedLessons: 0,
+    pendingReviews: 0,
+    incidentsByDomain: [],
+  }));
   const sources = getAllKnowledgeSources();
   const adapterStatus = [usgsAdapter(), reliefwebAdapter(), firmsAdapter()];
   const parserInputs: ArgusKnowledgeInputType[] = ["pdf", "txt_markdown", "csv", "json", "docx", "xlsx", "geojson", "rss_atom", "html"];
@@ -41,6 +52,7 @@ export async function GET() {
     sources: stats,
     incidentCount: demoKnowledgeIncidents.length,
     lessonCount: demoKnowledgeLessons.length,
+    persistentMemory: dbHealth,
     lastIngestionRuns: [
       {
         id: "usgs-live-ready",
@@ -78,7 +90,7 @@ export async function GET() {
     ],
     criticalMissingCapabilities: [
       "No storage, OCR, RAG or pgvector persistence is enabled yet.",
-      "No automatic insertion into the operational map is enabled.",
+      "No automatic insertion into the operational map is enabled; map-events endpoint is read-only.",
       "No production ingestion scheduler exists.",
     ],
     limitations: ["Human validation is required before operational decisions."],

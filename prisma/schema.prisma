@@ -264,3 +264,195 @@ model HazardKnowledgeFact {
   @@index([year])
   @@index([magnitude])
 }
+
+model KnowledgeSource {
+  id               String   @id
+  name             String
+  description      String
+  domainsJson      Json
+  coverage         Json?
+  accessType       String
+  status           String
+  licenseNotes     String
+  updateCadence    String?
+  reliabilityScore Int
+  officialSource   Boolean  @default(false)
+  enabled          Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([status])
+  @@index([enabled])
+}
+
+model KnowledgeIngestionRun {
+  id                String    @id @default(cuid())
+  sourceId          String
+  sourceName        String
+  status            String
+  startedAt         DateTime  @default(now())
+  finishedAt        DateTime?
+  recordsFetched    Int       @default(0)
+  recordsNormalized Int       @default(0)
+  recordsInserted   Int       @default(0)
+  recordsUpdated    Int       @default(0)
+  recordsSkipped    Int       @default(0)
+  errorMessage      String?
+  warningsJson      Json?
+  metadataJson      Json?
+
+  @@index([sourceId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model KnowledgeIncident {
+  id                          String   @id @default(cuid())
+  externalId                  String?
+  sourceId                    String
+  sourceName                  String
+  title                       String
+  summary                     String
+  domain                      String
+  subtype                     String?
+  severity                    String
+  confidenceScore             Int
+  actionabilityScore          Int
+  sourceReliabilityScore      Int
+  occurredAt                  DateTime?
+  detectedAt                  DateTime?
+  country                     String?
+  region                      String?
+  locality                    String?
+  latitude                    Float?
+  longitude                   Float?
+  geometryJson                Json?
+  casualtiesJson              Json?
+  impactJson                  Json?
+  technicalFactorsJson        Json?
+  causesJson                  Json?
+  contributingFactorsJson     Json?
+  responseActionsJson         Json?
+  lessonsLearnedJson          Json?
+  recommendedActionsJson      Json?
+  relatedHistoricalEventsJson Json?
+  similarIncidentIdsJson      Json?
+  tagsJson                    Json?
+  language                    String?
+  rawEvidenceRefsJson         Json?
+  reviewStatus                String   @default("pending_review")
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  @@unique([sourceId, externalId])
+  @@index([sourceId])
+  @@index([domain])
+  @@index([severity])
+  @@index([reviewStatus])
+  @@index([occurredAt])
+  @@index([latitude, longitude])
+}
+
+model KnowledgeEvidence {
+  id              String   @id @default(cuid())
+  incidentId      String?
+  sourceId        String
+  sourceName      String
+  evidenceType    String
+  title           String
+  url             String?
+  excerpt         String?
+  rawRef          String?
+  confidenceScore Int
+  metadataJson    Json?
+  createdAt       DateTime @default(now())
+
+  @@index([incidentId])
+  @@index([sourceId])
+}
+
+model KnowledgeLesson {
+  id                                String   @id @default(cuid())
+  incidentId                        String?
+  domain                            String
+  title                             String
+  summary                           String
+  whatFailedJson                    Json?
+  whatWorkedJson                    Json?
+  earlyWarningSignalsJson           Json?
+  recommendedPreventiveActionsJson  Json?
+  recommendedResponseActionsJson    Json?
+  applicableToChile                 Boolean  @default(false)
+  confidenceScore                   Int
+  tagsJson                          Json?
+  createdAt                         DateTime @default(now())
+  updatedAt                         DateTime @updatedAt
+
+  @@index([incidentId])
+  @@index([domain])
+}
+
+model KnowledgeDocument {
+  id               String   @id @default(cuid())
+  sourceId         String?
+  title            String
+  fileName         String?
+  fileMimeType     String?
+  sourceUrl        String?
+  documentType     String   @default("unknown")
+  language         String?
+  country          String?
+  rawText          String?
+  metadataJson     Json?
+  processingStatus String   @default("normalized")
+  reviewStatus     String   @default("pending_review")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([sourceId])
+  @@index([documentType])
+  @@index([reviewStatus])
+}
+
+model KnowledgeDocumentChunk {
+  id            String   @id @default(cuid())
+  documentId    String
+  chunkIndex    Int
+  text          String
+  tokenEstimate Int
+  metadataJson  Json?
+  createdAt     DateTime @default(now())
+
+  @@unique([documentId, chunkIndex])
+  @@index([documentId])
+}
+
+model KnowledgeEmbeddingRecord {
+  id                String   @id @default(cuid())
+  documentId        String?
+  chunkId           String?
+  incidentId        String?
+  embeddingProvider String
+  embeddingModel    String
+  vectorRef         String?
+  metadataJson      Json?
+  createdAt         DateTime @default(now())
+
+  @@index([documentId])
+  @@index([chunkId])
+  @@index([incidentId])
+}
+
+model KnowledgeAdminReview {
+  id         String   @id @default(cuid())
+  targetType String
+  targetId   String
+  status     String
+  reviewerId String?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([targetType, targetId])
+  @@index([status])
+}

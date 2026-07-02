@@ -1,6 +1,6 @@
 import type { ArgusIncidentKnowledge, ArgusIncidentSeverity } from "@/types/knowledgeIntake";
 
-type UsgsFeedKind = "significant" | "day" | "relevant";
+type UsgsFeedKind = "significant" | "day" | "relevant" | "week";
 
 type UsgsFeature = {
   id?: string;
@@ -35,12 +35,14 @@ type UsgsGeoJson = {
 export type UsgsFetchOptions = {
   feed?: UsgsFeedKind;
   limit?: number;
+  minMagnitude?: number;
 };
 
 const feedUrls: Record<UsgsFeedKind, string> = {
   significant: "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_day.geojson",
   day: "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson",
   relevant: "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson",
+  week: "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson",
 };
 
 function severityFromMagnitude(magnitude: number | null | undefined): ArgusIncidentSeverity {
@@ -144,6 +146,11 @@ export async function fetchUsgsEarthquakes(options: UsgsFetchOptions = {}) {
   const incidents = (data.features ?? [])
     .map(normalizeUsgsEarthquakeFeature)
     .filter((incident): incident is ArgusIncidentKnowledge => Boolean(incident))
+    .filter((incident) =>
+      typeof options.minMagnitude === "number"
+        ? (incident.technicalFactors.magnitude ?? 0) >= options.minMagnitude
+        : true
+    )
     .slice(0, limit);
 
   return {

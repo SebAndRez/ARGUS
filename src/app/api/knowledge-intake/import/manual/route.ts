@@ -3,7 +3,15 @@ import { extractKnowledgeEntities } from "@/lib/knowledge-intake/entityExtractor
 import { normalizeKnowledgeInput } from "@/lib/knowledge-intake/incidentNormalizer";
 import { parseKnowledgeEnvelope } from "@/lib/knowledge-intake/ingestionPlanner";
 import { extractLessonsFromText } from "@/lib/knowledge-intake/lessonExtractor";
+import {
+  saveKnowledgeDocument,
+  saveKnowledgeDocumentChunks,
+  saveKnowledgeEvidence,
+  saveKnowledgeLesson,
+  upsertKnowledgeIncidentByExternalId,
+} from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
 import { calculateEvidenceConfidenceScore } from "@/lib/knowledge-intake/scoring/evidenceScoring";
+import { buildDocumentChunks } from "@/lib/knowledge-intake/vector/documentChunker";
 import type { ArgusKnowledgeInputEnvelope } from "@/types/knowledgeIntake";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +26,8 @@ type ManualImportBody = {
   region?: string;
   suggestedDomain?: string;
   mode?: "historical" | "live" | "doctrine" | "technical_report" | "citizen_context";
+  persist?: boolean;
+  reviewStatus?: "auto_accepted" | "pending_review" | "rejected" | "needs_more_evidence";
   language?: string;
   tags?: string[];
 };
@@ -65,6 +75,60 @@ export async function POST(request: Request) {
     extractionConfidence: incident.confidenceScore,
     conflictWithOtherSources: 0,
   });
+  let persistResult = null;
+  if (body.persist) {
+    const savedDocument = await saveKnowledgeDocument({
+      sourceId: body.sourceId,
+      title: body.title ?? parsedDocument.title ?? incident.title,
+      sourceUrl: body.sourceUrl,
+      documentType: body.mode ?? "unknown",
+      language: envelope.language,
+      country: body.country,
+      rawText: body.rawText,
+      metadataJson: JSON.parse(JSON.stringify({
+        envelopeId: envelope.id,
+        region: body.region,
+        suggestedDomain: body.suggestedDomain,
+        parser: parsedDocument.metadata,
+      })),
+      processingStatus: "normalized",
+      reviewStatus: body.reviewStatus ?? (scoring.finalConfidence >= 75 ? "auto_accepted" : "pending_review"),
+    });
+    const savedIncident = await upsertKnowledgeIncidentByExternalId(incident);
+    const chunks = buildDocumentChunks({
+      ...parsedDocument,
+      id: savedDocument.id,
+      sourceId: body.sourceId,
+      country: body.country,
+      domain: incident.domain,
+      documentType: body.mode ?? "unknown",
+    });
+    const savedChunks = await saveKnowledgeDocumentChunks(savedDocument.id, chunks);
+    await saveKnowledgeEvidence({
+      id: `manual-evidence-${envelope.id}`,
+      incidentId: savedIncident.incident.id,
+      sourceId: body.sourceId ?? "manual_input",
+      sourceName: body.sourceName ?? "Manual knowledge input",
+      title: body.title ?? incident.title,
+      url: body.sourceUrl,
+      summary: incident.summary,
+      confidenceScore: scoring,
+      locationConfidence: typeof incident.latitude === "number" ? 85 : incident.country ? 45 : 15,
+      timestampConfidence: incident.occurredAt ? 70 : 25,
+      extractedAt: new Date().toISOString(),
+    });
+    const lessons = shouldExtractLessons ? extractLessonsFromText(body.rawText, incident.domain) : [];
+    for (const lesson of lessons) {
+      await saveKnowledgeLesson(lesson, savedIncident.incident.id);
+    }
+    persistResult = {
+      documentId: savedDocument.id,
+      incidentId: savedIncident.incident.id,
+      incidentAction: savedIncident.action,
+      chunks: savedChunks.count,
+      lessons: lessons.length,
+    };
+  }
 
   return NextResponse.json({
     envelope,
@@ -73,6 +137,7 @@ export async function POST(request: Request) {
     incident,
     lessons: shouldExtractLessons ? extractLessonsFromText(body.rawText, incident.domain) : [],
     scoring,
+    persistResult,
     status: "accepted_for_review",
   });
 }
