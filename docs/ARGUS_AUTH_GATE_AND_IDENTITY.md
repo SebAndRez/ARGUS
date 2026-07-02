@@ -33,8 +33,30 @@ Updated database fields:
 
 - `passwordHash`
 - `countryCode`
+- `city`
+- `region`
+- `preferredLanguage`
+- `unitSystem`
 - `termsAcceptedAt`
 - `privacyAcceptedAt`
 - `profileCompletedAt`
 
 Password hashes use Node `crypto.scrypt`; no plain password is stored.
+
+## Profile Persistence
+
+Registration and onboarding now require a city/locality field and can store an
+optional region/state. `/app/perfil` reads the persisted account profile through
+`/api/profile/me` and allows updating only non-sensitive profile fields:
+
+- public alias
+- display name
+- country
+- city
+- region
+- preferred language
+- unit system
+
+The endpoint does not expose document values, password hashes or provider
+secrets. It only returns whether a document hash is registered. Email and
+document changes remain separate future verification flows.

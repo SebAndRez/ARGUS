@@ -4,6 +4,10 @@ import type {
   FenixVehicleType,
 } from "@/types/fenix";
 import type { OfficialRouteMetadata } from "@/types/officialRoutes";
+import type {
+  ArgusDataQuality,
+  ArgusSourceAttribution,
+} from "@/types/sourceAttribution";
 
 export type FenixGrowthDirection = "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW";
 export type FenixUncertaintyLevel = "low" | "medium" | "high";
@@ -49,6 +53,21 @@ export type FenixAffectedZone = {
   center: [number, number];
   exposureLevel: "low" | "medium" | "high" | "critical";
   isEstimated: boolean;
+};
+
+export type FenixGeoJsonCircle = {
+  type: "Feature";
+  properties: {
+    id: string;
+    timeLabel: string;
+    radiusKm: number;
+    exposureLevel: FenixAffectedZone["exposureLevel"];
+    isEstimated: boolean;
+  };
+  geometry: {
+    type: "Point";
+    coordinates: [number, number];
+  };
 };
 
 export type FenixRouteImpact = {
@@ -123,6 +142,11 @@ export type FenixSimulationResult = {
   predictionFrames?: Array<Record<string, unknown>>;
   riskBreakdown?: Array<Record<string, unknown>>;
   actionPlanResponse?: Record<string, unknown>;
+  mapCenter?: [number, number];
+  initialRadiusKm?: number;
+  projectedZonesGeoJson?: FenixGeoJsonCircle[];
+  sourcesUsed?: ArgusSourceAttribution[];
+  dataQuality?: ArgusDataQuality;
   disclaimers: string[];
   isDemo: boolean;
 };

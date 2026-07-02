@@ -16,6 +16,10 @@ model User {
   governmentIdHash String?        @unique
   passwordHash     String?
   countryCode      String?
+  city             String?
+  region           String?
+  preferredLanguage String?
+  unitSystem       String?
   googleSub        String?        @unique
   avatarUrl        String?
   emailVerifiedAt  DateTime?

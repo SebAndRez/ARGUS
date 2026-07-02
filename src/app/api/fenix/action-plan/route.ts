@@ -1,10 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runFenixSimulation } from "@/lib/fenix/fenixSimulationEngine";
+import { getCurrentUser } from "@/services/authService";
 
 export const dynamic = "force-dynamic";
+const INSTITUTIONAL_ROLES = new Set([
+  "OPERATOR",
+  "ANALYST",
+  "ADMIN",
+  "SUPER_ADMIN",
+  "INSTITUTIONAL_ADMIN",
+]);
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user || !INSTITUTIONAL_ROLES.has(user.role)) {
+      return NextResponse.json(
+        {
+          error:
+            "Plan institucional Fenix requiere rol operativo. Use modo publico para resumen ciudadano.",
+        },
+        { status: 403 }
+      );
+    }
     const body = await request.json();
     const scenarioId =
       typeof body.scenarioId === "string"
@@ -19,7 +37,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       planId: `fenix-plan-${Date.now()}`,
-      summary: "Plan de acción ARGUS demo basado en simulación estimada.",
+      summary: "Plan de apoyo ARGUS demo basado en simulacion estimada.",
       immediateActions: result.institutionalActionPlan.filter((item) => item.priority === "critical"),
       shortTermActions: result.institutionalActionPlan.filter((item) => item.priority === "high"),
       operationalActions: result.actionPlan.items,
@@ -29,7 +47,7 @@ export async function POST(request: NextRequest) {
       shelterActions: result.shelters,
       medicalActions: result.medicalPoints,
       communicationActions: [
-        "Preparar mensaje público simple y validado por autoridad.",
+        "Preparar mensaje publico simple y validado por autoridad.",
         "Actualizar canales internos cada 30 minutos o ante cambio relevante.",
       ],
       limitations: result.disclaimers,

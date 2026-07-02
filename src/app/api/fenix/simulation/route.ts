@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runFenixSimulation } from "@/lib/fenix/fenixSimulationEngine";
+import { getCurrentUser } from "@/services/authService";
 import type { FenixSimulationInput } from "@/types/fenixSimulation";
 
 export const dynamic = "force-dynamic";
+const INSTITUTIONAL_ROLES = new Set([
+  "OPERATOR",
+  "ANALYST",
+  "ADMIN",
+  "SUPER_ADMIN",
+  "INSTITUTIONAL_ADMIN",
+]);
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,6 +40,21 @@ export async function POST(request: NextRequest) {
     const initialRadiusKm = Number(body.initialRadiusKm ?? body.radiusKm ?? 5);
     const simulationMinutes = Number(body.simulationMinutes ?? body.simulationHorizonMinutes ?? 60);
     const speedKmh = Number(body.growth?.speedKmh ?? body.growthSpeedKmh ?? 2.5);
+    const requestedMode = body.mode ?? body.viewMode ?? "public";
+    const user = await getCurrentUser();
+    const canUseInstitutionalMode = Boolean(
+      user && INSTITUTIONAL_ROLES.has(user.role)
+    );
+
+    if (requestedMode === "institutional" && !canUseInstitutionalMode) {
+      return NextResponse.json(
+        {
+          error:
+            "Modo institucional Fenix requiere rol operativo. Use modo publico para simulacion ciudadana.",
+        },
+        { status: 403 }
+      );
+    }
 
     if (!Number.isFinite(initialRadiusKm) || initialRadiusKm <= 0) {
       return NextResponse.json({ error: "Radio inicial inválido." }, { status: 400 });
@@ -63,7 +86,7 @@ export async function POST(request: NextRequest) {
         speedKmh,
       },
       mobility: body.mobility ?? body.mobilityMode,
-      mode: body.mode ?? body.viewMode,
+      mode: canUseInstitutionalMode ? requestedMode : "public",
       initialSeverity: body.initialSeverity ?? body.severity,
       sources: {
         citizenReports: body.includeCitizenReports ?? body.sources?.citizenReports ?? true,
@@ -90,6 +113,11 @@ export async function POST(request: NextRequest) {
       shelters: result.shelters,
       medicalPoints: result.medicalPoints,
       riskBreakdown: result.riskBreakdown,
+      mapCenter: result.mapCenter,
+      initialRadiusKm: result.initialRadiusKm,
+      projectedZonesGeoJson: result.projectedZonesGeoJson,
+      sourcesUsed: result.sourcesUsed,
+      dataQuality: result.dataQuality,
       confidence: result.confidence,
       uncertainty: result.uncertainty,
       publicGuidance: result.publicGuidance,

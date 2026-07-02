@@ -201,5 +201,25 @@ Required checks:
 - Confirm there is no loop between `/onboarding?next=/app` and `/app/perfil#publico`.
 - Confirm `/dashboard` for a non-operator shows the institutional access screen.
 - Confirm Fenix shows a map/visual projection.
+- Confirm Fenix map centers on the entered coordinates, not a schematic-only map.
+- Confirm Fenix route lines and estimated zones align around the coordinate.
+- Confirm Fenix shows sources used and data-quality limitations.
 - Confirm Fenix shows 3 prediction frames.
-- Confirm Fenix enables `Generar plan de acción` only after simulation.
+- Confirm Fenix enables institutional action plan only for OPERATOR/ANALYST/ADMIN
+  style roles.
+- Confirm citizens see public Fenix mode and a clear institutional restriction.
+- Confirm Fenix action wording says verify/evaluate/prepare, not automatic orders.
+
+## Profile Persistence QA
+
+- Register a new account and confirm city/locality is required.
+- Complete onboarding and confirm city/locality is required.
+- Open `/app/perfil`.
+- Confirm persisted email, alias, country, city, region, language and units are
+  visible.
+- Confirm document value is not displayed; only document registered/pending state
+  is shown.
+- Update city/region/language/unit system and refresh.
+- Confirm data remains visible after refresh.
+- Confirm duplicate document registration is rejected without exposing the
+  existing user's data.

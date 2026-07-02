@@ -19,14 +19,18 @@ export async function POST(req: Request) {
   const phone = String(body.phone || "").trim();
   const publicAlias = String(body.publicAlias || body.alias || name || "").trim();
   const countryCode = String(body.countryCode || "CL").trim().toUpperCase();
+  const city = String(body.city || "").trim();
+  const region = String(body.region || "").trim();
+  const preferredLanguage = String(body.preferredLanguage || "es").trim();
+  const unitSystem = String(body.unitSystem || "").trim();
   const governmentId = String(body.governmentId || body.document || "").trim();
   const password = String(body.password || "");
   const confirmPassword = String(body.confirmPassword || "");
   const termsAccepted = Boolean(body.termsAccepted);
   const privacyAccepted = Boolean(body.privacyAccepted);
 
-  if (!name || !email || !governmentId || !publicAlias || !countryCode) {
-    return NextResponse.json({ error: "Nombre, email, alias, país y documento son requeridos." }, { status: 400 });
+  if (!name || !email || !governmentId || !publicAlias || !countryCode || !city) {
+    return NextResponse.json({ error: "Nombre, email, alias, país, ciudad y documento son requeridos." }, { status: 400 });
   }
   if (!password) return NextResponse.json({ error: "Contraseña requerida." }, { status: 400 });
   if (password !== confirmPassword) {
@@ -74,6 +78,10 @@ export async function POST(req: Request) {
       governmentIdHash,
       passwordHash: hashPassword(password),
       countryCode,
+      city,
+      region: region || null,
+      preferredLanguage,
+      unitSystem: unitSystem || null,
       publicAlias,
       role: "CITIZEN",
       accountStatus: "ACTIVE",

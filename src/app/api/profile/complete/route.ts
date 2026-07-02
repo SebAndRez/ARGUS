@@ -27,6 +27,8 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const publicAlias = String(body.publicAlias || "").trim();
   const countryCode = String(body.countryCode || "").trim().toUpperCase();
+  const city = String(body.city || "").trim();
+  const region = String(body.region || "").trim();
   const documentValue = String(body.document || body.governmentId || "").trim();
   const termsAccepted = Boolean(body.termsAccepted);
   const privacyAccepted = Boolean(body.privacyAccepted);
@@ -35,6 +37,9 @@ export async function POST(request: Request) {
   if (aliasError) return NextResponse.json({ error: aliasError }, { status: 400 });
   if (!countryCode || countryCode.length !== 2) {
     return NextResponse.json({ error: "Seleccione un país válido." }, { status: 400 });
+  }
+  if (!city) {
+    return NextResponse.json({ error: "Ciudad o comuna requerida." }, { status: 400 });
   }
   if (!termsAccepted || !privacyAccepted) {
     return NextResponse.json({ error: "Debe aceptar términos y privacidad." }, { status: 400 });
@@ -80,6 +85,8 @@ export async function POST(request: Request) {
     data: {
       publicAlias,
       countryCode,
+      city,
+      region: region || null,
       governmentIdHash,
       termsAcceptedAt: user.termsAcceptedAt ?? now,
       privacyAcceptedAt: user.privacyAcceptedAt ?? now,
@@ -101,8 +108,9 @@ export async function POST(request: Request) {
       id: updatedUser.id,
       publicAlias: updatedUser.publicAlias,
       countryCode: updatedUser.countryCode,
+      city: updatedUser.city,
+      region: updatedUser.region,
       profileCompletedAt: updatedUser.profileCompletedAt,
     },
   });
 }
-

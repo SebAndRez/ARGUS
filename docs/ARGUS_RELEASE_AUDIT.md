@@ -583,3 +583,28 @@ Known limits:
   floating error-like warning.
 - Fenix now includes schematic map, 3 prediction frames, nearby context, route
   impact, risk breakdown and generated action plan panel.
+
+## Update - Profile Persistence And Fenix Map Alignment
+
+- Registration/onboarding now collect and persist city/locality plus optional
+  region/state.
+- `User` now has persisted `city`, `region`, `preferredLanguage` and
+  `unitSystem` fields.
+- `/api/profile/me` exposes a sanitized authenticated profile and allows PATCH
+  only for non-sensitive fields.
+- `/app/perfil` shows persisted account profile data and document registered
+  state without exposing document values.
+- Added safe owner/admin promotion script and safe user listing script.
+- Fenix now renders a coordinate-based Leaflet map instead of schematic-only
+  SVG.
+- Fenix returns source attribution, data-quality metadata, map center, initial
+  radius and projected zone geometry.
+- Fenix institutional mode and action-plan endpoint require institutional roles.
+
+Known limits:
+
+- Profile email/document change flows remain pending.
+- City/region fields require Supabase migration deploy before production uses
+  the new columns.
+- Fenix still uses demo routes, shelters and population context.
+- Fenix map circles are estimates and not official polygons.

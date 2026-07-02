@@ -789,3 +789,26 @@ P0 correction: local auth now requires password, onboarding can complete the
 minimum identity profile, country selection is ISO-wide, dashboard institutional
 access has explicit UX, and Fenix adds visual prediction panels plus action plan
 generation.
+
+## Profile Persistence And Fenix Decision Support
+
+ARGUS profile data now has a persistent minimum account surface:
+
+- email and auth provider remain authentication/contact data,
+- government/national document remains stored only as a hash,
+- city/locality is required for minimum profile completion,
+- region/state, language and unit system are optional/account preferences,
+- `/api/profile/me` must remain sanitized and must not expose document values.
+
+Fenix is decision support, not automatic command:
+
+- public mode gives citizen-safe summary and limitations,
+- institutional mode and action-plan generation require authorized roles,
+- action text must use verify, evaluate, prepare and coordinate language,
+- no evacuation, route closure or official instruction can be declared by Fenix
+  alone.
+
+The Fenix map now uses real coordinates with Leaflet, but it remains an
+estimated preview. Radius circles and projected zones are not official polygons.
+Routes, shelters and population context remain demo until reviewed official or
+licensed open-data connectors are integrated.

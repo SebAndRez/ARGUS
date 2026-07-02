@@ -10,6 +10,10 @@ import {
   aggregateReportsByArea,
   buildFenixEvidenceStack,
 } from "@/lib/fenix/fenixDataFusion";
+import {
+  buildFenixDataQuality,
+  buildFenixSourceAttributions,
+} from "@/lib/fenix/fenixSourceAttribution";
 import { buildGeoContextSummary } from "@/lib/fenix/fenixGeoContextEngine";
 import {
   buildPopulationDisclaimer,
@@ -32,6 +36,7 @@ import type {
 import type {
   FenixAffectedZone,
   FenixCrisisCourse,
+  FenixGeoJsonCircle,
   FenixRecommendedAction,
   FenixRouteImpact,
   FenixSimulationInput,
@@ -108,11 +113,11 @@ function buildActionPlan(
     items.push({
       id: `fenix-action-route-${criticalPrediction.routeId}`,
       priority: "critical",
-      title: "Descomprimir ruta crítica",
-      description: `Revisar desvío o gestión de flujo para ${criticalPrediction.routeName}.`,
+      title: "Revisar ruta critica",
+      description: `Evaluar desvio o gestion de flujo para ${criticalPrediction.routeName}.`,
       reason: criticalPrediction.reason,
       relatedEntityId: criticalPrediction.routeId,
-      expectedImpact: "Reducir exposición y saturación operacional.",
+      expectedImpact: "Apoyar coordinacion para reducir exposicion y saturacion operacional.",
       suggestedStatus: "requires_review",
     });
   }
@@ -122,22 +127,22 @@ function buildActionPlan(
     items.push({
       id: `fenix-action-shelter-${nearCapacityShelter.id}`,
       priority: "high",
-      title: "Abrir refugio alternativo",
-      description: `${nearCapacityShelter.name} está cerca de capacidad en el demo.`,
-      reason: "Evitar saturación de refugio principal.",
+      title: "Preparar refugio alternativo",
+      description: `${nearCapacityShelter.name} esta cerca de capacidad en el demo.`,
+      reason: "Apoyar decision humana para evitar saturacion de refugio principal.",
       relatedEntityId: nearCapacityShelter.id,
       expectedImpact: "Distribuir llegada de personas evacuadas.",
-      suggestedStatus: "activate_now",
+      suggestedStatus: "requires_review",
     });
   }
 
   items.push({
     id: `fenix-action-public-${scenarioId}`,
     priority: "medium",
-    title: "Actualizar instrucción pública",
-    description: "Preparar mensaje simple para población civil según fuente oficial.",
-    reason: "La vista pública debe evitar sobrecarga y no reemplazar autoridad.",
-    expectedImpact: "Mejorar claridad y reducir exposición innecesaria.",
+    title: "Preparar mensaje publico",
+    description: "Redactar mensaje simple para poblacion civil sujeto a fuente oficial.",
+    reason: "La vista publica debe evitar sobrecarga y no reemplazar autoridad.",
+    expectedImpact: "Mejorar claridad y reducir exposicion innecesaria.",
     suggestedStatus: "monitor",
   });
 
@@ -198,6 +203,23 @@ export function estimateAffectedZones(input: FenixSimulationInput): FenixAffecte
   });
 }
 
+function buildProjectedZonesGeoJson(zones: FenixAffectedZone[]): FenixGeoJsonCircle[] {
+  return zones.map((zone) => ({
+    type: "Feature",
+    properties: {
+      id: zone.id,
+      timeLabel: zone.timeLabel,
+      radiusKm: zone.radiusKm,
+      exposureLevel: zone.exposureLevel,
+      isEstimated: zone.isEstimated,
+    },
+    geometry: {
+      type: "Point",
+      coordinates: [zone.center[1], zone.center[0]],
+    },
+  }));
+}
+
 export function estimateRouteImpacts(
   routes: FenixEvacuationRoute[],
   zones: FenixAffectedZone[]
@@ -226,7 +248,7 @@ export function estimateConnectedUsersExposure(
 ) {
   return {
     ...usersAggregate,
-    areaLabel: zones.at(-1)?.timeLabel ?? usersAggregate.areaLabel,
+    areaLabel: zones[zones.length - 1]?.timeLabel ?? usersAggregate.areaLabel,
   };
 }
 
@@ -247,11 +269,11 @@ export function estimateShelterPressure(shelters: typeof demoFenixShelters) {
 
 export function buildPublicGuidance(result: Pick<FenixSimulationResult, "isDemo" | "uncertainty">) {
   return [
-    "Manténgase atento a fuentes oficiales y evite acercarse al área afectada.",
+    "Mantengase atento a fuentes oficiales y evite acercarse al area afectada.",
     "Ruta sugerida preliminar: verificar con autoridad antes de desplazarse.",
     result.isDemo
       ? "Resultado demo/preview: no reemplaza instrucciones oficiales."
-      : "Resultado operativo: sujeto a validación humana.",
+      : "Resultado operativo: sujeto a validacion humana.",
   ];
 }
 
@@ -261,8 +283,8 @@ export function buildInstitutionalActionPlan(result: Pick<FenixSimulationResult,
       id: "fenix-action-verify-authority",
       audience: "institutional",
       priority: "critical",
-      text: "Confirmar estado de rutas con autoridad competente antes de emitir instrucciones.",
-      safetyLimit: "No declarar evacuación oficial desde ARGUS sin mandato institucional.",
+      text: "Verificar estado de rutas con autoridad competente antes de emitir instrucciones.",
+      safetyLimit: "No declarar evacuacion oficial desde ARGUS sin mandato institucional.",
     },
     {
       id: "fenix-action-monitor-reports",
@@ -355,8 +377,11 @@ export function runFenixSimulation(input: {
   const totalExposedPopulation = normalizedInput.exposedPopulationEstimate ??
     population.reduce((sum, item) => sum + item.estimatedPopulation, 0);
   const affectedZones = estimateAffectedZones(normalizedInput);
+  const projectedZonesGeoJson = buildProjectedZonesGeoJson(affectedZones);
   const routeImpacts = estimateRouteImpacts(routes, affectedZones);
   const geoContext = buildGeoContextSummary(normalizedInput);
+  const sourcesUsed = buildFenixSourceAttributions(normalizedInput);
+  const dataQuality = buildFenixDataQuality(normalizedInput, sourcesUsed.length);
   const connectedUsersAggregate = estimateConnectedUsersExposure(
     aggregateConnectedUsersByArea(affectedZones),
     affectedZones
@@ -441,8 +466,8 @@ export function runFenixSimulation(input: {
         id: "fenix-action-public-guidance",
         audience: "public",
         priority: "medium",
-        text: "Revise fuentes oficiales y prepare salida sólo si la autoridad lo indica.",
-        safetyLimit: "No emitir evacuación oficial desde simulación demo.",
+        text: "Revise fuentes oficiales y prepare salida solo si la autoridad lo indica.",
+        safetyLimit: "No emitir evacuacion oficial desde simulacion demo.",
       },
     ],
     confidence,
@@ -472,6 +497,14 @@ export function runFenixSimulation(input: {
     actionPlanResponse: {
       routeReview: suggestRoutesForReview(routeImpacts),
     },
+    mapCenter: [
+      normalizedInput.initialLocation.latitude,
+      normalizedInput.initialLocation.longitude,
+    ],
+    initialRadiusKm: normalizedInput.initialRadiusKm,
+    projectedZonesGeoJson,
+    sourcesUsed,
+    dataQuality,
     disclaimers,
     isDemo,
   };
@@ -497,7 +530,7 @@ export function runFenixSimulation(input: {
     publicInstruction: scenario.publicInstruction,
     summary:
       accessLevel === "institutional"
-        ? "Simulación demo institucional con rutas críticas, refugios y plan de acción."
-        : "Vista pública demo con ruta/refugio recomendado e instrucción simple.",
+        ? "Simulacion demo institucional con rutas criticas, refugios y plan de apoyo a decision."
+        : "Vista publica demo con ruta/refugio recomendado e instruccion simple.",
   };
 }

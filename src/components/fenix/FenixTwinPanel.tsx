@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { demoFenixScenarios } from "@/data/fenixDemo";
 import FenixActionPlanPanel, {
   type FenixActionPlanResponse,
@@ -11,6 +11,7 @@ import FenixPredictionFrames from "@/components/fenix/FenixPredictionFrames";
 import FenixRiskBreakdown from "@/components/fenix/FenixRiskBreakdown";
 import FenixSimulationMap from "@/components/fenix/FenixSimulationMap";
 import { useI18n } from "@/hooks/useI18n";
+import { useSession } from "@/hooks/useSession";
 import type {
   FenixGrowthDirection,
   FenixSimulationInput,
@@ -60,10 +61,11 @@ function inputClass() {
 
 export default function FenixTwinPanel() {
   const { t, formatNumber } = useI18n("CL");
+  const { user } = useSession();
   const [scenarioId, setScenarioId] = useState(demoFenixScenarios[0]?.id ?? "");
   const currentScenario = demoFenixScenarios.find((item) => item.id === scenarioId) ?? demoFenixScenarios[0];
   const [accessLevel, setAccessLevel] =
-    useState<FenixInstitutionalAccessLevel>("institutional");
+    useState<FenixInstitutionalAccessLevel>("public");
   const [crisisType, setCrisisType] =
     useState<FenixSimulationInput["crisisType"]>(currentScenario?.hazardType ?? "wildfire");
   const [latitude, setLatitude] = useState(String(currentScenario?.center[0] ?? -33.45));
@@ -84,6 +86,19 @@ export default function FenixTwinPanel() {
   const [loading, setLoading] = useState(false);
   const [planLoading, setPlanLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const canUseInstitutionalMode = useMemo(
+    () =>
+      Boolean(
+        user &&
+          ["OPERATOR", "ANALYST", "ADMIN", "SUPER_ADMIN", "INSTITUTIONAL_ADMIN"].includes(
+            user.role
+          )
+      ),
+    [user]
+  );
+
+  const effectiveAccessLevel: FenixInstitutionalAccessLevel =
+    canUseInstitutionalMode ? accessLevel : "public";
 
   async function generateSimulation() {
     setLoading(true);
@@ -102,7 +117,7 @@ export default function FenixTwinPanel() {
       simulationMinutes,
       exposedPopulationEstimate: population ? Number(population) : undefined,
       mobility,
-      mode: accessLevel,
+      mode: effectiveAccessLevel,
       initialSeverity,
       uncertainty,
       sources: {
@@ -166,7 +181,7 @@ export default function FenixTwinPanel() {
               Demo operativo: genera un curso de crisis estimado, no una instrucción oficial.
             </p>
           </div>
-          <FenixAccessBadge accessLevel={accessLevel} />
+          <FenixAccessBadge accessLevel={effectiveAccessLevel} />
         </div>
       </header>
 
@@ -239,9 +254,9 @@ export default function FenixTwinPanel() {
             <div className="grid grid-cols-3 gap-2">
               <label className="grid gap-1 text-sm text-slate-300">
                 Modo
-                <select value={accessLevel} onChange={(event) => setAccessLevel(event.target.value as FenixInstitutionalAccessLevel)} className={inputClass()}>
+                <select value={effectiveAccessLevel} onChange={(event) => setAccessLevel(event.target.value as FenixInstitutionalAccessLevel)} className={inputClass()}>
                   <option value="public">{t("fenix.publicMode")}</option>
-                  <option value="institutional">{t("fenix.institutionalMode")}</option>
+                  <option value="institutional" disabled={!canUseInstitutionalMode}>{t("fenix.institutionalMode")}</option>
                 </select>
               </label>
               <label className="grid gap-1 text-sm text-slate-300">
@@ -271,6 +286,12 @@ export default function FenixTwinPanel() {
             >
               {loading ? "Analizando coordenadas, localidades cercanas, reportes y rutas..." : t("fenix.generate")}
             </button>
+            {!canUseInstitutionalMode ? (
+              <p className="rounded border border-amber-300/20 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">
+                Modo institucional y plan de apoyo requieren rol OPERATOR, ANALYST o ADMIN.
+                La simulacion publica sigue disponible.
+              </p>
+            ) : null}
           </div>
         </section>
 
@@ -295,6 +316,7 @@ export default function FenixTwinPanel() {
               </div>
 
               <FenixSimulationMap result={result} />
+              <FenixSourcePanel result={result} />
               <FenixPredictionFrames result={result} />
               <div className="grid gap-5 xl:grid-cols-2">
                 <FenixNearbyContextPanel result={result} />
@@ -335,11 +357,11 @@ export default function FenixTwinPanel() {
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    disabled={!result || planLoading}
+                    disabled={!result || planLoading || !canUseInstitutionalMode}
                     onClick={generateActionPlan}
                     className="rounded border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-bold uppercase text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {planLoading ? "Generando plan..." : t("fenix.actionPlan")}
+                    {planLoading ? "Generando plan..." : canUseInstitutionalMode ? t("fenix.actionPlan") : "Plan institucional restringido"}
                   </button>
                   <button type="button" className="rounded border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-bold uppercase text-white">
                     {t("fenix.exportSummary")}
@@ -370,6 +392,53 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
       <h3 className="text-sm font-semibold uppercase text-white">{title}</h3>
       <div className="mt-3 grid gap-2">{children}</div>
     </div>
+  );
+}
+
+function FenixSourcePanel({ result }: { result: FenixSimulationResult }) {
+  const sources = result.sourcesUsed ?? [];
+  const quality = result.dataQuality;
+
+  return (
+    <section className="rounded-lg border border-white/10 bg-slate-950/85 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-cyan-300">
+            Fuentes y calidad
+          </p>
+          <h3 className="mt-1 text-lg font-semibold text-white">
+            Contexto usado por Fenix
+          </h3>
+        </div>
+        <span className="rounded border border-cyan-300/20 bg-cyan-400/10 px-2 py-1 text-xs font-bold text-cyan-100">
+          {quality ? `${quality.score}% ${quality.level}` : "sin metadata"}
+        </span>
+      </div>
+      {quality ? (
+        <p className="mt-2 text-sm leading-6 text-slate-300">{quality.label}</p>
+      ) : null}
+      <div className="mt-4 grid gap-2 md:grid-cols-2">
+        {sources.map((source) => (
+          <div key={source.id} className="rounded border border-white/10 bg-slate-900/65 p-3">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-sm font-semibold text-white">{source.name}</p>
+              <span className="rounded border border-white/10 px-2 py-1 text-[0.58rem] font-bold uppercase text-slate-300">
+                {source.reliability}
+              </span>
+            </div>
+            <p className="mt-1 text-xs leading-5 text-slate-400">{source.usedFor}</p>
+            <p className="mt-1 text-xs leading-5 text-amber-100">{source.note}</p>
+          </div>
+        ))}
+      </div>
+      {quality?.limitations?.length ? (
+        <ul className="mt-4 list-disc space-y-1 pl-5 text-xs leading-5 text-slate-400">
+          {quality.limitations.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
   );
 }
 

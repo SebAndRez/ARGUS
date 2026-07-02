@@ -20,6 +20,8 @@ function OnboardingPageContent() {
   const [publicAlias, setPublicAlias] = useState(user?.publicAlias ?? "");
   const [countryCode, setCountryCode] = useState(user?.countryCode ?? "CL");
   const [countryQuery, setCountryQuery] = useState("");
+  const [city, setCity] = useState(user?.city ?? "");
+  const [region, setRegion] = useState(user?.region ?? "");
   const [documentValue, setDocumentValue] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(Boolean(user?.termsAccepted));
   const [privacyAccepted, setPrivacyAccepted] = useState(Boolean(user?.privacyAccepted));
@@ -47,6 +49,8 @@ function OnboardingPageContent() {
         body: JSON.stringify({
           publicAlias,
           countryCode,
+          city,
+          region,
           document: documentValue,
           termsAccepted,
           privacyAccepted,
@@ -119,6 +123,24 @@ function OnboardingPageContent() {
               ))}
             </select>
           </Field>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label={countryCode === "CL" ? "Ciudad o comuna" : "Ciudad / localidad"}>
+              <input
+                value={city}
+                onChange={(event) => setCity(event.target.value)}
+                placeholder={countryCode === "CL" ? "Ej. Valparaíso, Santiago, Concepción" : "Ciudad / localidad"}
+                className={inputClass()}
+              />
+            </Field>
+            <Field label="Región / estado">
+              <input
+                value={region}
+                onChange={(event) => setRegion(event.target.value)}
+                placeholder="Opcional"
+                className={inputClass()}
+              />
+            </Field>
+          </div>
           <Field label={getDocumentLabel(countryCode)} hint={getDocumentHelpText(countryCode)}>
             <input
               value={documentValue}

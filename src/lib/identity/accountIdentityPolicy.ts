@@ -11,6 +11,7 @@ export type MinimalIdentityUser = {
   emailVerifiedAt?: Date | string | null;
   governmentIdHash?: string | null;
   countryCode?: string | null;
+  city?: string | null;
   publicAlias?: string | null;
   termsAcceptedAt?: Date | string | null;
   privacyAcceptedAt?: Date | string | null;
@@ -84,6 +85,7 @@ export function requiresProfileCompletion(user: MinimalIdentityUser | null | und
     !user.email ||
     !user.governmentIdHash ||
     !user.countryCode ||
+    !user.city ||
     !user.publicAlias ||
     !user.termsAcceptedAt ||
     !user.privacyAcceptedAt ||

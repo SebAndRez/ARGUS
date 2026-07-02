@@ -70,6 +70,10 @@ export interface SessionUser {
   emailVerified?: boolean;
   governmentIdPresent?: boolean;
   countryCode?: string | null;
+  city?: string | null;
+  region?: string | null;
+  preferredLanguage?: string | null;
+  unitSystem?: string | null;
   termsAccepted?: boolean;
   privacyAccepted?: boolean;
   profileCompletedAt?: string | null;

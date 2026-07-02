@@ -1,8 +1,9 @@
 "use client";
 
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import SensitiveDataNotice from "@/components/profile/SensitiveDataNotice";
 import VisibilityBadge from "@/components/profile/VisibilityBadge";
+import { countries } from "@/data/countries";
 import { visibilityOptions } from "@/data/profileVisibility";
 import { useSession } from "@/hooks/useSession";
 import type {
@@ -13,6 +14,26 @@ import type {
   LocationSharingPreference,
   ProfileVisibility,
 } from "@/types/argusProfile";
+
+type ProfileMe = {
+  email: string;
+  publicAlias: string;
+  displayName: string;
+  countryCode: string | null;
+  countryName: string | null;
+  city: string | null;
+  region: string | null;
+  preferredLanguage: string;
+  unitSystem: string;
+  documentRegistered: boolean;
+  termsAcceptedAt: string | null;
+  privacyAcceptedAt: string | null;
+  profileCompletedAt: string | null;
+  role: string;
+  accountStatus: string;
+  trustScore: number;
+  strikes: number;
+};
 
 const communityRoles: CommunityRole[] = [
   "ciudadano",
@@ -131,6 +152,19 @@ function inputClass() {
   return "min-h-11 rounded border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-300/60";
 }
 
+function StatusTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded border border-white/10 bg-slate-900/65 p-3">
+      <p className="text-[0.58rem] font-bold uppercase tracking-[0.16em] text-slate-500">
+        {label}
+      </p>
+      <p className="mt-1 break-words text-sm font-semibold text-slate-100">
+        {value}
+      </p>
+    </div>
+  );
+}
+
 function SectionCard({
   id,
   title,
@@ -198,6 +232,9 @@ function emailLooksValid(value: string) {
 
 export default function ArgusProfileWorkspace() {
   const { user, loading } = useSession();
+  const [accountProfile, setAccountProfile] = useState<ProfileMe | null>(null);
+  const [accountLoading, setAccountLoading] = useState(true);
+  const [countryQuery, setCountryQuery] = useState("");
   const [profile, setProfile] = useState<ArgusProfileDraft>(() => ({
     ...defaultProfile,
     publicProfile: {
@@ -210,6 +247,63 @@ export default function ArgusProfileWorkspace() {
   const [error, setError] = useState<string | null>(null);
 
   const completion = useMemo(() => completionScore(profile), [profile]);
+  const filteredCountries = useMemo(() => {
+    const query = countryQuery.trim().toLowerCase();
+    return countries.filter((country) =>
+      !query ||
+      country.code.toLowerCase().includes(query) ||
+      country.nameEs.toLowerCase().includes(query) ||
+      country.nameEn.toLowerCase().includes(query)
+    );
+  }, [countryQuery]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProfile() {
+      try {
+        const response = await fetch("/api/profile/me", { cache: "no-store" });
+        if (!response.ok) throw new Error("No se pudo cargar perfil.");
+        const data = await response.json();
+        if (!cancelled) setAccountProfile(data.profile);
+      } catch {
+        if (!cancelled) setAccountProfile(null);
+      } finally {
+        if (!cancelled) setAccountLoading(false);
+      }
+    }
+    loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function saveAccountProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!accountProfile) return;
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/profile/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          publicAlias: accountProfile.publicAlias,
+          displayName: accountProfile.displayName,
+          countryCode: accountProfile.countryCode,
+          city: accountProfile.city,
+          region: accountProfile.region,
+          language: accountProfile.preferredLanguage,
+          unitSystem: accountProfile.unitSystem,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo guardar perfil.");
+      setAccountProfile(data.profile);
+      setMessage("Perfil base actualizado.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "No se pudo guardar perfil.");
+    }
+  }
 
   const saveSection = (sectionName: string, validator?: () => string | null) => {
     const validationError = validator?.() ?? null;
@@ -301,6 +395,150 @@ export default function ArgusProfileWorkspace() {
                 {error}
               </div>
             ) : null}
+
+            <form
+              onSubmit={saveAccountProfile}
+              className="rounded-lg border border-cyan-300/20 bg-slate-950/76 p-4 shadow-2xl shadow-black/20"
+            >
+              <p className="text-[0.62rem] font-bold uppercase tracking-[0.18em] text-cyan-300/75">
+                Cuenta ARGUS
+              </p>
+              <h2 className="mt-1 text-xl font-semibold text-white">Perfil base persistente</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-400">
+                Datos guardados desde registro/onboarding. El documento no se muestra:
+                solo aparece su estado de registro.
+              </p>
+              {accountLoading ? (
+                <p className="mt-4 text-sm text-slate-400">Cargando perfil...</p>
+              ) : accountProfile ? (
+                <div className="mt-4 grid gap-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Field label="Email">
+                      <input value={accountProfile.email} readOnly className={inputClass()} />
+                    </Field>
+                    <Field label="Alias publico">
+                      <input
+                        value={accountProfile.publicAlias}
+                        onChange={(event) =>
+                          setAccountProfile((current) =>
+                            current ? { ...current, publicAlias: event.target.value } : current
+                          )
+                        }
+                        className={inputClass()}
+                      />
+                    </Field>
+                    <Field label="Nombre visible">
+                      <input
+                        value={accountProfile.displayName}
+                        onChange={(event) =>
+                          setAccountProfile((current) =>
+                            current ? { ...current, displayName: event.target.value } : current
+                          )
+                        }
+                        className={inputClass()}
+                      />
+                    </Field>
+                    <Field label="Buscar pais">
+                      <input
+                        value={countryQuery}
+                        onChange={(event) => setCountryQuery(event.target.value)}
+                        className={inputClass()}
+                        placeholder="Chile, Argentina, United..."
+                      />
+                    </Field>
+                    <Field label="Pais">
+                      <select
+                        value={accountProfile.countryCode ?? ""}
+                        onChange={(event) =>
+                          setAccountProfile((current) =>
+                            current ? { ...current, countryCode: event.target.value } : current
+                          )
+                        }
+                        className={inputClass()}
+                      >
+                        {filteredCountries.map((country) => (
+                          <option key={country.code} value={country.code}>
+                            {country.nameEs} ({country.code})
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label={accountProfile.countryCode === "CL" ? "Ciudad o comuna" : "Ciudad / localidad"}>
+                      <input
+                        value={accountProfile.city ?? ""}
+                        onChange={(event) =>
+                          setAccountProfile((current) =>
+                            current ? { ...current, city: event.target.value } : current
+                          )
+                        }
+                        className={inputClass()}
+                      />
+                    </Field>
+                    <Field label="Region / estado">
+                      <input
+                        value={accountProfile.region ?? ""}
+                        onChange={(event) =>
+                          setAccountProfile((current) =>
+                            current ? { ...current, region: event.target.value } : current
+                          )
+                        }
+                        className={inputClass()}
+                      />
+                    </Field>
+                    <Field label="Idioma">
+                      <select
+                        value={accountProfile.preferredLanguage}
+                        onChange={(event) =>
+                          setAccountProfile((current) =>
+                            current ? { ...current, preferredLanguage: event.target.value } : current
+                          )
+                        }
+                        className={inputClass()}
+                      >
+                        <option value="es">Espanol</option>
+                        <option value="en">English</option>
+                        <option value="pt">Portugues</option>
+                      </select>
+                    </Field>
+                    <Field label="Unidades">
+                      <select
+                        value={accountProfile.unitSystem}
+                        onChange={(event) =>
+                          setAccountProfile((current) =>
+                            current ? { ...current, unitSystem: event.target.value } : current
+                          )
+                        }
+                        className={inputClass()}
+                      >
+                        <option value="METRIC">Metrico</option>
+                        <option value="US_CUSTOMARY">US customary</option>
+                        <option value="IMPERIAL">Imperial</option>
+                      </select>
+                    </Field>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <StatusTile label="Documento" value={accountProfile.documentRegistered ? "Documento registrado" : "Pendiente"} />
+                    <StatusTile label="Terminos" value={accountProfile.termsAcceptedAt ? "Aceptados" : "Pendiente"} />
+                    <StatusTile label="Privacidad" value={accountProfile.privacyAcceptedAt ? "Aceptada" : "Pendiente"} />
+                    <StatusTile label="Rol" value={accountProfile.role} />
+                    <StatusTile label="Estado" value={accountProfile.accountStatus} />
+                    <StatusTile label="Confianza" value={`${accountProfile.trustScore}`} />
+                  </div>
+                  <div className="rounded border border-amber-300/20 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">
+                    Cambiar documento requiere flujo de verificacion. Cambiar correo
+                    requiere verificacion del nuevo correo. Estas funciones quedan pendientes.
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-fit rounded border border-cyan-300/30 bg-cyan-400/15 px-4 py-3 text-sm font-bold text-cyan-50 hover:bg-cyan-400/25"
+                  >
+                    Guardar perfil base
+                  </button>
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-amber-100">No se pudo cargar el perfil autenticado.</p>
+              )}
+            </form>
 
             <SectionCard
               id="publico"

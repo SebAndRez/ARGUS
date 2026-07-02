@@ -249,7 +249,13 @@ Prioridad sugerida para investigar sin borrar funcionalidad existente.
 - P0: Add password recovery provider before public release.
 - P0: Add set-password flow for Google-created accounts.
 - P0: Add real email verification provider.
+- P0: Add audited email-change and document-change flows from authenticated
+  profile.
+- P0: Run owner/admin promotion script only from a trusted operator machine and
+  verify session refresh.
 - P1: Add country-specific document validators beyond Chile RUT.
 - P1: Add real geocoder/settlement/census source for Fenix.
-- P1: Replace schematic Fenix SVG with map layer once route/zone geometry is
-  stable.
+- P1: Replace Fenix demo routes/shelters/population with reviewed official or
+  licensed open-data connectors.
+- P1: Persist Fenix simulation history only after RLS, roles and audit policy
+  are complete.
