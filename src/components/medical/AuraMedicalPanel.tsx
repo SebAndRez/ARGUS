@@ -73,7 +73,7 @@ export default function AuraMedicalPanel({
           <p className="text-[0.6rem] font-bold uppercase tracking-[0.18em] text-rose-300">
             AURA Basic
           </p>
-          <h2 className="mt-1 text-lg font-semibold text-white">SOS Medico</h2>
+          <h2 className="mt-1 text-lg font-semibold text-white">SOS Médico</h2>
           <p className="mt-1 text-xs text-slate-400">
             Alerta y ficha opcional para emergencia.
           </p>

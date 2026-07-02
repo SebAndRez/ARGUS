@@ -78,7 +78,7 @@ export default function ArgusModuleLauncher({
             >
               <span className="text-sm font-semibold text-white">AURA Medic Mesh</span>
               <span className="text-[0.65rem] text-slate-400">
-                SOS medico, ficha opcional y puntos cercanos
+                SOS médico, ficha opcional y puntos cercanos
               </span>
             </button>
             <button

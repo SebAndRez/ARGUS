@@ -932,12 +932,12 @@ export default function OperationalMap({
         severity: toMapSeverity(medicalAidRequest.severity),
         confidence: "reported",
         label: "SOS",
-        title: "SOS Medico",
+        title: "SOS Médico",
         active: medicalAidRequest.status !== "resolved",
       }));
       L.marker([medicalAidRequest.latitude, medicalAidRequest.longitude], {
         icon: markerIcon,
-        title: "SOS Medico",
+        title: "SOS Médico",
       }).addTo(medicalLayer);
     }
 
