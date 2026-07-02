@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requiresProfileCompletion } from "@/lib/identity/accountIdentityPolicy";
 import { prisma } from "@/lib/prisma";
 import { createLoginRedirectResponse } from "@/services/authService";
 import { logAuditEvent } from "@/services/auditService";
@@ -7,6 +8,7 @@ import { formatPublicAlias } from "@/services/govIdentity/govIdentityProvider";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo";
 const GOOGLE_STATE_COOKIE = "argus-google-oauth-state";
+const GOOGLE_NEXT_COOKIE = "argus-google-oauth-next";
 
 interface GoogleTokenResponse {
   access_token?: string;
@@ -147,9 +149,22 @@ export async function GET(request: NextRequest) {
       metadata: { email, provider: "google" },
     });
 
-    const response = createLoginRedirectResponse(user.id, new URL("/app", request.url));
+    const nextPath = request.cookies.get(GOOGLE_NEXT_COOKIE)?.value ?? "/app";
+    const finalPath = requiresProfileCompletion(user)
+      ? `/onboarding?next=${encodeURIComponent(nextPath)}`
+      : nextPath;
+    const response = createLoginRedirectResponse(user.id, new URL(finalPath, request.url));
     response.cookies.set({
       name: GOOGLE_STATE_COOKIE,
+      value: "",
+      httpOnly: true,
+      maxAge: 0,
+      path: "/",
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    });
+    response.cookies.set({
+      name: GOOGLE_NEXT_COOKIE,
       value: "",
       httpOnly: true,
       maxAge: 0,

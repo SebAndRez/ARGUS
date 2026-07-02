@@ -170,3 +170,24 @@ Required checks:
 - COMANDO / Command Center content remains contained and does not create
   horizontal overflow.
 - Test modules at 360, 390, 414 and 430 px wide.
+
+## Auth, I18N, Units And Fenix QA
+
+- Open `/app` without session and confirm redirect to `/login?next=/app`.
+- Confirm `/login` shows a highly visible Google button.
+- Confirm `/login` shows local login, create-account link, legal links and
+  `Emergencia / SOS` guidance.
+- Confirm a newly authenticated incomplete profile is sent to `/onboarding`.
+- Confirm Spanish text shows Ñ, á, é, í, ó, ú, ü, ¿ and ¡ correctly.
+- Confirm English and Portuguese dictionaries can load through `useI18n`.
+- Confirm browser/device language detection works when no override exists.
+- Confirm Chile/default locale uses metric units.
+- Confirm United States locale/country uses US customary formatting.
+- Open `/dashboard/fenix`.
+- Confirm `Generar simulación` is visible.
+- Generate a Fenix result.
+- Confirm the result shows affected zones, route impacts, exposed population,
+  connected users as aggregate only, report density, shelters, medical points,
+  actions, confidence and limitations.
+- Confirm Fenix never exposes names, RUT, email or individual user locations.
+- Confirm routing responses label demo/open-data/official status honestly.

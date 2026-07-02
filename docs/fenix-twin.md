@@ -1,44 +1,41 @@
-# ARGUS Fenix Twin
+# Fenix Twin
 
-ARGUS Fenix Twin is the institutional evacuation and response simulation layer
-inside ARGUS GRID. Phase 1 is a demo-grade operational model, not a scientific
-evacuation simulator and not a replacement for official instructions.
+Fenix Twin is an ARGUS simulation builder for crisis course estimation. It is not a scientific simulator and does not replace official instructions.
 
-## Relationship With Routing Intelligence
+## Current Capabilities
 
-Fenix consumes Routing Intelligence instead of acting as a standalone navigation
-app. Routing Intelligence provides route state, capacity, flow, blockages,
-allowed vehicles, confidence and risk. Fenix adds scenario context, population
-exposure, shelter analysis and action plans.
+- Generate simulation button.
+- Crisis type.
+- Initial location.
+- Initial impact radius.
+- Growth direction and speed.
+- Simulation horizon.
+- Exposed population estimate.
+- Mobility mode.
+- Public/institutional mode.
+- Initial severity.
+- Uncertainty.
+- Source toggles represented in the request contract.
 
-## Access Levels
+## Output
 
-- Public: simple route/shelter instruction and basic warning.
-- Institutional: route collapse signals, critical routes, alternative shelters
-  and action items.
+- Affected zones over time.
+- Route impacts with demo/open/official metadata.
+- Connected users as aggregate count only.
+- Report density.
+- Shelter pressure.
+- Medical points.
+- Public guidance.
+- Institutional action plan.
+- Confidence and limitations.
 
-## Endpoints
+## Privacy
 
-- `GET /api/fenix/scenarios`
-- `POST /api/fenix/simulation`
-- `GET /api/fenix/shelters`
-- `POST /api/fenix/action-plan`
-- `GET /api/routing-intelligence/routes`
+Fenix must never expose individual connected users, RUT, email, name or precise private location. Only aggregate approximate counts are allowed.
 
-## Main Types
+## Limitations
 
-- `FenixScenario`
-- `FenixEvacuationRoute`
-- `FenixRouteCollapsePrediction`
-- `FenixShelter`
-- `FenixPopulationExposure`
-- `FenixActionPlan`
-- `FenixSimulationResult`
-
-## Next Steps
-
-- Persist scenario runs.
-- Connect real route providers.
-- Add official shelter feeds.
-- Add audit trails and institutional permissions.
-- Calibrate route capacity with real mobility data.
+- Uses demo routes/refuges/population today.
+- No official evacuation authority.
+- No real propagation model.
+- No persistence of simulations yet.

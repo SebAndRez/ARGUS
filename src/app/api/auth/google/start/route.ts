@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_STATE_COOKIE = "argus-google-oauth-state";
+const GOOGLE_NEXT_COOKIE = "argus-google-oauth-next";
 
 function getGoogleConfig(request: Request) {
   const url = new URL(request.url);
@@ -17,9 +18,13 @@ function getGoogleConfig(request: Request) {
 
 export async function GET(request: Request) {
   const config = getGoogleConfig(request);
+  const requestUrl = new URL(request.url);
+  const nextPath = requestUrl.searchParams.get("next") ?? "/app";
 
   if (!config.clientId) {
-    return NextResponse.redirect(new URL("/login?google=missing_config", request.url));
+    const loginUrl = new URL("/login?google=missing_config", request.url);
+    loginUrl.searchParams.set("next", nextPath);
+    return NextResponse.redirect(loginUrl);
   }
 
   const state = randomBytes(32).toString("hex");
@@ -39,6 +44,15 @@ export async function GET(request: Request) {
   response.cookies.set({
     name: GOOGLE_STATE_COOKIE,
     value: state,
+    httpOnly: true,
+    maxAge: 60 * 10,
+    path: "/",
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+  });
+  response.cookies.set({
+    name: GOOGLE_NEXT_COOKIE,
+    value: nextPath.startsWith("/") ? nextPath : "/app",
     httpOnly: true,
     maxAge: 60 * 10,
     path: "/",

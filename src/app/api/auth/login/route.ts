@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requiresProfileCompletion } from "@/lib/identity/accountIdentityPolicy";
 import { prisma } from "@/lib/prisma";
 import { createLoginResponse } from "@/services/authService";
 import { logAuditEvent } from "@/services/auditService";
@@ -29,5 +30,6 @@ export async function POST(req: Request) {
     publicAlias: user.publicAlias,
     role: user.role,
     accountStatus: user.accountStatus,
+    next: requiresProfileCompletion(user) ? "/onboarding?next=/app" : "/app",
   });
 }

@@ -537,3 +537,31 @@ Estado:
 - iOS native: especificacion preparada; app real pendiente.
 - Push: preview de payloads, sin envio real.
 - Offline queue: contrato y plan, sin implementacion cliente real.
+## Update - Auth Gate / Identity / I18N / Units / Fenix
+
+Corrections before next deploy:
+
+- Added middleware gate for `/app`, `/dashboard`, `/dashboard/fenix`,
+  `/app/perfil`, `/profile` and `/onboarding`.
+- Replaced root redirect with a visible auth landing page.
+- Reworked `/login` with clear Google/local login and emergency guidance.
+- Added `/onboarding` as a prepared minimum-profile flow.
+- Added identity policy helpers for normalized document hash, duplicate message,
+  email attach/change rules and profile completion checks.
+- Added i18n foundation with `es`, `en`, `pt` dictionaries.
+- Added unit-system utilities with metric default and US customary fallback.
+- Added encoding audit script for mojibake and unsafe normalization patterns.
+- Added official route metadata types and registry. Demo routes remain labeled
+  as demo/illustrative until official sources are integrated.
+- Rebuilt Fenix Twin as an explicit simulation builder with generate button,
+  crisis parameters, timeline, route impacts, aggregated users, reports,
+  shelter/medical summaries and limitations.
+
+Known limits:
+
+- Real email verification provider is still pending.
+- Terms/privacy timestamps require a future schema change.
+- Fenix remains demo/preview and must not be presented as official evacuation
+  authority.
+- Official terrestrial/maritime/aerial route feeds are candidates, not active
+  integrations.

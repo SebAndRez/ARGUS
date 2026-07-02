@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  buildDuplicateIdentityMessage,
+  hashGovId,
+} from "@/lib/identity/accountIdentityPolicy";
 import { createLoginResponse } from "@/services/authService";
 import { logAuditEvent } from "@/services/auditService";
-import { generateGovernmentIdHash, formatPublicAlias } from "@/services/govIdentity/govIdentityProvider";
+import { formatPublicAlias } from "@/services/govIdentity/govIdentityProvider";
 
 export async function POST(req: Request) {
   const body = await req.json();
@@ -15,7 +19,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Nombre, email y documento son requeridos." }, { status: 400 });
   }
 
-  const governmentIdHash = generateGovernmentIdHash(governmentId);
+  const governmentIdHash = hashGovId(governmentId);
   const existingEmail = await prisma.user.findUnique({ where: { email } });
   if (existingEmail) {
     return NextResponse.json({ error: "Ya existe una cuenta con este email." }, { status: 409 });
@@ -25,7 +29,7 @@ export async function POST(req: Request) {
     where: { governmentIdHash },
   });
   if (existingGovernmentId) {
-    return NextResponse.json({ error: "Este RUT ya esta registrado." }, { status: 409 });
+    return NextResponse.json({ error: buildDuplicateIdentityMessage() }, { status: 409 });
   }
 
   const publicAlias = formatPublicAlias(name);

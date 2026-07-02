@@ -229,3 +229,15 @@ Prioridad sugerida para investigar sin borrar funcionalidad existente.
   Impacto: installability PWA puede ser parcial.
   Solucion: crear iconos 192/512 PNG maskable y apple touch icon.
   Esfuerzo: S.
+## P0/P1 - Auth, Identity, I18N, Routes And Fenix
+
+- P0: Add real email verification provider before public production.
+- P0: Add audited email-change flow from authenticated profile.
+- P0: Add terms/privacy acceptance timestamps in DB migration.
+- P0: Confirm middleware gate behavior in Vercel preview and mobile Safari.
+- P1: Expand i18n coverage across all remaining modules and legal pages.
+- P1: Run `scripts/auditEncodingText.ts` and fix remaining mojibake manually.
+- P1: Integrate official route datasets only after source/legal validation.
+- P1: Add persisted Fenix simulation history after RLS and roles are complete.
+- P1: Add visual Fenix map overlay for affected zones when the map contract is
+  stable.

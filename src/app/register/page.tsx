@@ -30,15 +30,21 @@ export default function RegisterPage() {
       return;
     }
 
-    router.push("/app");
+    router.push("/onboarding?next=/app");
     router.refresh();
   }
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-white">
-      <div className="w-full max-w-md rounded-[32px] border border-white/10 bg-slate-900/90 p-8 shadow-2xl shadow-black/40 backdrop-blur-xl">
-        <h1 className="text-3xl font-semibold text-white">Registro</h1>
-        <p className="mt-3 text-sm text-slate-400">Registro demo con documento ficticio para pruebas locales.</p>
+      <div className="w-full max-w-md rounded-lg border border-white/10 bg-slate-900/90 p-8 shadow-2xl shadow-black/40 backdrop-blur-xl">
+        <p className="text-[0.65rem] font-bold uppercase tracking-[0.22em] text-cyan-300/80">
+          ARGUS GRID
+        </p>
+        <h1 className="mt-3 text-3xl font-semibold text-white">Crear cuenta</h1>
+        <p className="mt-3 text-sm leading-6 text-slate-400">
+          Registro preview con documento único. ARGUS guarda sólo hash del documento,
+          no el RUT/ID en texto plano.
+        </p>
 
         <form onSubmit={handleSubmit} className="mt-8 grid gap-5">
           <label className="grid gap-2 text-sm text-slate-300">
@@ -46,28 +52,28 @@ export default function RegisterPage() {
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              className="rounded-3xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400/70"
+              className="rounded-md border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400/70"
               placeholder="Nombre completo"
             />
           </label>
 
           <label className="grid gap-2 text-sm text-slate-300">
-            <span>Email</span>
+            <span>Correo electrónico</span>
             <input
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className="rounded-3xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400/70"
+              className="rounded-md border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400/70"
               placeholder="usuario@demo.cl"
             />
           </label>
 
           <label className="grid gap-2 text-sm text-slate-300">
-            <span>Documento</span>
+            <span>RUT / documento nacional</span>
             <input
               value={governmentId}
               onChange={(event) => setGovernmentId(event.target.value)}
-              className="rounded-3xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400/70"
+              className="rounded-md border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400/70"
               placeholder="11111111-1"
             />
           </label>
@@ -77,9 +83,9 @@ export default function RegisterPage() {
           <button
             type="submit"
             disabled={loading}
-            className="rounded-3xl bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-md bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loading ? "Registrando…" : "Crear cuenta"}
+            {loading ? "Registrando..." : "Crear cuenta"}
           </button>
         </form>
       </div>

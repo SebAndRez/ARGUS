@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import ArgusOperationalHUD from "@/components/map/ArgusOperationalHUD";
 import MapLayerControls, {
   type LayerDisplayMeta,
@@ -150,6 +151,7 @@ function persistVisibleWidgets(widgets: typeof defaultVisibleWidgets) {
 }
 
 export default function AppPage() {
+  const router = useRouter();
   const [displayMode, setDisplayMode] = useState<
     "command" | "map" | "layers"
   >(() => {
@@ -294,6 +296,12 @@ export default function AppPage() {
 
   const canReport = Boolean(sessionUser && !["LIMITED", "SUSPENDED", "BANNED"].includes(sessionUser.accountStatus));
   const canSOS = Boolean(sessionUser);
+
+  useEffect(() => {
+    if (!sessionLoading && sessionUser?.profileCompletionRequired) {
+      router.replace("/onboarding?next=/app");
+    }
+  }, [router, sessionLoading, sessionUser?.profileCompletionRequired]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;

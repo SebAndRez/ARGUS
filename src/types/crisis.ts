@@ -66,6 +66,10 @@ export interface SessionUser {
   id: string;
   name: string;
   email: string;
+  emailVerificationState?: "verified" | "pending_verification" | "missing" | "change_pending";
+  emailVerified?: boolean;
+  governmentIdPresent?: boolean;
+  profileCompletionRequired?: boolean;
   publicAlias: string;
   role: UserRole;
   accountStatus: AccountStatus;

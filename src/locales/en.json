@@ -1,0 +1,75 @@
+{
+  "common": {
+    "argus": "ARGUS GRID",
+    "preview": "Alpha Preview / controlled use",
+    "loading": "Loading...",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "continue": "Continue",
+    "save": "Save"
+  },
+  "auth": {
+    "landingTitle": "Sign in to enter the operational map.",
+    "landingBody": "ARGUS uses your profile to associate reports, SOS and language/unit preferences.",
+    "continueGoogle": "Continue with Google",
+    "localLogin": "Local login",
+    "createAccount": "Create account",
+    "emergencySos": "Emergency / SOS",
+    "emergencyHelp": "Full SOS requires sign-in. In a real emergency, also contact official emergency numbers if you have signal.",
+    "email": "Email",
+    "passwordlessDemo": "Demo email access",
+    "enter": "Enter",
+    "signingIn": "Signing in...",
+    "terms": "Terms",
+    "privacy": "Privacy"
+  },
+  "profile": {
+    "onboardingTitle": "Complete your ARGUS identity",
+    "onboardingBody": "One national identity document equals one primary account. Email is an access/contact channel.",
+    "document": "National ID/document",
+    "country": "Country of residence",
+    "alias": "Public alias",
+    "emailPending": "Real email verification is pending an email provider.",
+    "documentPrivacy": "The document must never be stored as plain text; ARGUS uses a hash.",
+    "termsAccept": "I accept terms and privacy for controlled use."
+  },
+  "app": { "mapLoading": "Loading operational map...", "guide": "Guide", "profile": "Profile" },
+  "map": {
+    "critical": "Critical",
+    "publicCameras": "Public cameras",
+    "liveCameras": "Live cameras",
+    "medicalPoints": "Medical points",
+    "airRoutes": "Air routes",
+    "maritimeRoutes": "Maritime routes",
+    "tactical": "Tactical",
+    "satellite": "Satellite"
+  },
+  "dashboard": { "commandMode": "Command center" },
+  "command": { "sourceStatus": "Source status" },
+  "modules": { "title": "ARGUS modules" },
+  "fenix": {
+    "title": "Fenix Twin",
+    "subtitle": "Crisis simulation builder",
+    "generate": "Generate simulation",
+    "generating": "Generating simulation...",
+    "actionPlan": "Generate action plan",
+    "exportSummary": "Export summary",
+    "parameters": "Parameters",
+    "results": "Result",
+    "limitations": "Limitations",
+    "publicMode": "Public",
+    "institutionalMode": "Institutional"
+  },
+  "aura": { "title": "AURA" },
+  "routing": {
+    "official": "Official route",
+    "openData": "Open-data based route",
+    "demo": "Demo / illustrative route",
+    "sourcePending": "Official source pending"
+  },
+  "safety": { "sos": "SOS" },
+  "legal": { "privacy": "Privacy policy", "terms": "Terms of use" },
+  "errors": { "authRequired": "You must sign in to enter the operational map." },
+  "units": { "metric": "Metric", "usCustomary": "US customary", "imperial": "Imperial" }
+}
+

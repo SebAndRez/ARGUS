@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import {
+  getEmailVerificationState,
+  requiresProfileCompletion,
+} from "@/lib/identity/accountIdentityPolicy";
 import { getCurrentUser } from "@/services/authService";
 
 export async function GET() {
@@ -12,6 +16,10 @@ export async function GET() {
       id: user.id,
       name: user.name,
       email: user.email,
+      emailVerificationState: getEmailVerificationState(user),
+      emailVerified: Boolean(user.emailVerifiedAt),
+      governmentIdPresent: Boolean(user.governmentIdHash),
+      profileCompletionRequired: requiresProfileCompletion(user),
       publicAlias: user.publicAlias,
       role: user.role,
       accountStatus: user.accountStatus,

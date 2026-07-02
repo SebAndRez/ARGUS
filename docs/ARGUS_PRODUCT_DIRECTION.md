@@ -760,3 +760,27 @@ Mobile events must stay preliminary:
 - possible quake is not official earthquake alert,
 - no response is not automatically missing person,
 - AURA/Missing Persons escalation requires consent and authorized review.
+## Auth Gate, Identity, I18N, Units And Fenix Simulation Builder
+
+ARGUS now requires an authenticated session before entering the operational map.
+Anonymous users are redirected to `/login?next=/app`. The login surface keeps
+emergency guidance visible, but the full map remains account-gated.
+
+Identity policy is anchored on one RUT/national ID/document per principal
+account. Email and Google login are authentication/contact channels, not the
+sovereign account identity. Documents must be hashed and never exposed in plain
+text.
+
+The i18n foundation supports Spanish, English and Portuguese dictionaries, with
+device/browser detection and a scalable key structure for future languages.
+Display text must preserve Ñ and accents. Encoding audit tooling is available in
+`scripts/auditEncodingText.ts`.
+
+Units default to metric, with US customary/imperial fallbacks based on country
+or locale. Route outputs now carry honest metadata for official/open-data/demo
+status.
+
+Fenix Twin now has a simulation builder: declare crisis type, location, radius,
+growth direction/speed, time horizon, mobility, severity, uncertainty and source
+inputs, then generate an estimated crisis course. Connected users remain
+aggregate only.

@@ -1,0 +1,98 @@
+{
+  "common": {
+    "argus": "ARGUS GRID",
+    "preview": "Alpha Preview / uso controlado",
+    "loading": "Cargando...",
+    "retry": "Reintentar",
+    "cancel": "Cancelar",
+    "continue": "Continuar",
+    "save": "Guardar"
+  },
+  "auth": {
+    "landingTitle": "Inicia sesión para entrar al mapa operativo.",
+    "landingBody": "ARGUS usa tu perfil para asociar reportes, SOS y preferencias de idioma/unidades.",
+    "continueGoogle": "Continuar con Google",
+    "localLogin": "Login local",
+    "createAccount": "Crear cuenta",
+    "emergencySos": "Emergencia / SOS",
+    "emergencyHelp": "Para SOS completo inicia sesión. En emergencia real contacta también los números oficiales si tienes señal.",
+    "email": "Correo electrónico",
+    "passwordlessDemo": "Ingreso demo por correo",
+    "enter": "Ingresar",
+    "signingIn": "Iniciando...",
+    "terms": "Términos",
+    "privacy": "Privacidad"
+  },
+  "profile": {
+    "onboardingTitle": "Completa tu identidad ARGUS",
+    "onboardingBody": "Una identidad nacional o documento equivale a una cuenta principal. El correo es canal de acceso/contacto.",
+    "document": "RUT / documento nacional",
+    "country": "País de residencia",
+    "alias": "Alias público",
+    "emailPending": "Verificación real de correo pendiente de proveedor email.",
+    "documentPrivacy": "El documento nunca debe guardarse en texto plano; se usa hash.",
+    "termsAccept": "Acepto términos y privacidad para uso controlado."
+  },
+  "app": {
+    "mapLoading": "Cargando mapa operacional...",
+    "guide": "Guía",
+    "profile": "Perfil"
+  },
+  "map": {
+    "critical": "Críticos",
+    "publicCameras": "Cámaras públicas",
+    "liveCameras": "Cámaras en vivo",
+    "medicalPoints": "Puntos médicos",
+    "airRoutes": "Rutas aéreas",
+    "maritimeRoutes": "Rutas marítimas",
+    "tactical": "Táctico",
+    "satellite": "Satélite"
+  },
+  "dashboard": {
+    "commandMode": "Centro de mando"
+  },
+  "command": {
+    "sourceStatus": "Estado de fuentes"
+  },
+  "modules": {
+    "title": "Módulos ARGUS"
+  },
+  "fenix": {
+    "title": "Fénix Twin",
+    "subtitle": "Constructor de simulación de crisis",
+    "generate": "Generar simulación",
+    "generating": "Generando simulación...",
+    "actionPlan": "Generar plan de acción",
+    "exportSummary": "Exportar resumen",
+    "parameters": "Parámetros",
+    "results": "Resultado",
+    "limitations": "Limitaciones",
+    "publicMode": "Público",
+    "institutionalMode": "Institucional"
+  },
+  "aura": {
+    "title": "AURA"
+  },
+  "routing": {
+    "official": "Ruta oficial",
+    "openData": "Ruta basada en datos abiertos",
+    "demo": "Ruta demo / ilustrativa",
+    "sourcePending": "Fuente oficial pendiente"
+  },
+  "safety": {
+    "sos": "SOS"
+  },
+  "legal": {
+    "privacy": "Política de privacidad",
+    "terms": "Términos de uso"
+  },
+  "errors": {
+    "authRequired": "Debes iniciar sesión para entrar al mapa operativo."
+  },
+  "units": {
+    "metric": "Métrico",
+    "usCustomary": "US customary",
+    "imperial": "Imperial"
+  }
+}
+
