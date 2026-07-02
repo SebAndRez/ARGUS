@@ -23,7 +23,7 @@ http://localhost:3000/api/auth/google/callback
 Produccion:
 
 ```text
-https://argus-five-flame.vercel.app/api/auth/google/callback
+https://argus-b2bs-opal.vercel.app/api/auth/google/callback
 ```
 
 Las previews de Vercel tienen URL distinta. Si se quiere probar OAuth en una
@@ -65,13 +65,13 @@ Configurar en Vercel Production:
 Redirect exacto:
 
 ```text
-https://argus-five-flame.vercel.app/api/auth/google/callback
+https://argus-b2bs-opal.vercel.app/api/auth/google/callback
 ```
 
 Origen autorizado:
 
 ```text
-https://argus-five-flame.vercel.app
+https://argus-b2bs-opal.vercel.app
 ```
 
 ## Identidad y RUT
