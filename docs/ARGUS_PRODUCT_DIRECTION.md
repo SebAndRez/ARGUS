@@ -812,3 +812,24 @@ The Fenix map now uses real coordinates with Leaflet, but it remains an
 estimated preview. Radius circles and projected zones are not official polygons.
 Routes, shelters and population context remain demo until reviewed official or
 licensed open-data connectors are integrated.
+
+## Knowledge Intake Engine
+
+ARGUS Knowledge Intake Engine is the learning layer for operational knowledge:
+open sources, technical reports, datasets, manual inputs and future institutional
+feeds are normalized into incident knowledge, evidence, lessons, similarity
+signals and conservative recommendations.
+
+The first implementation is intentionally safe:
+
+- source registry is broad, but non-integrated sources stay planned, manual or
+  requiresReview;
+- adapters are stubs unless a connector already exists elsewhere in ARGUS;
+- PDF, DOCX, XLSX, OCR and vector memory are prepared as contracts, not claimed
+  as real extraction/storage;
+- recommendations are informational and require human validation for critical
+  operations;
+- license notes and source confidence must remain visible before reuse.
+
+The protected operator route `/dashboard/knowledge-intake` exposes the module
+for review without changing citizen SOS/report flows.

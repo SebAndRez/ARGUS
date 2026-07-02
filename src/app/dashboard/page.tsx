@@ -350,6 +350,12 @@ export default function DashboardPage() {
           >
             Mi Perfil
           </a>
+          <a
+            href="/dashboard/knowledge-intake"
+            className="rounded border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-slate-300 hover:text-white"
+          >
+            Knowledge Intake
+          </a>
         </nav>
         <div className="mt-3">
           <LegalNoticeBanner />
