@@ -241,3 +241,15 @@ Prioridad sugerida para investigar sin borrar funcionalidad existente.
 - P1: Add persisted Fenix simulation history after RLS and roles are complete.
 - P1: Add visual Fenix map overlay for affected zones when the map contract is
   stable.
+
+## P0 Follow-up - Auth And Fenix
+
+- P0: Deploy and apply migration with `prisma migrate deploy`; do not use reset
+  or db push.
+- P0: Add password recovery provider before public release.
+- P0: Add set-password flow for Google-created accounts.
+- P0: Add real email verification provider.
+- P1: Add country-specific document validators beyond Chile RUT.
+- P1: Add real geocoder/settlement/census source for Fenix.
+- P1: Replace schematic Fenix SVG with map layer once route/zone geometry is
+  stable.

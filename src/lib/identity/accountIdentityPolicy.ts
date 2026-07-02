@@ -10,7 +10,11 @@ export type MinimalIdentityUser = {
   email?: string | null;
   emailVerifiedAt?: Date | string | null;
   governmentIdHash?: string | null;
+  countryCode?: string | null;
   publicAlias?: string | null;
+  termsAcceptedAt?: Date | string | null;
+  privacyAcceptedAt?: Date | string | null;
+  profileCompletedAt?: Date | string | null;
 };
 
 export function normalizeGovIdInput(value: string) {
@@ -76,6 +80,13 @@ export function buildDuplicateIdentityMessage() {
 
 export function requiresProfileCompletion(user: MinimalIdentityUser | null | undefined) {
   if (!user) return true;
-  return !user.email || !user.governmentIdHash || !user.publicAlias;
+  return (
+    !user.email ||
+    !user.governmentIdHash ||
+    !user.countryCode ||
+    !user.publicAlias ||
+    !user.termsAcceptedAt ||
+    !user.privacyAcceptedAt ||
+    !user.profileCompletedAt
+  );
 }
-

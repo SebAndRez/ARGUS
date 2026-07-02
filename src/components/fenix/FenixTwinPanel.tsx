@@ -2,7 +2,14 @@
 
 import { useState } from "react";
 import { demoFenixScenarios } from "@/data/fenixDemo";
+import FenixActionPlanPanel, {
+  type FenixActionPlanResponse,
+} from "@/components/fenix/FenixActionPlanPanel";
 import FenixAccessBadge from "@/components/fenix/FenixAccessBadge";
+import FenixNearbyContextPanel from "@/components/fenix/FenixNearbyContextPanel";
+import FenixPredictionFrames from "@/components/fenix/FenixPredictionFrames";
+import FenixRiskBreakdown from "@/components/fenix/FenixRiskBreakdown";
+import FenixSimulationMap from "@/components/fenix/FenixSimulationMap";
 import { useI18n } from "@/hooks/useI18n";
 import type {
   FenixGrowthDirection,
@@ -73,7 +80,9 @@ export default function FenixTwinPanel() {
     useState<FenixSimulationInput["uncertainty"]>("medium");
   const [population, setPopulation] = useState("");
   const [result, setResult] = useState<FenixSimulationResult | null>(null);
+  const [actionPlan, setActionPlan] = useState<FenixActionPlanResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [planLoading, setPlanLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function generateSimulation() {
@@ -116,10 +125,31 @@ export default function FenixTwinPanel() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudo generar la simulación.");
       setResult(data.result ?? data);
+      setActionPlan(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Error desconocido.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function generateActionPlan() {
+    if (!result) return;
+    setPlanLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/fenix/action-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result.input),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo generar el plan.");
+      setActionPlan(data);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Error desconocido.");
+    } finally {
+      setPlanLoading(false);
     }
   }
 
@@ -239,7 +269,7 @@ export default function FenixTwinPanel() {
               disabled={loading}
               className="mt-2 min-h-12 rounded bg-cyan-400 px-4 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? t("fenix.generating") : t("fenix.generate")}
+              {loading ? "Analizando coordenadas, localidades cercanas, reportes y rutas..." : t("fenix.generate")}
             </button>
           </div>
         </section>
@@ -262,6 +292,13 @@ export default function FenixTwinPanel() {
                   <Metric label="Reportes" value={String(result.reportDensity.relatedReports)} />
                   <Metric label="Confianza" value={`${result.confidence}%`} />
                 </div>
+              </div>
+
+              <FenixSimulationMap result={result} />
+              <FenixPredictionFrames result={result} />
+              <div className="grid gap-5 xl:grid-cols-2">
+                <FenixNearbyContextPanel result={result} />
+                <FenixRiskBreakdown result={result} />
               </div>
 
               <div className="grid gap-5 xl:grid-cols-2">
@@ -296,14 +333,21 @@ export default function FenixTwinPanel() {
                   {result.disclaimers.map((item) => <li key={item}>{item}</li>)}
                 </ul>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <button type="button" className="rounded border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-bold uppercase text-white">
-                    {t("fenix.actionPlan")}
+                  <button
+                    type="button"
+                    disabled={!result || planLoading}
+                    onClick={generateActionPlan}
+                    className="rounded border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-bold uppercase text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {planLoading ? "Generando plan..." : t("fenix.actionPlan")}
                   </button>
                   <button type="button" className="rounded border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-bold uppercase text-white">
                     {t("fenix.exportSummary")}
                   </button>
                 </div>
               </div>
+
+              <FenixActionPlanPanel plan={actionPlan} />
             </>
           )}
         </section>

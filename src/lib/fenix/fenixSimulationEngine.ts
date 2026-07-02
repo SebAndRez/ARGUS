@@ -10,6 +10,16 @@ import {
   aggregateReportsByArea,
   buildFenixEvidenceStack,
 } from "@/lib/fenix/fenixDataFusion";
+import { buildGeoContextSummary } from "@/lib/fenix/fenixGeoContextEngine";
+import {
+  buildPopulationDisclaimer,
+  classifyExposureLevel,
+} from "@/lib/fenix/populationExposureEstimator";
+import {
+  buildRouteImpactSummary,
+  estimateRouteRisk,
+  suggestRoutesForReview,
+} from "@/lib/fenix/routeImpactAnalyzer";
 import type {
   FenixActionItem,
   FenixActionPlan,
@@ -346,6 +356,7 @@ export function runFenixSimulation(input: {
     population.reduce((sum, item) => sum + item.estimatedPopulation, 0);
   const affectedZones = estimateAffectedZones(normalizedInput);
   const routeImpacts = estimateRouteImpacts(routes, affectedZones);
+  const geoContext = buildGeoContextSummary(normalizedInput);
   const connectedUsersAggregate = estimateConnectedUsersExposure(
     aggregateConnectedUsersByArea(affectedZones),
     affectedZones
@@ -368,6 +379,43 @@ export function runFenixSimulation(input: {
     "Estimación ARGUS: no reemplaza autoridad ni servicios oficiales.",
     "Rutas oficiales no integradas todavía; fallback demo etiquetado.",
     "Usuarios conectados se muestran sólo como agregados.",
+    buildPopulationDisclaimer(),
+  ];
+  const predictionFrames = [
+    affectedZones[0],
+    affectedZones[Math.max(1, Math.floor(affectedZones.length / 2))],
+    affectedZones[affectedZones.length - 1],
+  ].filter(Boolean).map((zone, index) => ({
+    id: `frame-${index}`,
+    label: index === 0 ? "Ahora / impacto inicial" : index === 1 ? "Proyección media" : "Proyección extendida",
+    timeLabel: zone.timeLabel,
+    radiusKm: zone.radiusKm,
+    populationExposure: totalExposedPopulation,
+    routeImpacts: routeImpacts.filter((route) => route.status !== "open").length,
+    relatedReports: reportDensity.relatedReports,
+    confidence,
+    uncertainty: normalizedInput.uncertainty,
+    isDemo: true,
+  }));
+  const riskBreakdown = [
+    {
+      id: "risk-population",
+      label: "Población expuesta",
+      level: classifyExposureLevel(totalExposedPopulation),
+      detail: buildPopulationDisclaimer(),
+    },
+    {
+      id: "risk-routes",
+      label: "Rutas/calles",
+      level: routeImpacts.some((route) => estimateRouteRisk(route) === "critical") ? "critical" : "high",
+      detail: buildRouteImpactSummary(routeImpacts),
+    },
+    {
+      id: "risk-reports",
+      label: "Reportes ciudadanos",
+      level: reportDensity.densityLabel,
+      detail: "Conteo agregado demo; no expone identidad individual.",
+    },
   ];
   const course: FenixCrisisCourse = {
     initialCrisis: `${scenario.name} en ${scenario.regionName}`,
@@ -417,6 +465,13 @@ export function runFenixSimulation(input: {
     uncertainty: normalizedInput.uncertainty,
     publicGuidance: buildPublicGuidance(baseForConfidence),
     institutionalActionPlan,
+    geoContext,
+    nearbySettlements: geoContext.nearbySettlements,
+    predictionFrames,
+    riskBreakdown,
+    actionPlanResponse: {
+      routeReview: suggestRoutesForReview(routeImpacts),
+    },
     disclaimers,
     isDemo,
   };

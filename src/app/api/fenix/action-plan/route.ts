@@ -18,6 +18,24 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({
+      planId: `fenix-plan-${Date.now()}`,
+      summary: "Plan de acción ARGUS demo basado en simulación estimada.",
+      immediateActions: result.institutionalActionPlan.filter((item) => item.priority === "critical"),
+      shortTermActions: result.institutionalActionPlan.filter((item) => item.priority === "high"),
+      operationalActions: result.actionPlan.items,
+      publicGuidance: result.publicGuidance,
+      institutionalGuidance: result.institutionalActionPlan,
+      routeReview: result.actionPlanResponse?.routeReview ?? [],
+      shelterActions: result.shelters,
+      medicalActions: result.medicalPoints,
+      communicationActions: [
+        "Preparar mensaje público simple y validado por autoridad.",
+        "Actualizar canales internos cada 30 minutos o ante cambio relevante.",
+      ],
+      limitations: result.disclaimers,
+      confidence: result.confidence,
+      disclaimers: result.disclaimers,
+      isDemo: result.isDemo,
       actionPlan: result.actionPlan,
       institutionalActionPlan: result.institutionalActionPlan,
       routeSource: {

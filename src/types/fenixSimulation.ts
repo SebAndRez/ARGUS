@@ -118,7 +118,11 @@ export type FenixSimulationResult = {
   uncertainty: FenixUncertaintyLevel;
   publicGuidance: string[];
   institutionalActionPlan: FenixRecommendedAction[];
+  geoContext?: Record<string, unknown>;
+  nearbySettlements?: Array<Record<string, unknown>>;
+  predictionFrames?: Array<Record<string, unknown>>;
+  riskBreakdown?: Array<Record<string, unknown>>;
+  actionPlanResponse?: Record<string, unknown>;
   disclaimers: string[];
   isDemo: boolean;
 };
-

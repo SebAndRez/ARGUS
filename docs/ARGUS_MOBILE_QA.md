@@ -191,3 +191,15 @@ Required checks:
   actions, confidence and limitations.
 - Confirm Fenix never exposes names, RUT, email or individual user locations.
 - Confirm routing responses label demo/open-data/official status honestly.
+- Confirm login asks for email and password.
+- Confirm registration asks for password and confirmation.
+- Confirm registration asks for alias, country, document, terms and privacy.
+- Confirm Google onboarding allows editing alias.
+- Confirm Google onboarding allows entering RUT/document.
+- Confirm country selector exposes the ISO country list, not just 4 countries.
+- Complete onboarding and confirm redirect to `/app`.
+- Confirm there is no loop between `/onboarding?next=/app` and `/app/perfil#publico`.
+- Confirm `/dashboard` for a non-operator shows the institutional access screen.
+- Confirm Fenix shows a map/visual projection.
+- Confirm Fenix shows 3 prediction frames.
+- Confirm Fenix enables `Generar plan de acción` only after simulation.

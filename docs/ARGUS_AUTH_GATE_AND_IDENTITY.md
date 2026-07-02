@@ -6,6 +6,11 @@
 - Anonymous access to the operational map redirects to `/login?next=/app`.
 - `/login` now shows a clear Google login button, local login, account creation, legal links and emergency guidance.
 - `/onboarding` prepares minimum profile completion without storing sensitive documents in plain text.
+- Local login requires email and password.
+- Local registration requires password, password confirmation, public alias,
+  country, national document and legal acceptance.
+- Google onboarding now allows completing alias, country, document and legal
+  acceptance, then redirects to `next`.
 
 ## SOS Exception
 
@@ -24,3 +29,12 @@ Expected minimum profile fields:
 
 Current database supports `email`, `emailVerifiedAt`, `governmentIdHash` and `publicAlias`. Terms/privacy timestamps require a future migration.
 
+Updated database fields:
+
+- `passwordHash`
+- `countryCode`
+- `termsAcceptedAt`
+- `privacyAcceptedAt`
+- `profileCompletedAt`
+
+Password hashes use Node `crypto.scrypt`; no plain password is stored.

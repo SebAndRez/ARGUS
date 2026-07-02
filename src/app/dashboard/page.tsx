@@ -271,6 +271,59 @@ export default function DashboardPage() {
     setLayerSettings((current) => ({ ...current, [key]: !current[key] }));
   };
 
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login?next=/dashboard";
+  }
+
+  if (sessionLoading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
+        <div className="rounded-lg border border-cyan-300/20 bg-slate-900/90 p-6 text-sm text-cyan-100">
+          Cargando ARGUS Command...
+        </div>
+      </main>
+    );
+  }
+
+  if (!authorized) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-white">
+        <section className="w-full max-w-2xl rounded-lg border border-amber-300/20 bg-slate-950/90 p-6 shadow-2xl shadow-black/35">
+          <p className="text-[0.65rem] font-bold uppercase tracking-[0.22em] text-amber-300">
+            ARGUS Command
+          </p>
+          <h1 className="mt-3 text-3xl font-semibold">
+            ARGUS Command requiere rol de operador o administrador.
+          </h1>
+          <p className="mt-3 text-sm leading-6 text-slate-300">
+            Tu sesión está activa, pero este panel institucional controla reportes,
+            sanciones, auditoría y coordinación operacional. El mapa ciudadano sigue
+            disponible.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <a href="/app" className="rounded bg-cyan-400 px-4 py-3 text-sm font-bold text-slate-950">
+              Volver al mapa
+            </a>
+            <a href="/legal/institutional-access" className="rounded border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-slate-100">
+              Solicitar acceso institucional
+            </a>
+            <a href="/app/como-usar" className="rounded border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-slate-100">
+              Ver guía de uso
+            </a>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded border border-red-300/20 bg-red-400/10 px-4 py-3 text-sm font-semibold text-red-100"
+            >
+              Cerrar sesión
+            </button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <header className="sticky top-0 z-30 border-b border-white/10 bg-slate-950/92 px-4 py-3 backdrop-blur-xl xl:px-8">

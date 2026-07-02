@@ -784,3 +784,8 @@ Fenix Twin now has a simulation builder: declare crisis type, location, radius,
 growth direction/speed, time horizon, mobility, severity, uncertainty and source
 inputs, then generate an estimated crisis course. Connected users remain
 aggregate only.
+
+P0 correction: local auth now requires password, onboarding can complete the
+minimum identity profile, country selection is ISO-wide, dashboard institutional
+access has explicit UX, and Fenix adds visual prediction panels plus action plan
+generation.

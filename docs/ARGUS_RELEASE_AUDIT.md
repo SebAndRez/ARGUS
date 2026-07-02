@@ -565,3 +565,21 @@ Known limits:
   authority.
 - Official terrestrial/maritime/aerial route feeds are candidates, not active
   integrations.
+
+## Update - P0 Auth Onboarding And Fenix Visual Intelligence
+
+- Local login now requires password.
+- Local registration now requires password/confirmation, alias, country,
+  document, terms and privacy.
+- Added optional user fields and safe migration:
+  `passwordHash`, `countryCode`, `termsAcceptedAt`, `privacyAcceptedAt`,
+  `profileCompletedAt`.
+- Password hashes use `crypto.scrypt`; plain passwords are never stored.
+- Onboarding now saves minimum identity data and redirects to the requested next
+  route.
+- Country selector uses an ISO alpha-2 list rather than four hardcoded
+  countries.
+- Dashboard citizen access now shows an institutional access UX instead of a
+  floating error-like warning.
+- Fenix now includes schematic map, 3 prediction frames, nearby context, route
+  impact, risk breakdown and generated action plan panel.

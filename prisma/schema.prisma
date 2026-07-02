@@ -14,9 +14,14 @@ model User {
   email            String         @unique
   phone            String?
   governmentIdHash String?        @unique
+  passwordHash     String?
+  countryCode      String?
   googleSub        String?        @unique
   avatarUrl        String?
   emailVerifiedAt  DateTime?
+  termsAcceptedAt  DateTime?
+  privacyAcceptedAt DateTime?
+  profileCompletedAt DateTime?
   authProvider     String?        @default("local")
   lastLoginAt      DateTime?
   publicAlias      String

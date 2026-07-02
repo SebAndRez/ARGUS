@@ -39,3 +39,22 @@ Fenix must never expose individual connected users, RUT, email, name or precise 
 - No official evacuation authority.
 - No real propagation model.
 - No persistence of simulations yet.
+
+## P0 Visual Upgrade
+
+Fenix now includes:
+
+- Schematic map of initial impact and projected growth.
+- Three prediction frames: initial, medium and extended projection.
+- Coordinate and nearby settlement context.
+- Population exposure estimate marked as preliminary.
+- Route impact review marked as demo/open-data unless official source exists.
+- Aggregated connected users only.
+- Generated action plan after simulation.
+
+The full flow is:
+
+1. Coordinates and crisis parameters.
+2. ARGUS geo/context analysis.
+3. Simulation.
+4. Action plan.

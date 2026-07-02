@@ -1,21 +1,80 @@
 "use client";
 
-import { Suspense, useState } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { countries } from "@/data/countries";
 import { useI18n } from "@/hooks/useI18n";
 import { useSession } from "@/hooks/useSession";
+import {
+  getDocumentHelpText,
+  getDocumentLabel,
+  getDocumentPlaceholder,
+} from "@/lib/identity/countryDocumentRules";
 
 function OnboardingPageContent() {
   const { t } = useI18n();
   const { user, loading } = useSession();
   const params = useSearchParams();
+  const router = useRouter();
   const next = params.get("next")?.startsWith("/") ? params.get("next")! : "/app";
-  const [accepted, setAccepted] = useState(false);
+  const [publicAlias, setPublicAlias] = useState(user?.publicAlias ?? "");
+  const [countryCode, setCountryCode] = useState(user?.countryCode ?? "CL");
+  const [countryQuery, setCountryQuery] = useState("");
+  const [documentValue, setDocumentValue] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(Boolean(user?.termsAccepted));
+  const [privacyAccepted, setPrivacyAccepted] = useState(Boolean(user?.privacyAccepted));
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const filteredCountries = useMemo(() => {
+    const query = countryQuery.trim().toLowerCase();
+    return countries.filter((country) =>
+      !query ||
+      country.code.toLowerCase().includes(query) ||
+      country.nameEs.toLowerCase().includes(query) ||
+      country.nameEn.toLowerCase().includes(query)
+    );
+  }, [countryQuery]);
+
+  async function completeProfile(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/profile/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          publicAlias,
+          countryCode,
+          document: documentValue,
+          termsAccepted,
+          privacyAccepted,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo completar el perfil.");
+      router.push(next);
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Error desconocido.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!loading && user && !user.profileCompletionRequired) {
+      router.replace(next);
+    }
+  }, [loading, next, router, user]);
 
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-8 text-white">
-      <section className="mx-auto max-w-3xl rounded-lg border border-cyan-300/20 bg-slate-950/88 p-6 shadow-2xl shadow-black/35">
+      <form
+        onSubmit={completeProfile}
+        className="mx-auto max-w-3xl rounded-lg border border-cyan-300/20 bg-slate-950/88 p-6 shadow-2xl shadow-black/35"
+      >
         <p className="text-[0.64rem] font-bold uppercase tracking-[0.22em] text-cyan-300">
           ARGUS onboarding
         </p>
@@ -29,66 +88,71 @@ function OnboardingPageContent() {
         ) : null}
 
         <div className="mt-6 grid gap-4">
-          <label className="grid gap-2 text-sm text-slate-300">
-            <span>{t("auth.email")}</span>
+          <Field label={t("auth.email")}>
+            <input value={user?.email ?? ""} readOnly className={inputClass()} />
+            {!user?.emailVerified ? (
+              <span className="text-xs text-amber-200">{t("profile.emailPending")}</span>
+            ) : null}
+          </Field>
+          <Field label={t("profile.alias")}>
             <input
-              value={user?.email ?? ""}
-              readOnly
-              className="rounded border border-white/10 bg-slate-900/80 px-3 py-3 text-white"
+              value={publicAlias}
+              onChange={(event) => setPublicAlias(event.target.value)}
+              className={inputClass()}
+              placeholder="vecino_norte"
             />
-            <span className="text-xs text-amber-200">{t("profile.emailPending")}</span>
-          </label>
-          <label className="grid gap-2 text-sm text-slate-300">
-            <span>{t("profile.document")}</span>
+          </Field>
+          <Field label="Buscar país">
             <input
-              disabled
-              placeholder="Pendiente: captura segura + hash server-side"
-              className="rounded border border-white/10 bg-slate-900/50 px-3 py-3 text-slate-500"
+              value={countryQuery}
+              onChange={(event) => setCountryQuery(event.target.value)}
+              className={inputClass()}
+              placeholder="Chile, Argentina, United..."
             />
-            <span className="text-xs text-slate-500">{t("profile.documentPrivacy")}</span>
-          </label>
-          <label className="grid gap-2 text-sm text-slate-300">
-            <span>{t("profile.country")}</span>
-            <select className="rounded border border-white/10 bg-slate-900/80 px-3 py-3 text-white" defaultValue="CL">
-              <option value="CL">Chile</option>
-              <option value="US">United States</option>
-              <option value="PT">Portugal</option>
-              <option value="BR">Brasil</option>
+          </Field>
+          <Field label={t("profile.country")}>
+            <select value={countryCode} onChange={(event) => setCountryCode(event.target.value)} className={inputClass()}>
+              {filteredCountries.map((country) => (
+                <option key={country.code} value={country.code}>
+                  {country.nameEs} ({country.code})
+                </option>
+              ))}
             </select>
-          </label>
-          <label className="grid gap-2 text-sm text-slate-300">
-            <span>{t("profile.alias")}</span>
+          </Field>
+          <Field label={getDocumentLabel(countryCode)} hint={getDocumentHelpText(countryCode)}>
             <input
-              value={user?.publicAlias ?? ""}
-              readOnly
-              className="rounded border border-white/10 bg-slate-900/80 px-3 py-3 text-white"
+              value={documentValue}
+              onChange={(event) => setDocumentValue(event.target.value)}
+              placeholder={getDocumentPlaceholder(countryCode)}
+              className={inputClass()}
             />
+          </Field>
+          <label className="flex gap-3 rounded border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-300">
+            <input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} />
+            <span>Acepto términos de uso.</span>
           </label>
           <label className="flex gap-3 rounded border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-300">
-            <input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} />
-            <span>{t("profile.termsAccept")}</span>
+            <input type="checkbox" checked={privacyAccepted} onChange={(event) => setPrivacyAccepted(event.target.checked)} />
+            <span>Acepto política de privacidad.</span>
           </label>
         </div>
 
+        {error ? (
+          <div className="mt-5 rounded border border-red-300/20 bg-red-400/10 p-3 text-sm text-red-100">
+            {error}
+          </div>
+        ) : null}
+
         <div className="mt-6 flex flex-wrap gap-3">
-          <Link
-            href="/app/perfil"
-            className="inline-flex min-h-11 items-center justify-center rounded border border-cyan-300/25 bg-cyan-400/10 px-4 text-sm font-bold text-cyan-50"
+          <button
+            type="submit"
+            disabled={saving || !user}
+            className="inline-flex min-h-11 items-center justify-center rounded border border-cyan-300/25 bg-cyan-400/10 px-4 text-sm font-bold text-cyan-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Completar en perfil
-          </Link>
-          <Link
-            href={next}
-            className={`inline-flex min-h-11 items-center justify-center rounded px-4 text-sm font-bold ${
-              accepted
-                ? "border border-white/10 bg-white text-slate-950"
-                : "pointer-events-none border border-white/5 bg-white/[0.03] text-slate-600"
-            }`}
-          >
-            Continuar en preview
-          </Link>
+            {saving ? "Guardando..." : "Completar perfil y entrar"}
+          </button>
         </div>
-      </section>
+      </form>
     </main>
   );
 }
@@ -107,4 +171,26 @@ export default function OnboardingPage() {
       <OnboardingPageContent />
     </Suspense>
   );
+}
+
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="grid gap-2 text-sm text-slate-300">
+      <span>{label}</span>
+      {children}
+      {hint ? <span className="text-xs leading-5 text-slate-500">{hint}</span> : null}
+    </label>
+  );
+}
+
+function inputClass() {
+  return "rounded border border-white/10 bg-slate-900/80 px-3 py-3 text-white outline-none focus:border-cyan-300/60";
 }

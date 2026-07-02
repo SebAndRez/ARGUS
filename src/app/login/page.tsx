@@ -7,6 +7,7 @@ import { useI18n } from "@/hooks/useI18n";
 
 function LoginPageContent() {
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [googleMessage, setGoogleMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -43,7 +44,7 @@ function LoginPageContent() {
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, password, next }),
     });
 
     const data = await res.json();
@@ -103,6 +104,16 @@ function LoginPageContent() {
                 placeholder="ciudadano.activo@demo.cl"
               />
             </label>
+            <label className="grid gap-2 text-sm text-slate-300">
+              <span>Contraseña</span>
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="rounded-md border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400/70"
+                placeholder="Mínimo 8 caracteres"
+              />
+            </label>
 
             {error && <p className="text-sm text-rose-400">{error}</p>}
 
@@ -111,7 +122,14 @@ function LoginPageContent() {
               disabled={loading}
               className="rounded-md bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? t("auth.signingIn") : t("auth.enter")}
+              {loading ? t("auth.signingIn") : "Iniciar sesión"}
+            </button>
+            <button
+              type="button"
+              className="text-left text-xs font-semibold text-slate-500 hover:text-cyan-200"
+              title="Recuperación real pendiente de proveedor email."
+            >
+              Olvidé mi contraseña
             </button>
           </form>
         </section>
