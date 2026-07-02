@@ -70,6 +70,26 @@ export type FenixGeoJsonCircle = {
   };
 };
 
+export type FenixPredictionFrame = {
+  id: string;
+  phaseIndex: 1 | 2 | 3;
+  title: string;
+  label: string;
+  summary: string;
+  timeLabel: string;
+  radiusKm: number;
+  center: [number, number];
+  origin: [number, number];
+  direction: FenixGrowthDirection;
+  populationExposure: number;
+  routeImpacts: number;
+  relatedReports: number;
+  confidence: number;
+  uncertainty: FenixUncertaintyLevel;
+  severity: FenixAffectedZone["exposureLevel"];
+  isDemo: boolean;
+};
+
 export type FenixRouteImpact = {
   routeId: string;
   routeName: string;
@@ -139,7 +159,7 @@ export type FenixSimulationResult = {
   institutionalActionPlan: FenixRecommendedAction[];
   geoContext?: Record<string, unknown>;
   nearbySettlements?: Array<Record<string, unknown>>;
-  predictionFrames?: Array<Record<string, unknown>>;
+  predictionFrames?: FenixPredictionFrame[];
   riskBreakdown?: Array<Record<string, unknown>>;
   actionPlanResponse?: Record<string, unknown>;
   mapCenter?: [number, number];

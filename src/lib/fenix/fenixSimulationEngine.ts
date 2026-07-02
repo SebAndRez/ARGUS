@@ -37,6 +37,8 @@ import type {
   FenixAffectedZone,
   FenixCrisisCourse,
   FenixGeoJsonCircle,
+  FenixGrowthDirection,
+  FenixPredictionFrame,
   FenixRecommendedAction,
   FenixRouteImpact,
   FenixSimulationInput,
@@ -50,16 +52,45 @@ const emergencyVehicles: FenixVehicleType[] = [
   "military",
 ];
 
-const directionOffset: Record<string, [number, number]> = {
-  N: [0.08, 0],
-  NE: [0.06, 0.06],
-  E: [0, 0.08],
-  SE: [-0.06, 0.06],
-  S: [-0.08, 0],
-  SW: [-0.06, -0.06],
-  W: [0, -0.08],
-  NW: [0.06, -0.06],
+const directionBearingDeg: Record<FenixGrowthDirection, number> = {
+  N: 0,
+  NE: 45,
+  E: 90,
+  SE: 135,
+  S: 180,
+  SW: 225,
+  W: 270,
+  NW: 315,
 };
+
+function projectCoordinate(
+  origin: [number, number],
+  bearingDeg: number,
+  distanceKm: number
+): [number, number] {
+  if (distanceKm <= 0) return origin;
+  const earthRadiusKm = 6371;
+  const angularDistance = distanceKm / earthRadiusKm;
+  const bearing = (bearingDeg * Math.PI) / 180;
+  const lat1 = (origin[0] * Math.PI) / 180;
+  const lon1 = (origin[1] * Math.PI) / 180;
+
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(angularDistance) +
+      Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearing)
+  );
+  const lon2 =
+    lon1 +
+    Math.atan2(
+      Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(lat1),
+      Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2)
+    );
+
+  return [
+    Number(((lat2 * 180) / Math.PI).toFixed(5)),
+    Number((((lon2 * 180) / Math.PI + 540) % 360 - 180).toFixed(5)),
+  ];
+}
 
 function routeScore(route: FenixEvacuationRoute) {
   const statusPenalty =
@@ -166,12 +197,21 @@ export function buildInitialCrisisArea(input: FenixSimulationInput): FenixAffect
 }
 
 export function projectCrisisGrowth(input: FenixSimulationInput) {
-  const offset = directionOffset[input.growth.direction] ?? directionOffset.N;
   const growthKm = input.growth.speedKmh * (input.simulationMinutes / 60);
+  const bearing = directionBearingDeg[input.growth.direction] ?? 0;
+  const projectedCenter = projectCoordinate(
+    [input.initialLocation.latitude, input.initialLocation.longitude],
+    bearing,
+    growthKm
+  );
   return {
     direction: input.growth.direction,
     growthKm,
-    centerOffset: [offset[0] * growthKm, offset[1] * growthKm] as [number, number],
+    projectedCenter,
+    centerOffset: [
+      Number((projectedCenter[0] - input.initialLocation.latitude).toFixed(5)),
+      Number((projectedCenter[1] - input.initialLocation.longitude).toFixed(5)),
+    ] as [number, number],
   };
 }
 
@@ -179,7 +219,11 @@ export function estimateAffectedZones(input: FenixSimulationInput): FenixAffecte
   const milestones = [15, 30, 60, 180, 360, 720, 1440].filter(
     (minutes) => minutes <= input.simulationMinutes
   );
-  const offset = directionOffset[input.growth.direction] ?? directionOffset.N;
+  const bearing = directionBearingDeg[input.growth.direction] ?? 0;
+  const origin: [number, number] = [
+    input.initialLocation.latitude,
+    input.initialLocation.longitude,
+  ];
   return [0, ...milestones].map((minutes, index) => {
     const hours = minutes / 60;
     const growth = input.growth.speedKmh * hours;
@@ -188,10 +232,7 @@ export function estimateAffectedZones(input: FenixSimulationInput): FenixAffecte
       id: `fenix-zone-${minutes}`,
       timeLabel: minutes === 0 ? "T+0" : `T+${minutes} min`,
       radiusKm: Number(radius.toFixed(1)),
-      center: [
-        Number((input.initialLocation.latitude + offset[0] * growth).toFixed(4)),
-        Number((input.initialLocation.longitude + offset[1] * growth).toFixed(4)),
-      ],
+      center: projectCoordinate(origin, bearing, growth),
       exposureLevel:
         index >= 4 || input.initialSeverity === "critical"
           ? "critical"
@@ -217,6 +258,62 @@ function buildProjectedZonesGeoJson(zones: FenixAffectedZone[]): FenixGeoJsonCir
       type: "Point",
       coordinates: [zone.center[1], zone.center[0]],
     },
+  }));
+}
+
+function buildPredictionFrames(params: {
+  affectedZones: FenixAffectedZone[];
+  input: FenixSimulationInput;
+  totalExposedPopulation: number;
+  routeImpacts: FenixRouteImpact[];
+  relatedReports: number;
+  confidence: number;
+}): FenixPredictionFrame[] {
+  const { affectedZones, input, totalExposedPopulation, routeImpacts, relatedReports, confidence } = params;
+  const middleIndex = Math.max(1, Math.floor((affectedZones.length - 1) / 2));
+  const selectedZones = [
+    affectedZones[0],
+    affectedZones[middleIndex],
+    affectedZones[affectedZones.length - 1],
+  ].filter(Boolean);
+  const titles = [
+    "Fase 1 - Impacto inicial",
+    "Fase 2 - Proyeccion media",
+    "Fase 3 - Proyeccion extendida",
+  ] as const;
+  const labels = [
+    "avance inicial estimado",
+    "avance medio estimado",
+    "avance extendido/final estimado",
+  ] as const;
+  const origin: [number, number] = [
+    input.initialLocation.latitude,
+    input.initialLocation.longitude,
+  ];
+
+  return selectedZones.slice(0, 3).map((zone, index) => ({
+    id: `fenix-frame-${index + 1}-${zone.timeLabel.replace(/\s+/g, "-").toLowerCase()}`,
+    phaseIndex: (index + 1) as 1 | 2 | 3,
+    title: titles[index],
+    label: labels[index],
+    summary:
+      index === 0
+        ? "Situacion inicial sobre la coordenada ingresada."
+        : index === 1
+          ? "Proyeccion intermedia segun velocidad y direccion declaradas."
+          : "Proyeccion extendida para revisar alcance operativo preliminar.",
+    timeLabel: zone.timeLabel,
+    radiusKm: zone.radiusKm,
+    center: zone.center,
+    origin,
+    direction: input.growth.direction,
+    populationExposure: totalExposedPopulation,
+    routeImpacts: routeImpacts.filter((route) => route.status !== "open").length,
+    relatedReports,
+    confidence,
+    uncertainty: input.uncertainty,
+    severity: zone.exposureLevel,
+    isDemo: true,
   }));
 }
 
@@ -406,22 +503,14 @@ export function runFenixSimulation(input: {
     "Usuarios conectados se muestran sólo como agregados.",
     buildPopulationDisclaimer(),
   ];
-  const predictionFrames = [
-    affectedZones[0],
-    affectedZones[Math.max(1, Math.floor(affectedZones.length / 2))],
-    affectedZones[affectedZones.length - 1],
-  ].filter(Boolean).map((zone, index) => ({
-    id: `frame-${index}`,
-    label: index === 0 ? "Ahora / impacto inicial" : index === 1 ? "Proyección media" : "Proyección extendida",
-    timeLabel: zone.timeLabel,
-    radiusKm: zone.radiusKm,
-    populationExposure: totalExposedPopulation,
-    routeImpacts: routeImpacts.filter((route) => route.status !== "open").length,
+  const predictionFrames = buildPredictionFrames({
+    affectedZones,
+    input: normalizedInput,
+    totalExposedPopulation,
+    routeImpacts,
     relatedReports: reportDensity.relatedReports,
     confidence,
-    uncertainty: normalizedInput.uncertainty,
-    isDemo: true,
-  }));
+  });
   const riskBreakdown = [
     {
       id: "risk-population",

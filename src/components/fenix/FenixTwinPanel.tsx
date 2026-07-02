@@ -9,7 +9,6 @@ import FenixAccessBadge from "@/components/fenix/FenixAccessBadge";
 import FenixNearbyContextPanel from "@/components/fenix/FenixNearbyContextPanel";
 import FenixPredictionFrames from "@/components/fenix/FenixPredictionFrames";
 import FenixRiskBreakdown from "@/components/fenix/FenixRiskBreakdown";
-import FenixSimulationMap from "@/components/fenix/FenixSimulationMap";
 import { useI18n } from "@/hooks/useI18n";
 import { useSession } from "@/hooks/useSession";
 import type {
@@ -315,9 +314,8 @@ export default function FenixTwinPanel() {
                 </div>
               </div>
 
-              <FenixSimulationMap result={result} />
-              <FenixSourcePanel result={result} />
               <FenixPredictionFrames result={result} />
+              <FenixSourcePanel result={result} />
               <div className="grid gap-5 xl:grid-cols-2">
                 <FenixNearbyContextPanel result={result} />
                 <FenixRiskBreakdown result={result} />
