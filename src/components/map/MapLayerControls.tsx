@@ -23,7 +23,9 @@ export interface MapLayerState {
   nwsWeatherAlerts?: boolean;
   openMeteoWeatherContext?: boolean;
   usgsWaterConditions?: boolean;
+  noaaCoopsCoastalObservations?: boolean;
   noaaStormEventsHistorical?: boolean;
+  noaaNceiHistoricalTsunamis?: boolean;
   openFemaDisasterDeclarations?: boolean;
   reliefWeb?: boolean;
   sos: boolean;
@@ -107,7 +109,9 @@ const layerGroups: Array<{
       "nwsWeatherAlerts",
       "openMeteoWeatherContext",
       "usgsWaterConditions",
+      "noaaCoopsCoastalObservations",
       "noaaStormEventsHistorical",
+      "noaaNceiHistoricalTsunamis",
       "openFemaDisasterDeclarations",
       // ReliefWeb temporarily hidden from UI until ingest reliability is fixed.
       "sos",
@@ -158,7 +162,9 @@ const labels: Record<keyof MapLayerState, string> = {
   nwsWeatherAlerts: "NWS Weather Alerts",
   openMeteoWeatherContext: "Open-Meteo Weather Context",
   usgsWaterConditions: "USGS Water Conditions",
+  noaaCoopsCoastalObservations: "NOAA CO-OPS Coastal Observations",
   noaaStormEventsHistorical: "NOAA Storm Events Historical",
+  noaaNceiHistoricalTsunamis: "NOAA NCEI Historical Tsunamis",
   openFemaDisasterDeclarations: "OpenFEMA Disaster Declarations",
   reliefWeb: "ReliefWeb Contexto",
   sos: "SOS",
@@ -307,9 +313,19 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
       available: Object.prototype.hasOwnProperty.call(layers, "usgsWaterConditions"),
     },
     {
+      label: "CO-OPS",
+      enabled: Boolean(layers.noaaCoopsCoastalObservations),
+      available: Object.prototype.hasOwnProperty.call(layers, "noaaCoopsCoastalObservations"),
+    },
+    {
       label: "NOAA Hist.",
       enabled: Boolean(layers.noaaStormEventsHistorical),
       available: Object.prototype.hasOwnProperty.call(layers, "noaaStormEventsHistorical"),
+    },
+    {
+      label: "NCEI Tsunami",
+      enabled: Boolean(layers.noaaNceiHistoricalTsunamis),
+      available: Object.prototype.hasOwnProperty.call(layers, "noaaNceiHistoricalTsunamis"),
     },
     {
       label: "OpenFEMA",

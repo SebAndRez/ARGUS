@@ -7,6 +7,7 @@ import { buildIncidentFromQuakeSenseCluster } from "@/lib/quakesense/quakesenseI
 import { getQuakeSenseClusters } from "@/lib/quakesense/quakesenseMemoryStore";
 import { buildIncidentFromSensorSafetyDetection } from "@/lib/sensor-safety/sensorSafetyIncidentAdapter";
 import { getSensorSafetyDetections } from "@/lib/sensor-safety/sensorSafetyStore";
+import { getPredictiveAnalyses } from "@/lib/predictive-core/predictiveFeed";
 import type {
   IncidentCommandView,
   IncidentPriority,
@@ -35,6 +36,7 @@ const isIncident = (
 ): incident is IncidentCommandView => Boolean(incident);
 
 export async function GET() {
+  const predictiveAnalyses = await getPredictiveAnalyses({ limit: 8 });
   const quakeSenseIncidents = getQuakeSenseClusters().map(
     buildIncidentFromQuakeSenseCluster
   );
@@ -69,6 +71,13 @@ export async function GET() {
       ),
       topIncidents: incidents.slice(0, 5),
       systemAlerts: [
+        ...predictiveAnalyses
+          .filter((analysis) => analysis.commandCenterEligible)
+          .slice(0, 3)
+          .map(
+            (analysis) =>
+              `Intelligence hint ${analysis.severity}: ${analysis.title} (${analysis.status}, confianza ${analysis.confidence}%).`
+          ),
         "Modo demo: incidentes construidos desde fallback local.",
         "ARGUS estima, no confirma sin fuente oficial.",
         "QuakeSense y Mobile Safety son experimentales; requieren revision humana.",
@@ -79,6 +88,18 @@ export async function GET() {
           .map((source) => `${source.name}: ${source.freshnessLabel}`),
       ],
       sourceHealth: sources,
+      intelligenceHints: predictiveAnalyses
+        .filter((analysis) => analysis.commandCenterEligible)
+        .map((analysis) => ({
+          id: analysis.id,
+          inputId: analysis.inputId,
+          title: analysis.title,
+          priority: analysis.severity,
+          status: analysis.status,
+          confidence: analysis.confidence,
+          recommendedAction: analysis.recommendedAction,
+          requiresHumanValidation: analysis.primaryMode !== "official",
+        })),
       updatedAt: new Date().toISOString(),
     },
   });

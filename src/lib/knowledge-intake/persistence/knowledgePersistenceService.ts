@@ -39,9 +39,9 @@ type KnowledgeDocumentInput = {
 type WeatherContextEvidenceInput = {
   incidentId?: string;
   sourceIncidentId?: string;
-  sourceId: "open-meteo" | "usgs-water";
-  sourceName: "Open-Meteo" | "USGS Water Data";
-  evidenceType: "weather_context" | "hydrological_context";
+  sourceId: "open-meteo" | "usgs-water" | "noaa-coops";
+  sourceName: "Open-Meteo" | "USGS Water Data" | "NOAA CO-OPS";
+  evidenceType: "weather_context" | "hydrological_context" | "coastal_ocean_context";
   title: string;
   url?: string;
   excerpt: string;
@@ -220,6 +220,8 @@ export async function saveKnowledgeEvidence(evidence: ArgusKnowledgeEvidenceItem
         ? "institutional_disaster_declaration"
         : evidence.sourceId === "noaa-storm-events"
           ? "historical_event_record"
+          : evidence.sourceId === "noaa-ncei-tsunami"
+            ? "tsunami_runup_observation"
           : "source_report",
       title: evidence.title,
       url: evidence.url,
@@ -261,7 +263,7 @@ export async function findKnowledgeIncidentBySourceIncidentId(sourceIncidentId: 
 export async function findFreshWeatherContextEvidence(input: {
   incidentId: string;
   sourceId?: string;
-  evidenceType?: "weather_context" | "hydrological_context";
+  evidenceType?: "weather_context" | "hydrological_context" | "coastal_ocean_context";
   ttlMinutes?: number;
 }) {
   const createdAfter = new Date(Date.now() - (input.ttlMinutes ?? 60) * 60_000);
@@ -289,12 +291,25 @@ export async function findFreshHydrologicalContextEvidence(input: {
   });
 }
 
+export async function findFreshCoastalOceanContextEvidence(input: {
+  incidentId: string;
+  sourceId?: string;
+  ttlMinutes?: number;
+}) {
+  return findFreshWeatherContextEvidence({
+    incidentId: input.incidentId,
+    sourceId: input.sourceId ?? "noaa-coops",
+    evidenceType: "coastal_ocean_context",
+    ttlMinutes: input.ttlMinutes,
+  });
+}
+
 export async function saveWeatherContextEvidenceIfFreshMissing(input: WeatherContextEvidenceInput, ttlMinutes = 60) {
   const resolvedIncidentId = input.incidentId ?? (
     input.sourceIncidentId ? (await findKnowledgeIncidentBySourceIncidentId(input.sourceIncidentId))?.id : undefined
   );
   if (!resolvedIncidentId) {
-    if (input.evidenceType === "hydrological_context") {
+    if (input.evidenceType === "hydrological_context" || input.evidenceType === "coastal_ocean_context") {
       const existing = await prisma.knowledgeEvidence.findFirst({
         where: {
           sourceId: input.sourceId,

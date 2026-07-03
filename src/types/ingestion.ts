@@ -6,6 +6,7 @@ export type ArgusExternalSourceId =
   | "nasa-eonet"
   | "nws"
   | "noaa-storm-events"
+  | "noaa-ncei-tsunami"
   | "openfema"
   | "open-meteo"
   | "met_norway"

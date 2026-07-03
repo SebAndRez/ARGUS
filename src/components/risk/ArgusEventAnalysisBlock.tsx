@@ -1,6 +1,7 @@
 "use client";
 
 import { useArgusEventAnalysis } from "@/hooks/useArgusEventAnalysis";
+import ArgusIntelligenceAnalysisCard from "@/components/risk/ArgusIntelligenceAnalysisCard";
 import RiskEvidenceList from "@/components/risk/RiskEvidenceList";
 import {
   calculateArgusConfidenceFromEvidence,
@@ -82,9 +83,13 @@ export default function ArgusEventAnalysisBlock({
   compact = false,
   ...props
 }: ArgusEventAnalysisBlockProps) {
-  const { loading, error, primaryAssessment, emptyReason } =
+  const { loading, error, primaryAssessment, predictiveAnalysis, emptyReason } =
     useArgusEventAnalysis(props);
   const fallback = fallbackCopy(props);
+
+  if (!loading && !error && predictiveAnalysis) {
+    return <ArgusIntelligenceAnalysisCard analysis={predictiveAnalysis} compact={compact} />;
+  }
 
   return (
     <section
@@ -95,7 +100,7 @@ export default function ArgusEventAnalysisBlock({
       <div className="argus-analysis-header flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-[0.62rem] font-bold uppercase tracking-[0.18em] text-cyan-300/85">
-            Analisis ARGUS
+            ANÁLISIS INTELIGENCIA ARGUS
           </p>
           <p className="mt-1 text-sm font-semibold text-white">
             {props.title ?? primaryAssessment?.title ?? fallback.title}

@@ -5,14 +5,16 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json().catch(() => ({})) as { includeContextual?: boolean; includeHydrologicalContext?: boolean };
+    const body = await request.json().catch(() => ({})) as { includeContextual?: boolean; includeHydrologicalContext?: boolean; includeCoastalObservationContext?: boolean };
     const includeContextual = request.nextUrl.searchParams.get("includeContextual") === "true" || body.includeContextual === true;
     const includeHydrologicalContext = request.nextUrl.searchParams.get("includeHydrologicalContext") === "true" || body.includeHydrologicalContext === true;
-    const results = await runAllConfiguredKnowledgeIngestion({ includeContextual, includeHydrologicalContext });
+    const includeCoastalObservationContext = request.nextUrl.searchParams.get("includeCoastalObservationContext") === "true" || body.includeCoastalObservationContext === true;
+    const results = await runAllConfiguredKnowledgeIngestion({ includeContextual, includeHydrologicalContext, includeCoastalObservationContext });
     return NextResponse.json({
       status: "completed",
       includeContextual,
       includeHydrologicalContext,
+      includeCoastalObservationContext,
       results,
       note: "No Vercel Cron is configured yet; this endpoint runs on demand.",
     });

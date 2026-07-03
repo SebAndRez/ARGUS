@@ -28,6 +28,11 @@ export default function KnowledgeSourceRegistryPanel({ sources }: { sources: Arg
               <span className="rounded bg-white/[0.05] px-2 py-1 text-slate-300">{source.accessMethod}</span>
               <span className="rounded bg-white/[0.05] px-2 py-1 text-slate-300">{source.licenseType}</span>
               <span className="rounded bg-white/[0.05] px-2 py-1 text-slate-300">{source.coverage.global ? "global" : source.coverage.countries?.join(", ")}</span>
+              {source.tags.includes("official_noaa") && <span className="rounded bg-sky-400/10 px-2 py-1 text-sky-100">Official NOAA</span>}
+              {source.tags.includes("no_api_key") && <span className="rounded bg-emerald-400/10 px-2 py-1 text-emerald-100">No API key</span>}
+              {source.tags.includes("isIncidentLayer:false") && <span className="rounded bg-slate-400/10 px-2 py-1 text-slate-200">Not incident source</span>}
+              {source.tags.includes("datumRequired:true") && <span className="rounded bg-amber-400/10 px-2 py-1 text-amber-100">Datum required</span>}
+              {source.tags.includes("observedVsPredictedSeparated:true") && <span className="rounded bg-cyan-400/10 px-2 py-1 text-cyan-100">Observed vs Predicted</span>}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {source.domains.slice(0, 8).map((domain) => (

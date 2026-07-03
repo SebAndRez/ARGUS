@@ -35,6 +35,7 @@ const initialLayers: MapLayerState = {
   publicCameras: true,
   weatherRisk: true,
   openMeteoWeatherContext: false,
+  noaaNceiHistoricalTsunamis: false,
   openFemaDisasterDeclarations: false,
   terrestrialRoutes: true,
   airRoutes: true,
@@ -156,6 +157,11 @@ export default function DashboardPage() {
       openFemaDisasterDeclarations: {
         count: 0,
         detail: "Dataset institucional FEMA; apagado por defecto",
+        status: "idle",
+      },
+      noaaNceiHistoricalTsunamis: {
+        count: 0,
+        detail: "Referencia historica tsunami NOAA/NCEI; no live",
         status: "idle",
       },
       terrestrialRoutes: {

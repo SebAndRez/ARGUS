@@ -32,6 +32,9 @@ export function getExternalIdFromIncident(incident: ArgusIncidentKnowledge) {
   if (sourceId === "noaa-storm-events" && incident.id.startsWith("noaa-storm-events-")) {
     return incident.id.slice("noaa-storm-events-".length);
   }
+  if (sourceId === "noaa-ncei-tsunami" && incident.id.startsWith("noaa-ncei-tsunami-")) {
+    return incident.id.slice("noaa-ncei-tsunami-".length);
+  }
   if (sourceId === "openfema" && incident.id.startsWith("openfema-")) {
     return incident.id.slice("openfema-".length);
   }
@@ -93,7 +96,7 @@ export function shouldUpdateExistingIncident(
 ) {
   if (incoming.confidenceScore > existing.confidenceScore) return true;
   if ((incoming.evidenceCount ?? 0) > (existing.evidenceCount ?? 0)) return true;
-  if (existing.sourceId === "nws" || existing.sourceId === "noaa-storm-events" || existing.sourceId === "openfema") {
+  if (existing.sourceId === "nws" || existing.sourceId === "noaa-storm-events" || existing.sourceId === "noaa-ncei-tsunami" || existing.sourceId === "openfema") {
     if (existing.severity !== incoming.severity) return true;
     const existingTech = JSON.stringify(existing.technicalFactorsJson ?? {});
     const incomingTech = JSON.stringify(incoming.technicalFactors ?? {});

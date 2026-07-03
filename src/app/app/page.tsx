@@ -22,6 +22,8 @@ import AuraMedicalButton from "@/components/medical/AuraMedicalButton";
 import AuraMedicalPanel from "@/components/medical/AuraMedicalPanel";
 import FloatingSOSButton from "@/components/app/FloatingSOSButton";
 import FloatingReportButton from "@/components/app/FloatingReportButton";
+import NotificationCenterButton from "@/components/notifications/NotificationCenterButton";
+import NotificationCenterPanel from "@/components/notifications/NotificationCenterPanel";
 import NearbyEventsSheet from "@/components/app/NearbyEventsSheet";
 import ReportModal from "@/components/app/ReportModal";
 import HelpRequestModal from "@/components/app/HelpRequestModal";
@@ -77,6 +79,10 @@ import type { ConflictZone } from "@/types/conflictZone";
 import type { MedicalAidRequest } from "@/types/medical";
 import type { SafetyCheck } from "@/types/mobileSafety";
 import type { QuakeSenseCluster } from "@/types/quakesense";
+import type {
+  ArgusNotification,
+  ArgusNotificationSummary,
+} from "@/types/notificationCenter";
 import { correlateExternalEvents } from "@/lib/ingestion/correlateExternalEvents";
 import { getConflictProximityWarnings } from "@/lib/conflict/conflictRiskEngine";
 
@@ -104,7 +110,9 @@ const initialLayers = {
   nwsWeatherAlerts: false,
   openMeteoWeatherContext: false,
   usgsWaterConditions: false,
+  noaaCoopsCoastalObservations: false,
   noaaStormEventsHistorical: false,
+  noaaNceiHistoricalTsunamis: false,
   openFemaDisasterDeclarations: false,
   reliefWeb: false,
   sos: true,
@@ -360,6 +368,14 @@ export default function AppPage() {
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isAuraOpen, setIsAuraOpen] = useState(false);
+  const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
+  const [notificationSummary, setNotificationSummary] =
+    useState<ArgusNotificationSummary | null>(null);
+  const [notificationFocusTarget, setNotificationFocusTarget] = useState<{
+    latitude: number;
+    longitude: number;
+    key: number;
+  } | null>(null);
   const [medicalAidRequest, setMedicalAidRequest] =
     useState<MedicalAidRequest | null>(null);
   const [quakeSenseClusters, setQuakeSenseClusters] = useState<
@@ -663,7 +679,10 @@ export default function AppPage() {
     demoSeverityFilter,
     demoTypeFilter,
   ]);
-  const visibleDemoEvents = layerSettings.demoReports ? filteredDemoEvents : [];
+  const visibleDemoEvents = useMemo(
+    () => (layerSettings.demoReports ? filteredDemoEvents : []),
+    [filteredDemoEvents, layerSettings.demoReports]
+  );
   const nearbyEventPool = useMemo(
     () => [...events, ...visibleDemoEvents],
     [events, visibleDemoEvents]
@@ -784,6 +803,68 @@ export default function AppPage() {
         )
     );
   }, [externalCorrelations, selectedExternalEvent]);
+  const openNotificationOnMap = useCallback(
+    (notification: ArgusNotification) => {
+      setDisplayMode("map");
+      setMapViewMode("map");
+      collapseSecondaryPanels();
+
+      const internalEvent = [...events, ...visibleDemoEvents].find(
+        (event) =>
+          event.id === notification.relatedEventId ||
+          event.id === notification.relatedReportId ||
+          event.id === notification.relatedIncidentId
+      );
+      if (internalEvent) {
+        selectEvent(internalEvent);
+      } else {
+        const externalEvent = externalEvents.find(
+          (event) => event.id === notification.relatedEventId
+        );
+        if (externalEvent) {
+          selectExternalEvent(externalEvent);
+        } else {
+          setSelectedEvent(null);
+          setSelectedExternalEvent(null);
+          setSelectedVisualSource(null);
+          setSelectedLiveCamera(null);
+          setSelectedRiskProjection(null);
+          setSelectedConflictZone(null);
+        }
+      }
+
+      if (notification.relatedRouteId) {
+        setLayerSettings((current) => ({
+          ...current,
+          terrestrialRoutes: true,
+          airRoutes: true,
+          maritimeRoutes: true,
+        }));
+      }
+      if (notification.type === "CONFLICT") {
+        setLayerSettings((current) => ({
+          ...current,
+          conflictEvents: true,
+          conflictZones: true,
+        }));
+      }
+      if (notification.lat !== null && notification.lng !== null) {
+        setNotificationFocusTarget({
+          latitude: notification.lat,
+          longitude: notification.lng,
+          key: Date.now(),
+        });
+      }
+    },
+    [
+      collapseSecondaryPanels,
+      events,
+      externalEvents,
+      selectEvent,
+      selectExternalEvent,
+      visibleDemoEvents,
+    ]
+  );
   const activeConflictZones = useMemo(
     () => (layerSettings.conflictZones ? curatedConflictZones : []),
     [layerSettings.conflictZones]
@@ -990,9 +1071,21 @@ export default function AppPage() {
           : "USGS 00060/00065; no es capa de incidentes",
         status: "ready",
       },
+      noaaCoopsCoastalObservations: {
+        count: 0,
+        detail: layerSettings.noaaCoopsCoastalObservations
+          ? "Contexto costero NOAA CO-OPS bajo demanda; sin bulk global"
+          : "Observaciones costeras NOAA CO-OPS; no es capa de incidentes",
+        status: "ready",
+      },
       noaaStormEventsHistorical: {
         count: 0,
         detail: "Dataset historico NOAA/NCEI; import controlado, apagado por defecto",
+        status: "idle",
+      },
+      noaaNceiHistoricalTsunamis: {
+        count: 0,
+        detail: "Memoria historica tsunami NOAA/NCEI; no live, sin geometria inventada",
         status: "idle",
       },
       openFemaDisasterDeclarations: {
@@ -1178,6 +1271,7 @@ export default function AppPage() {
       layerSettings.liveCameras,
       layerSettings.medicalPoints,
       layerSettings.openMeteoWeatherContext,
+      layerSettings.noaaCoopsCoastalObservations,
       layerSettings.usgsWaterConditions,
       quakeSenseClusters.length,
       safetyChecks.length,
@@ -1805,8 +1899,25 @@ export default function AppPage() {
         onConflictZoneSelect={selectConflictZone}
         baseMapType={baseMapType}
         centerRequestKey={centerRequestKey}
+        focusTarget={notificationFocusTarget}
         viewMode={mapViewMode}
         onViewModeChange={setMapViewMode}
+      />
+
+      <NotificationCenterButton
+        unreadCount={notificationSummary?.unread ?? 0}
+        criticalCount={notificationSummary?.critical ?? 0}
+        open={isNotificationCenterOpen}
+        onClick={() => setIsNotificationCenterOpen((current) => !current)}
+      />
+
+      <NotificationCenterPanel
+        open={isNotificationCenterOpen}
+        latitude={location.latitude}
+        longitude={location.longitude}
+        onClose={() => setIsNotificationCenterOpen(false)}
+        onOpenNotification={openNotificationOnMap}
+        onSummaryChange={setNotificationSummary}
       />
 
       <nav

@@ -27,6 +27,21 @@ export type ArgusHazardDomain =
   | "winter_storm"
   | "wildfire_weather"
   | "marine_weather"
+  | "coastal_observation"
+  | "ocean_observation"
+  | "water_level"
+  | "tide_prediction"
+  | "coastal_meteorology"
+  | "air_pressure"
+  | "wind"
+  | "air_gap"
+  | "harbor_context"
+  | "port_context"
+  | "tsunami_observation_context"
+  | "storm_surge_context"
+  | "nav_coastal_context"
+  | "fenix_coastal_context"
+  | "aura_coastal_context"
   | "wildfire"
   | "urban_fire"
   | "industrial_fire"
@@ -423,6 +438,22 @@ export type ArgusIncidentTechnicalFactors = {
   groupKey?: string;
   operationalPrecedent?: Record<string, unknown>;
   institutionalLessons?: string[];
+  tsunamiEventId?: string;
+  cause?: string;
+  validity?: string;
+  tsunamiMagnitude?: number;
+  tsunamiIntensity?: number;
+  maxWaterHeight?: number;
+  sourceEarthquakeMagnitude?: number;
+  sourceEarthquakeDepth?: number;
+  sourceVolcano?: string;
+  runupCount?: number;
+  highestRunup?: number;
+  countriesAffectedFromRunups?: string[];
+  isLiveSource?: boolean;
+  citation?: string;
+  noInventedGeometry?: boolean;
+  historicalSeverity?: string;
 };
 
 export type VolcanoAlertLevel = "NORMAL" | "ADVISORY" | "WATCH" | "WARNING" | "UNASSIGNED" | "UNKNOWN";

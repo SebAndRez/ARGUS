@@ -4,6 +4,8 @@ import { getEonetAdapterStatus } from "@/lib/knowledge-intake/adapters/eonetAdap
 import { firmsAdapter } from "@/lib/knowledge-intake/adapters/firmsAdapter";
 import { getGdacsAdapterStatus } from "@/lib/knowledge-intake/adapters/gdacsAdapter";
 import { getNwsAdapterStatus } from "@/lib/knowledge-intake/adapters/nwsAdapter";
+import { getNoaaNceiTsunamiAdapterStatus } from "@/lib/knowledge-intake/adapters/noaaNceiTsunamiAdapter";
+import { getCoopsAdapterStatus } from "@/lib/knowledge-intake/adapters/noaaCoopsAdapter";
 import { getNoaaStormEventsAdapterStatus } from "@/lib/knowledge-intake/adapters/noaaStormEventsAdapter";
 import { getOpenFemaAdapterStatus } from "@/lib/knowledge-intake/adapters/openFemaAdapter";
 import { getOpenMeteoAdapterStatus } from "@/lib/knowledge-intake/adapters/openMeteoAdapter";
@@ -39,10 +41,12 @@ export async function GET() {
   const activeSourceDetails = sources.filter((source) => source.status === "active" || source.status === "active_contextual" || source.status === "active_historical" || source.status === "active_institutional");
   const nwsStatus = getNwsAdapterStatus();
   const noaaStormStatus = getNoaaStormEventsAdapterStatus();
+  const noaaNceiTsunamiStatus = getNoaaNceiTsunamiAdapterStatus();
+  const noaaCoopsStatus = getCoopsAdapterStatus();
   const openFemaStatus = getOpenFemaAdapterStatus();
   const openMeteoStatus = getOpenMeteoAdapterStatus();
   const usgsWaterStatus = getUsgsWaterAdapterStatus();
-  const noKeySources = sources.filter((source) => source.id === "usgs_earthquake" || source.id === "gdacs" || source.id === "nasa-eonet" || source.id === "usgs-volcano-hans" || source.id === "nws" || source.id === "open-meteo" || source.id === "usgs-water" || source.id === "noaa-storm-events" || source.id === "openfema");
+  const noKeySources = sources.filter((source) => source.id === "usgs_earthquake" || source.id === "gdacs" || source.id === "nasa-eonet" || source.id === "usgs-volcano-hans" || source.id === "nws" || source.id === "open-meteo" || source.id === "usgs-water" || source.id === "noaa-coops" || source.id === "noaa-storm-events" || source.id === "noaa-ncei-tsunami" || source.id === "openfema");
   const optionalKeySources = sources.filter((source) => source.tags.some((tag) => tag.startsWith("optional_api_key:")));
   const fastActivationSources = sources.filter((source) => source.tags.includes("fast_activation") || source.tags.includes("no_api_key"));
   const contextualSources = sources.filter((source) => source.tags.includes("contextual_source") || source.sourceKinds.includes("contextual"));
@@ -86,6 +90,12 @@ export async function GET() {
       isLiveSource: !source.tags.includes("isLiveSource:false"),
     })),
     datasetSources: datasetSources.map((source) => ({ id: source.id, name: source.name, status: source.status, accessMethod: source.accessMethod })),
+    officialSources: sources.filter((source) => source.tags.includes("officialSource:true")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    hazardSources: sources.filter((source) => source.domains.some((domain) => ["tsunami", "earthquake", "volcano", "flood", "storm", "wildfire"].includes(domain))).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    coastalRiskSources: sources.filter((source) => source.tags.some((tag) => tag.includes("coastal") || tag.includes("tsunami"))).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    coastalSources: sources.filter((source) => source.tags.some((tag) => tag.includes("coastal"))).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    oceanObservationSources: sources.filter((source) => source.tags.some((tag) => tag.includes("ocean_observation") || tag.includes("coastal_ocean"))).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    tsunamiSources: sources.filter((source) => source.domains.includes("tsunami") || source.tags.includes("domain:tsunami")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
     institutionalSources: institutionalSources.map((source) => ({
       id: source.id,
       name: source.name,
@@ -177,6 +187,59 @@ export async function GET() {
           "Possible gaps, inconsistencies and coordinate/damage uncertainty.",
           "Use for historical memory, comparison and training; validate current risk with live official sources.",
         ],
+      },
+      {
+        sourceId: "noaa-ncei-tsunami",
+        status: "active_historical",
+        ready: true,
+        requiresApiKey: false,
+        requiresConfiguration: false,
+        officialSource: true,
+        sourceRole: "historical_tsunami_dataset",
+        isLiveSource: false,
+        citationRequired: true,
+        citation: noaaNceiTsunamiStatus.citation,
+        coverage: noaaNceiTsunamiStatus.coverage,
+        importMode: noaaNceiTsunamiStatus.importMode,
+        runAllDefault: false,
+        capabilities: noaaNceiTsunamiStatus.capabilities,
+        mapLayer: noaaNceiTsunamiStatus.mapLayer,
+        limitations: noaaNceiTsunamiStatus.limitations,
+        phase2Planned: noaaNceiTsunamiStatus.phase2Planned,
+        dataQualityWarnings: [
+          "Historical tsunami records vary in precision and completeness by age, validity and observation source.",
+          "Runups are evidence/observations associated with historical events; ARGUS does not create a KnowledgeIncident per runup.",
+          "No inundation geometry is invented by ARGUS from point event/runup records.",
+        ],
+      },
+      {
+        sourceId: "noaa-coops",
+        status: "active_contextual",
+        ready: true,
+        requiresApiKey: false,
+        requiresConfiguration: false,
+        officialSource: true,
+        sourceRole: "coastal_ocean_observation_source",
+        isIncidentSource: false,
+        coverage: "United States and NOAA CO-OPS monitored coastal stations",
+        runAllDefault: false,
+        phase1Capabilities: noaaCoopsStatus.phase1Capabilities,
+        phase2Planned: noaaCoopsStatus.phase2Planned,
+        laterOceanSources: noaaCoopsStatus.laterOceanSources,
+        capabilities: noaaCoopsStatus.capabilities,
+        mapLayer: {
+          id: "noaa-coops-coastal-observations",
+          name: noaaCoopsStatus.mapLayer,
+          layerType: noaaCoopsStatus.layerType,
+          isIncidentLayer: false,
+          defaultVisible: false,
+          noBulkGlobal: true,
+          sublayers: ["Water Level Stations", "Tide Prediction Stations", "Coastal Met Stations", "Air Gap / Bridge Clearance"],
+        },
+        limitations: noaaCoopsStatus.limitations,
+        citationRequired: true,
+        citation: noaaCoopsStatus.citation,
+        caveat: "Coastal observation context only; not a warning center, evacuation order or official inundation model.",
       },
       {
         sourceId: "openfema",
@@ -337,11 +400,25 @@ export async function GET() {
         note: "Runs on demand through /api/knowledge-intake/live/usgs-water or as hydrological enrichment through /api/knowledge-intake/jobs/run-usgs-water-context. Not run-all default.",
       },
       {
+        id: "noaa-coops-context-ready",
+        sourceId: "noaa-coops",
+        status: noaaCoopsStatus.status,
+        normalizedCount: 0,
+        note: "Runs on demand through /api/knowledge-intake/live/noaa-coops or as controlled coastal enrichment through /api/knowledge-intake/jobs/run-noaa-coops-context. Not run-all default.",
+      },
+      {
         id: "noaa-storm-events-historical-ready",
         sourceId: "noaa-storm-events",
         status: noaaStormStatus.status,
         normalizedCount: 0,
         note: "Controlled historical preview/import only through /api/knowledge-intake/live/noaa-storm-events or /api/knowledge-intake/jobs/import-noaa-storm-events. Not run-all default.",
+      },
+      {
+        id: "noaa-ncei-tsunami-historical-ready",
+        sourceId: "noaa-ncei-tsunami",
+        status: noaaNceiTsunamiStatus.status,
+        normalizedCount: 0,
+        note: "Controlled historical preview/import only through /api/knowledge-intake/live/noaa-ncei-tsunami or /api/knowledge-intake/jobs/import-noaa-ncei-tsunami. Not run-all default.",
       },
       {
         id: "openfema-institutional-ready",
@@ -365,7 +442,7 @@ export async function GET() {
         note: firmsAdapter().message,
       },
     ],
-    adapterStatus: [usgsAdapter(), getGdacsAdapterStatus(), getEonetAdapterStatus(), getUsgsVolcanoHansAdapterStatus(), nwsStatus, noaaStormStatus, openFemaStatus, openMeteoStatus, usgsWaterStatus, reliefwebAdapter(), firmsAdapter()],
+    adapterStatus: [usgsAdapter(), getGdacsAdapterStatus(), getEonetAdapterStatus(), getUsgsVolcanoHansAdapterStatus(), nwsStatus, noaaStormStatus, noaaNceiTsunamiStatus, noaaCoopsStatus, openFemaStatus, openMeteoStatus, usgsWaterStatus, reliefwebAdapter(), firmsAdapter()],
     licenseWarnings: [
       {
         sourceId: "open-meteo",
@@ -388,6 +465,8 @@ export async function GET() {
       ...(nwsStatus.userAgentConfigured ? [] : ["NWS_USER_AGENT missing. NWS uses ARGUS/preview (contact-not-configured) fallback in preview/dev."]),
       "NWS is official for the United States and NWS territories only; ARGUS remains extensible for Open-Meteo, MET Norway, WMO and national weather agencies.",
       "NOAA Storm Events is a historical NOAA/NCEI dataset only; it is not live, not forecast, not global weather coverage and not run-all default.",
+      "NOAA NCEI Historical Tsunami is global historical memory only; it is not a live warning center, evacuation order, local authority or official inundation model.",
+      "NOAA CO-OPS is official coastal observation context for United States and NOAA monitored stations only; it is not a global warning center, evacuation order, official inundation model or run-all default job.",
       "OpenFEMA is an institutional FEMA dataset only; it is not live, not forecast, not worldwide coverage and not run-all default.",
       "Open-Meteo is active as global weather context only; it is not an official alert source and commercial/institutional use requires review.",
       "USGS Water Data is active as official US hydrological context only; it is not worldwide coverage, a forecast, evacuation order, route closure or run-all default job.",
@@ -406,7 +485,9 @@ export async function GET() {
       "ARGUS is prepared to add SERNAGEOMIN, JMA, IMO, PHIVOLCS, GNS Science, INGV, VAAC and Smithsonian/GVP later without treating HANS as worldwide local authority.",
       "Open-Meteo context may support Risk, Fenix, NAV and AURA analysis, but requires official validation for critical decisions.",
       "USGS Water context may support Risk, Fenix, NAV, AURA and Command Center hydrological panels, but sensor readings alone are not official flood orders.",
+      "NOAA CO-OPS context may support tsunami, hurricane, storm surge, NAV, Fenix, AURA, Command Center and map context, but never automatic warnings, bridge closures, evacuation orders or invented inundation zones.",
       "NOAA Storm Events may support historical memory, Risk, Fenix, NAV, AURA and map context, but never automatic critical decisions.",
+      "NOAA NCEI Historical Tsunami may support tsunami memory, Risk, Fenix, NAV, AURA, Command Center and map context, but never automatic live warnings or invented inundation zones.",
       "OpenFEMA may support institutional memory, Risk, Fenix, NAV, AURA and map context, but never official FEMA instructions or automatic critical decisions.",
     ],
     dataQualityWarnings: [
@@ -415,6 +496,14 @@ export async function GET() {
         warnings: [
           "Official NOAA/NCEI historical records, not live alerts.",
           "Methodology, event types, completeness, damage values and coordinate precision vary over historical periods.",
+        ],
+      },
+      {
+        sourceId: "noaa-ncei-tsunami",
+        warnings: [
+          "Official NOAA/NCEI/WDS historical tsunami records, not live alerts.",
+          "Event source and runup observations can be approximate, especially for older events.",
+          "Citation required: NCEI/WDS Global Historical Tsunami Database, DOI 10.7289/V5PN93H7.",
         ],
       },
       {

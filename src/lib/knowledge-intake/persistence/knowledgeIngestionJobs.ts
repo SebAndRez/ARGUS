@@ -10,6 +10,11 @@ import {
   fetchAndBuildUsgsWaterContext,
   type UsgsWaterRequestParams,
 } from "@/lib/knowledge-intake/adapters/usgsWaterAdapter";
+import {
+  buildCoopsEvidence,
+  fetchAndBuildCoopsContext,
+  type NoaaCoopsRequestParams,
+} from "@/lib/knowledge-intake/adapters/noaaCoopsAdapter";
 import { fetchEonetEvents, type EonetFetchParams } from "@/lib/knowledge-intake/adapters/eonetAdapter";
 import { fetchGdacsEvents, type GdacsAlertLevel, type GdacsEventType } from "@/lib/knowledge-intake/adapters/gdacsAdapter";
 import { fetchNwsActiveAlerts, type NwsFetchParams } from "@/lib/knowledge-intake/adapters/nwsAdapter";
@@ -17,6 +22,10 @@ import {
   fetchAndNormalizeNoaaStormEvents,
   type NoaaStormEventsFetchParams,
 } from "@/lib/knowledge-intake/adapters/noaaStormEventsAdapter";
+import {
+  fetchAndNormalizeNoaaNceiTsunamis,
+  type NoaaNceiTsunamiFetchParams,
+} from "@/lib/knowledge-intake/adapters/noaaNceiTsunamiAdapter";
 import {
   fetchAndNormalizeOpenFemaDisasterDeclarations,
   type OpenFemaDisasterDeclarationsParams,
@@ -26,6 +35,7 @@ import { fetchUsgsEarthquakes } from "@/lib/knowledge-intake/adapters/usgsAdapte
 import { fetchUsgsVolcanoHans, type UsgsVolcanoHansFetchParams } from "@/lib/knowledge-intake/adapters/usgsVolcanoHansAdapter";
 import {
   createIngestionRun,
+  findFreshCoastalOceanContextEvidence,
   findFreshWeatherContextEvidence,
   findFreshHydrologicalContextEvidence,
   finishIngestionRun,
@@ -76,7 +86,16 @@ export type UsgsWaterContextJobInput = Pick<UsgsWaterRequestParams, "purpose" | 
   sinceHours?: number;
 };
 
+export type NoaaCoopsContextJobInput = Pick<NoaaCoopsRequestParams, "purpose" | "products" | "radiusKm" | "datum" | "units" | "timeZone" | "persist" | "includeAirGap"> & {
+  maxIncidents?: number;
+  sinceHours?: number;
+};
+
 export type NoaaStormEventsImportJobInput = NoaaStormEventsFetchParams & {
+  persist?: boolean;
+};
+
+export type NoaaNceiTsunamiImportJobInput = NoaaNceiTsunamiFetchParams & {
   persist?: boolean;
 };
 
@@ -888,6 +907,191 @@ export async function runUsgsWaterContextEnrichment(input: UsgsWaterContextJobIn
   }
 }
 
+export async function runNoaaCoopsContextEnrichment(input: NoaaCoopsContextJobInput = {}) {
+  const source = getSourceById("noaa-coops");
+  const purpose = input.purpose ?? "tsunami_context";
+  const radiusKm = Math.min(Math.max(Math.trunc(input.radiusKm ?? 25), 1), 50);
+  const products = input.products?.length ? input.products : ["water_level", "predictions", "wind", "air_pressure"];
+  const maxIncidents = Math.min(Math.max(Math.trunc(input.maxIncidents ?? 25), 1), 50);
+  const sinceHours = Math.min(Math.max(Math.trunc(input.sinceHours ?? 24), 1), 168);
+  const datum = input.datum ?? "MLLW";
+  let run: Awaited<ReturnType<typeof createIngestionRun>>;
+  try {
+    if (source) await upsertKnowledgeSource(source);
+    run = await createIngestionRun({
+      sourceId: "noaa-coops",
+      sourceName: "NOAA CO-OPS",
+      metadataJson: JSON.parse(JSON.stringify({
+        purpose,
+        radiusKm,
+        products,
+        datum,
+        units: input.units ?? "metric",
+        timeZone: input.timeZone ?? "gmt",
+        maxIncidents,
+        sinceHours,
+        persist: input.persist ?? true,
+        contextualOnly: true,
+        globalBulkIngestion: false,
+        createsIncidents: false,
+      })),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Knowledge persistence is unavailable";
+    return {
+      runId: null,
+      status: "failed" as const,
+      consideredIncidents: 0,
+      enrichedIncidents: 0,
+      skippedAlreadyFresh: 0,
+      skippedMissingCoordinates: 0,
+      skippedNoNearbyStation: 0,
+      evidenceCreated: 0,
+      warnings: ["Knowledge persistence is unavailable. Apply the Knowledge Intake migration before using NOAA CO-OPS context jobs."],
+      errors: [message],
+      sampleContexts: [],
+    };
+  }
+
+  const warnings = [
+    "NOAA CO-OPS context enrichment is not global ingestion and does not create KnowledgeIncident records.",
+    "NOAA CO-OPS readings are coastal observation context only, not warnings, evacuation orders or route/bridge closures.",
+  ];
+  const errors: string[] = [];
+  let consideredIncidents = 0;
+  let enrichedIncidents = 0;
+  let skippedAlreadyFresh = 0;
+  let skippedMissingCoordinates = 0;
+  let skippedNoNearbyStation = 0;
+  let evidenceCreated = 0;
+  const sampleContexts = [];
+
+  try {
+    const since = new Date(Date.now() - sinceHours * 60 * 60_000).toISOString();
+    const incidents = await getKnowledgeIncidents({
+      since,
+      withCoordinates: true,
+      limit: maxIncidents,
+    });
+    const relevant = incidents.filter((incident) => {
+      const haystack = `${incident.domain} ${incident.subtype} ${incident.title} ${incident.summary} ${JSON.stringify(incident.tagsJson ?? [])}`.toLowerCase();
+      return ["tsunami", "tropical_cyclone", "hurricane", "coastal", "storm_surge", "flood", "port", "harbor", "citizen_report"].some((term) => haystack.includes(term));
+    });
+    consideredIncidents = relevant.length;
+
+    for (const incident of relevant) {
+      if (typeof incident.latitude !== "number" || typeof incident.longitude !== "number") {
+        skippedMissingCoordinates += 1;
+        continue;
+      }
+      const fresh = await findFreshCoastalOceanContextEvidence({ incidentId: incident.id, ttlMinutes: 60 });
+      if (fresh) {
+        skippedAlreadyFresh += 1;
+        continue;
+      }
+      const result = await fetchAndBuildCoopsContext({
+        lat: incident.latitude,
+        lon: incident.longitude,
+        radiusKm,
+        products,
+        datum,
+        units: input.units ?? "metric",
+        timeZone: input.timeZone ?? "gmt",
+        purpose,
+        incidentId: incident.id,
+        persist: input.persist ?? true,
+        includeAirGap: input.includeAirGap ?? false,
+      });
+      if (!result.context) {
+        errors.push(...result.errors);
+        continue;
+      }
+      warnings.push(...result.warnings);
+      if (result.context.riskFactors.noNearbyStation) {
+        skippedNoNearbyStation += 1;
+        if (sampleContexts.length < 5) sampleContexts.push(result.context);
+        continue;
+      }
+      const evidence = buildCoopsEvidence(result.context, { incidentId: incident.id, purpose, persist: true });
+      const saved = await saveWeatherContextEvidenceIfFreshMissing({
+        incidentId: incident.id,
+        sourceId: "noaa-coops",
+        sourceName: "NOAA CO-OPS",
+        evidenceType: "coastal_ocean_context",
+        title: evidence.title,
+        url: evidence.url,
+        excerpt: evidence.summary,
+        rawRef: result.context.id,
+        confidenceScore: evidence.confidenceScore.finalConfidence,
+        metadataJson: JSON.parse(JSON.stringify(result.context)),
+      });
+      if (saved.action === "inserted") {
+        evidenceCreated += 1;
+        enrichedIncidents += 1;
+      }
+      if (sampleContexts.length < 5) sampleContexts.push(result.context);
+    }
+
+    await finishIngestionRun(run.id, {
+      status: errors.length > 0 && evidenceCreated === 0 ? "partial" : "success",
+      recordsFetched: consideredIncidents,
+      recordsNormalized: sampleContexts.length,
+      recordsInserted: evidenceCreated,
+      recordsSkipped: skippedAlreadyFresh + skippedMissingCoordinates + skippedNoNearbyStation,
+      warningsJson: JSON.parse(JSON.stringify([...new Set(warnings)])),
+      metadataJson: JSON.parse(JSON.stringify({
+        purpose,
+        radiusKm,
+        products,
+        datum,
+        maxIncidents,
+        sinceHours,
+        skippedAlreadyFresh,
+        skippedMissingCoordinates,
+        skippedNoNearbyStation,
+        errors,
+      })),
+    });
+
+    return {
+      runId: run.id,
+      status: errors.length > 0 && evidenceCreated === 0 ? "partial" as const : "success" as const,
+      consideredIncidents,
+      enrichedIncidents,
+      skippedAlreadyFresh,
+      skippedMissingCoordinates,
+      skippedNoNearbyStation,
+      evidenceCreated,
+      warnings: [...new Set(warnings)],
+      errors,
+      sampleContexts,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "NOAA CO-OPS context job failed";
+    await finishIngestionRun(run.id, {
+      status: "failed",
+      errorMessage: message,
+      recordsFetched: consideredIncidents,
+      recordsInserted: evidenceCreated,
+      recordsSkipped: skippedAlreadyFresh + skippedMissingCoordinates + skippedNoNearbyStation,
+      warningsJson: JSON.parse(JSON.stringify([...new Set(warnings)])),
+    }).catch(() => undefined);
+    return {
+      runId: run.id,
+      status: "failed" as const,
+      consideredIncidents,
+      enrichedIncidents,
+      skippedAlreadyFresh,
+      skippedMissingCoordinates,
+      skippedNoNearbyStation,
+      evidenceCreated,
+      warnings: [...new Set(warnings)],
+      errors: [...errors, message],
+      sampleContexts,
+    };
+  }
+}
+
 export async function runNoaaStormEventsImport(input: NoaaStormEventsImportJobInput) {
   if (!input.year) {
     return {
@@ -1033,6 +1237,185 @@ export async function runNoaaStormEventsImport(input: NoaaStormEventsImportJobIn
       warnings: ["NOAA Storm Events is historical only; retry with a specific year/state/eventTypes/limit."],
       errors: [message],
       sampleIncidents: [],
+    };
+  }
+}
+
+function hasNoaaNceiTsunamiControlledFilter(input: NoaaNceiTsunamiImportJobInput) {
+  return Boolean(input.eventId || input.year || input.startYear || input.endYear || input.country || input.region || input.bbox || input.minWaterHeight || input.minDeaths || input.cause || input.validity);
+}
+
+export async function runNoaaNceiTsunamiImport(input: NoaaNceiTsunamiImportJobInput) {
+  const limit = Math.min(Math.max(Math.trunc(input.limit ?? 500), 1), 1000);
+  if (!hasNoaaNceiTsunamiControlledFilter(input) && limit > 100) {
+    return {
+      runId: null,
+      status: "failed" as const,
+      dataset: input.dataset ?? "events-with-runups",
+      filters: input,
+      fetchedEvents: 0,
+      fetchedRunups: 0,
+      filteredEvents: 0,
+      associatedRunups: 0,
+      insertedIncidents: 0,
+      updatedIncidents: 0,
+      skippedEvents: 0,
+      evidenceCreated: 0,
+      warnings: ["NOAA NCEI historical tsunami import requires filters or a strict limit <= 100."],
+      errors: ["controlled filter required"],
+      sampleIncidents: [],
+      sampleRunups: [],
+    };
+  }
+
+  const source = getSourceById("noaa-ncei-tsunami");
+  let run: Awaited<ReturnType<typeof createIngestionRun>>;
+  try {
+    if (source) await upsertKnowledgeSource(source);
+    run = await createIngestionRun({
+      sourceId: "noaa-ncei-tsunami",
+      sourceName: "NOAA NCEI/WDS Global Historical Tsunami Database",
+      metadataJson: JSON.parse(JSON.stringify({
+        dataset: input.dataset ?? "events-with-runups",
+        eventId: input.eventId,
+        year: input.year,
+        startYear: input.startYear,
+        endYear: input.endYear,
+        country: input.country,
+        region: input.region,
+        bbox: input.bbox,
+        minWaterHeight: input.minWaterHeight,
+        minDeaths: input.minDeaths,
+        cause: input.cause,
+        validity: input.validity,
+        includeRunups: input.includeRunups ?? true,
+        maxRunupsPerEvent: input.maxRunupsPerEvent ?? 50,
+        limit,
+        offset: input.offset ?? 0,
+        persist: input.persist ?? true,
+        sourceRole: "historical_tsunami_dataset",
+        isLiveSource: false,
+        runAllDefault: false,
+      })),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Knowledge persistence is unavailable";
+    return {
+      runId: null,
+      status: "failed" as const,
+      dataset: input.dataset ?? "events-with-runups",
+      filters: input,
+      fetchedEvents: 0,
+      fetchedRunups: 0,
+      filteredEvents: 0,
+      associatedRunups: 0,
+      insertedIncidents: 0,
+      updatedIncidents: 0,
+      skippedEvents: 0,
+      evidenceCreated: 0,
+      warnings: ["Knowledge persistence is unavailable. Apply the Knowledge Intake migration before using NOAA NCEI persist=true."],
+      errors: [message],
+      sampleIncidents: [],
+      sampleRunups: [],
+    };
+  }
+
+  try {
+    const result = await fetchAndNormalizeNoaaNceiTsunamis({
+      ...input,
+      limit,
+      persist: true,
+      dataset: input.dataset ?? "events-with-runups",
+      includeRunups: input.includeRunups ?? true,
+      maxRunupsPerEvent: input.maxRunupsPerEvent ?? 50,
+    });
+    let insertedIncidents = 0;
+    let updatedIncidents = 0;
+    let skippedEvents = 0;
+    let evidenceCreated = 0;
+    let evidenceSkipped = 0;
+    const sampleIncidents = [];
+
+    for (const incident of result.incidents) {
+      const saved = await upsertKnowledgeIncidentByExternalId(incident);
+      if (saved.action === "inserted") insertedIncidents += 1;
+      if (saved.action === "updated") updatedIncidents += 1;
+      if (saved.action === "skipped") skippedEvents += 1;
+      if (sampleIncidents.length < 5) sampleIncidents.push(saved.incident);
+      const evidenceItems = result.evidence.filter((evidence) => evidence.incidentId === incident.id);
+      for (const evidence of evidenceItems) {
+        const savedEvidence = await saveKnowledgeEvidenceIfNew({ ...evidence, incidentId: saved.incident.id });
+        if (savedEvidence.action === "inserted") evidenceCreated += 1;
+        if (savedEvidence.action === "skipped") evidenceSkipped += 1;
+      }
+    }
+
+    await finishIngestionRun(run.id, {
+      status: result.status === "ready" ? "success" : "skipped",
+      recordsFetched: result.fetchedEvents + result.fetchedRunups,
+      recordsNormalized: result.normalizedEvents,
+      recordsInserted: insertedIncidents,
+      recordsUpdated: updatedIncidents,
+      recordsSkipped: skippedEvents + evidenceSkipped,
+      warningsJson: JSON.parse(JSON.stringify(result.warnings)),
+      metadataJson: JSON.parse(JSON.stringify({
+        dataset: input.dataset ?? "events-with-runups",
+        eventsEndpoint: result.eventsEndpoint,
+        runupsEndpoint: result.runupsEndpoint,
+        fetchedEvents: result.fetchedEvents,
+        fetchedRunups: result.fetchedRunups,
+        normalizedRunups: result.normalizedRunups,
+        associatedRunups: result.associatedRunups,
+        evidenceCreated,
+        evidenceSkipped,
+        sourceRole: result.sourceRole,
+        isLiveSource: result.isLiveSource,
+        citation: result.citation,
+      })),
+    });
+
+    return {
+      runId: run.id,
+      status: result.status === "ready" ? "success" as const : "skipped" as const,
+      dataset: input.dataset ?? "events-with-runups",
+      filters: input,
+      fetchedEvents: result.fetchedEvents,
+      fetchedRunups: result.fetchedRunups,
+      filteredEvents: result.normalizedEvents,
+      associatedRunups: result.associatedRunups,
+      insertedIncidents,
+      updatedIncidents,
+      skippedEvents,
+      evidenceCreated,
+      warnings: result.warnings,
+      errors: result.errors,
+      sampleIncidents,
+      sampleRunups: result.sampleRunups,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "NOAA NCEI historical tsunami import failed";
+    await finishIngestionRun(run.id, {
+      status: "failed",
+      errorMessage: message,
+      warningsJson: JSON.parse(JSON.stringify(["NOAA NCEI Historical Tsunami import failed before completion."])),
+    });
+    return {
+      runId: run.id,
+      status: "failed" as const,
+      dataset: input.dataset ?? "events-with-runups",
+      filters: input,
+      fetchedEvents: 0,
+      fetchedRunups: 0,
+      filteredEvents: 0,
+      associatedRunups: 0,
+      insertedIncidents: 0,
+      updatedIncidents: 0,
+      skippedEvents: 0,
+      evidenceCreated: 0,
+      warnings: ["NOAA NCEI Historical Tsunami is historical only; retry with controlled filters and limit."],
+      errors: [message],
+      sampleIncidents: [],
+      sampleRunups: [],
     };
   }
 }
@@ -1226,7 +1609,7 @@ function asArray(value?: string | string[]) {
   return Array.isArray(value) ? value : value.split(/[;,]/).map((item) => item.trim()).filter(Boolean);
 }
 
-export async function runAllConfiguredKnowledgeIngestion(options: { includeContextual?: boolean; includeHydrologicalContext?: boolean } = {}) {
+export async function runAllConfiguredKnowledgeIngestion(options: { includeContextual?: boolean; includeHydrologicalContext?: boolean; includeCoastalObservationContext?: boolean } = {}) {
   const results = [];
   results.push({ sourceId: "usgs_earthquake", result: await runUsgsKnowledgeIngestion({ feedType: "relevant", limit: 50 }) });
   results.push({
@@ -1293,12 +1676,34 @@ export async function runAllConfiguredKnowledgeIngestion(options: { includeConte
       : null,
   });
   results.push({
+    sourceId: "noaa-coops",
+    status: options.includeCoastalObservationContext ? "coastal_observation_context_enabled" : "skipped",
+    skipped: !options.includeCoastalObservationContext,
+    message: options.includeCoastalObservationContext
+      ? "NOAA CO-OPS will run only as coastal observation context for recent relevant incidents with coordinates."
+      : "NOAA CO-OPS is a contextual coastal observation source and is skipped by run-all unless includeCoastalObservationContext=true.",
+    runAllDefault: false,
+    sourceRole: "coastal_ocean_observation_source",
+    result: options.includeCoastalObservationContext
+      ? await runNoaaCoopsContextEnrichment({ purpose: "tsunami_context", maxIncidents: 25, sinceHours: 24, radiusKm: 25, products: ["water_level", "predictions", "wind", "air_pressure"], datum: "MLLW", persist: true })
+      : null,
+  });
+  results.push({
     sourceId: "noaa-storm-events",
     status: "historicalDatasetAvailable",
     skipped: true,
     message: "NOAA Storm Events is a controlled historical dataset and is not executed by run-all by default.",
     runAllDefault: false,
     requiredMode: "POST /api/knowledge-intake/jobs/import-noaa-storm-events with year and limit",
+  });
+  results.push({
+    sourceId: "noaa-ncei-tsunami",
+    status: "historicalDatasetAvailable",
+    skipped: true,
+    message: "NOAA NCEI Historical Tsunami is controlled historical memory and is not executed by run-all by default.",
+    runAllDefault: false,
+    sourceRole: "historical_tsunami_dataset",
+    requiredMode: "POST /api/knowledge-intake/jobs/import-noaa-ncei-tsunami with eventId/year/range/country/region/bbox and strict limit",
   });
   results.push({
     sourceId: "openfema",

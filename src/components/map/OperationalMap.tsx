@@ -41,7 +41,9 @@ interface MapLayerSettings {
   nwsWeatherAlerts?: boolean;
   openMeteoWeatherContext?: boolean;
   usgsWaterConditions?: boolean;
+  noaaCoopsCoastalObservations?: boolean;
   noaaStormEventsHistorical?: boolean;
+  noaaNceiHistoricalTsunamis?: boolean;
   openFemaDisasterDeclarations?: boolean;
   reliefWeb?: boolean;
   sos: boolean;
@@ -102,6 +104,7 @@ interface Props {
   baseMapType?: BaseMapType;
   centerOnSelected?: boolean;
   centerRequestKey?: number;
+  focusTarget?: { latitude: number; longitude: number; key: number } | null;
   viewMode?: "map" | "orbit";
   onViewModeChange?: (mode: "map" | "orbit") => void;
 }
@@ -148,6 +151,9 @@ const getExternalEventKind = (event: ArgusNormalizedEvent): ArgusMapEventKind =>
   if (event.sourceId === "noaa_tsunami" || event.category === "tsunami") {
     return "tsunami";
   }
+  if (event.sourceId === "noaa-ncei-tsunami") {
+    return "tsunami";
+  }
   if (event.sourceId === "nws" || event.category === "weather_alert") {
     return "weather";
   }
@@ -166,7 +172,7 @@ const getExternalEventKind = (event: ArgusNormalizedEvent): ArgusMapEventKind =>
 const getExternalConfidence = (
   event: ArgusNormalizedEvent
 ): ArgusMapConfidence => {
-  if (event.sourceId === "usgs_earthquake" || event.sourceId === "noaa_tsunami") {
+  if (event.sourceId === "usgs_earthquake" || event.sourceId === "noaa_tsunami" || event.sourceId === "noaa-ncei-tsunami") {
     return "official";
   }
   if (event.sourceId === "gdacs") return "multi_source";
@@ -258,6 +264,7 @@ export default function OperationalMap({
   baseMapType = "tactical",
   centerOnSelected = true,
   centerRequestKey = 0,
+  focusTarget = null,
   viewMode,
   onViewModeChange,
 }: Props) {
@@ -395,6 +402,7 @@ export default function OperationalMap({
           (event.sourceId === "nasa-eonet" && layerSettings.nasaEonet) ||
           (event.sourceId === "nws" && layerSettings.nwsWeatherAlerts) ||
           (event.sourceId === "noaa-storm-events" && layerSettings.noaaStormEventsHistorical) ||
+          (event.sourceId === "noaa-ncei-tsunami" && layerSettings.noaaNceiHistoricalTsunamis) ||
           (event.sourceId === "openfema" && layerSettings.openFemaDisasterDeclarations)
       ),
     [
@@ -404,6 +412,7 @@ export default function OperationalMap({
       layerSettings.nasaEonet,
       layerSettings.nwsWeatherAlerts,
       layerSettings.noaaStormEventsHistorical,
+      layerSettings.noaaNceiHistoricalTsunamis,
       layerSettings.openFemaDisasterDeclarations,
       layerSettings.noaaTsunami,
       layerSettings.usgsEarthquakes,
@@ -1115,6 +1124,19 @@ export default function OperationalMap({
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
     mapRef.current.flyTo([lat, lng], 13, { duration: 0.6 });
   }, [centerRequestKey, location.latitude, location.longitude, mapReady]);
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !focusTarget) return;
+    const lat = Number(focusTarget.latitude);
+    const lng = Number(focusTarget.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    suppressGlobeModeRef.current = true;
+    window.requestAnimationFrame(() => {
+      setIsGlobeMode(false);
+      onViewModeChange?.("map");
+    });
+    mapRef.current.flyTo([lat, lng], 13, { duration: 0.7 });
+  }, [focusTarget, mapReady, onViewModeChange]);
 
   const exitGlobeMode = useCallback(() => {
     suppressGlobeModeRef.current = true;

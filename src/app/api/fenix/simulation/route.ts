@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runFenixSimulation } from "@/lib/fenix/fenixSimulationEngine";
+import { createFenixSeedFromPrediction } from "@/lib/predictive-core/fenixBridge";
 import { getCurrentUser } from "@/services/authService";
+import type { ArgusDecisionPacket } from "@/types/predictiveCore";
 import type { FenixSimulationInput } from "@/types/fenixSimulation";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +13,30 @@ const INSTITUTIONAL_ROLES = new Set([
   "SUPER_ADMIN",
   "INSTITUTIONAL_ADMIN",
 ]);
+
+function mapPredictiveSeverity(value?: string | null): FenixSimulationInput["initialSeverity"] | undefined {
+  if (!value) return undefined;
+  if (value === "P0") return "critical";
+  if (value === "P1") return "high";
+  if (value === "P2") return "medium";
+  if (value === "P3" || value === "P4") return "low";
+  if (["low", "medium", "high", "critical"].includes(value)) {
+    return value as FenixSimulationInput["initialSeverity"];
+  }
+  return undefined;
+}
+
+function mapPredictiveHazard(value?: string | null): FenixSimulationInput["crisisType"] | undefined {
+  if (!value) return undefined;
+  if (value === "sos" || value === "medical") return "mass_casualty";
+  if (value === "fire") return "wildfire";
+  if (value === "volcano") return "volcanic";
+  if (value === "earthquake" || value === "tsunami" || value === "flood") {
+    return value;
+  }
+  if (value === "conflict") return "conflict";
+  return undefined;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,7 +58,11 @@ export async function POST(request: NextRequest) {
       includeRoutes?: boolean;
       includeShelters?: boolean;
       includeMedicalPoints?: boolean;
+      predictivePacket?: ArgusDecisionPacket;
     };
+    const predictiveSeed = body.predictivePacket
+      ? createFenixSeedFromPrediction(body.predictivePacket)
+      : null;
     const scenarioId =
       typeof body.scenarioId === "string"
         ? body.scenarioId
@@ -73,10 +103,10 @@ export async function POST(request: NextRequest) {
     const result = runFenixSimulation({
       scenarioId,
       initialLocation: body.initialLocation ?? {
-        latitude: Number(body.lat ?? -33.45),
-        longitude: Number(body.lng ?? -70.66),
+        latitude: Number(body.lat ?? predictiveSeed?.lat ?? -33.45),
+        longitude: Number(body.lng ?? predictiveSeed?.lng ?? -70.66),
       },
-      crisisType: body.crisisType,
+      crisisType: body.crisisType ?? mapPredictiveHazard(predictiveSeed?.crisisType),
       exposedPopulationEstimate: body.exposedPopulationEstimate,
       uncertainty: body.uncertainty,
       initialRadiusKm,
@@ -87,7 +117,10 @@ export async function POST(request: NextRequest) {
       },
       mobility: body.mobility ?? body.mobilityMode,
       mode: canUseInstitutionalMode ? requestedMode : "public",
-      initialSeverity: body.initialSeverity ?? body.severity,
+      initialSeverity:
+        body.initialSeverity ??
+        body.severity ??
+        mapPredictiveSeverity(predictiveSeed?.severity),
       sources: {
         citizenReports: body.includeCitizenReports ?? body.sources?.citizenReports ?? true,
         connectedUsersAggregate: body.includeConnectedUsers ?? body.sources?.connectedUsersAggregate ?? true,
@@ -123,6 +156,7 @@ export async function POST(request: NextRequest) {
       publicGuidance: result.publicGuidance,
       institutionalActionPlan: result.institutionalActionPlan,
       disclaimers: result.disclaimers,
+      predictiveSeed,
       isDemo: result.isDemo,
       result,
     });

@@ -35,10 +35,22 @@ export default function KnowledgeIntakePanel() {
   const [usgsWaterRadiusKm, setUsgsWaterRadiusKm] = useState("25");
   const [usgsWaterPurpose, setUsgsWaterPurpose] = useState("flood");
   const [usgsWaterParameters, setUsgsWaterParameters] = useState("00060,00065");
+  const [coopsStationId, setCoopsStationId] = useState("9414290");
+  const [coopsLat, setCoopsLat] = useState("37.8063");
+  const [coopsLon, setCoopsLon] = useState("-122.4659");
+  const [coopsRadiusKm, setCoopsRadiusKm] = useState("25");
+  const [coopsPurpose, setCoopsPurpose] = useState("coastal_monitoring");
+  const [coopsProducts, setCoopsProducts] = useState("water_level,predictions,wind,air_pressure");
+  const [coopsDatum, setCoopsDatum] = useState("MLLW");
   const [noaaYear, setNoaaYear] = useState("2025");
   const [noaaState, setNoaaState] = useState("TX");
   const [noaaEventTypes, setNoaaEventTypes] = useState("Tornado,Flash Flood");
   const [noaaLimit, setNoaaLimit] = useState("100");
+  const [nceiTsunamiStartYear, setNceiTsunamiStartYear] = useState("1900");
+  const [nceiTsunamiEndYear, setNceiTsunamiEndYear] = useState("2026");
+  const [nceiTsunamiCountry, setNceiTsunamiCountry] = useState("Chile");
+  const [nceiTsunamiLimit, setNceiTsunamiLimit] = useState("100");
+  const [nceiTsunamiIncludeRunups, setNceiTsunamiIncludeRunups] = useState(true);
   const [openFemaYear, setOpenFemaYear] = useState("2025");
   const [openFemaState, setOpenFemaState] = useState("CA");
   const [openFemaIncidentTypes, setOpenFemaIncidentTypes] = useState("Fire,Flood");
@@ -68,7 +80,7 @@ export default function KnowledgeIntakePanel() {
   const stubSources = sources.filter((source) => source.status === "planned" || source.status === "stub");
   const requiresKeySources = sources.filter((source) => source.status === "requiresApiKey");
   const requiresConfigSources = sources.filter((source) => source.status === "requiresConfiguration");
-  async function runLiveTest(source: "usgs" | "gdacs" | "eonet" | "hans" | "nws" | "open-meteo" | "usgs-water" | "noaa" | "openfema" | "reliefweb") {
+  async function runLiveTest(source: "usgs" | "gdacs" | "eonet" | "hans" | "nws" | "open-meteo" | "usgs-water" | "noaa-coops" | "noaa" | "ncei-tsunami" | "openfema" | "reliefweb") {
     setLiveStatus("loading");
     setLiveMessage(`Probando ${source.toUpperCase()}...`);
     try {
@@ -87,8 +99,12 @@ export default function KnowledgeIntakePanel() {
                     ? `/api/knowledge-intake/live/open-meteo?lat=${encodeURIComponent(openMeteoLat)}&lon=${encodeURIComponent(openMeteoLon)}&forecastDays=3&purpose=${encodeURIComponent(openMeteoPurpose)}`
                     : source === "usgs-water"
                       ? `/api/knowledge-intake/live/usgs-water?${usgsWaterSite ? `site=${encodeURIComponent(usgsWaterSite)}` : `lat=${encodeURIComponent(usgsWaterLat)}&lon=${encodeURIComponent(usgsWaterLon)}`}&radiusKm=${encodeURIComponent(usgsWaterRadiusKm)}&purpose=${encodeURIComponent(usgsWaterPurpose)}&parameters=${encodeURIComponent(usgsWaterParameters)}`
+                    : source === "noaa-coops"
+                      ? `/api/knowledge-intake/live/noaa-coops?${coopsStationId ? `stationId=${encodeURIComponent(coopsStationId)}` : `lat=${encodeURIComponent(coopsLat)}&lon=${encodeURIComponent(coopsLon)}`}&radiusKm=${encodeURIComponent(coopsRadiusKm)}&purpose=${encodeURIComponent(coopsPurpose)}&products=${encodeURIComponent(coopsProducts)}&datum=${encodeURIComponent(coopsDatum)}&units=metric&timeZone=gmt&includeAirGap=${coopsProducts.includes("air_gap")}`
                     : source === "noaa"
                       ? `/api/knowledge-intake/live/noaa-storm-events?mode=preview&year=${encodeURIComponent(noaaYear)}&state=${encodeURIComponent(noaaState)}&eventTypes=${encodeURIComponent(noaaEventTypes)}&limit=${encodeURIComponent(noaaLimit)}`
+                    : source === "ncei-tsunami"
+                      ? `/api/knowledge-intake/live/noaa-ncei-tsunami?dataset=events-with-runups&startYear=${encodeURIComponent(nceiTsunamiStartYear)}&endYear=${encodeURIComponent(nceiTsunamiEndYear)}&country=${encodeURIComponent(nceiTsunamiCountry)}&includeRunups=${nceiTsunamiIncludeRunups}&limit=${encodeURIComponent(nceiTsunamiLimit)}`
                     : source === "openfema"
                       ? `/api/knowledge-intake/live/openfema?dataset=disaster-declarations&year=${encodeURIComponent(openFemaYear)}&state=${encodeURIComponent(openFemaState)}&incidentTypes=${encodeURIComponent(openFemaIncidentTypes)}&disasterNumber=${encodeURIComponent(openFemaDisasterNumber)}&limit=${encodeURIComponent(openFemaLimit)}`
                     : "/api/knowledge-intake/live/reliefweb?limit=6";
@@ -103,8 +119,13 @@ export default function KnowledgeIntakePanel() {
       } else if (source === "usgs-water") {
         const context = data.hydrologicalContext;
         setLiveMessage(`USGS Water: ${context?.locations?.length ?? 0} estacion(es), ${context?.measurements?.length ?? 0} medicion(es), staleness ${context?.stalenessMinutes ?? "n/a"} min, evidenceCreated ${data.evidenceCreated ? "si" : "no"}.`);
+      } else if (source === "noaa-coops") {
+        const context = data.coastalObservationContext;
+        setLiveMessage(`NOAA CO-OPS: ${context?.stations?.length ?? 0} estacion(es), ${context?.observations?.length ?? 0} lectura(s), datum ${context?.query?.datum ?? "n/a"}, staleness ${context?.stalenessMinutes ?? "n/a"} min, evidenceCreated ${data.evidenceCreated ? "si" : "no"}.`);
       } else if (source === "noaa") {
         setLiveMessage(`NOAA Storm Events preview: ${data.normalized ?? 0} evento(s) historico(s), persistidos ${data.persisted ?? 0}. No es fuente live.`);
+      } else if (source === "ncei-tsunami") {
+        setLiveMessage(`NOAA NCEI Tsunami preview: ${data.normalizedEvents ?? 0} evento(s), runups ${data.normalizedRunups ?? 0}, evidencia ${data.evidence?.length ?? 0}. No es alerta viva.`);
       } else if (source === "openfema") {
         setLiveMessage(`OpenFEMA preview: ${data.normalized ?? 0} declaracion(es), evidencia ${data.evidence?.length ?? 0}, precedentes ${data.operationalPrecedents?.length ?? 0}. No es sensor live.`);
       } else {
@@ -116,7 +137,7 @@ export default function KnowledgeIntakePanel() {
     }
   }
 
-  async function runPersistentJob(source: "usgs" | "gdacs" | "eonet" | "hans" | "nws" | "open-meteo" | "usgs-water" | "noaa" | "openfema") {
+  async function runPersistentJob(source: "usgs" | "gdacs" | "eonet" | "hans" | "nws" | "open-meteo" | "usgs-water" | "noaa-coops" | "noaa" | "ncei-tsunami" | "openfema") {
     setJobStatus("loading");
     setJobMessage(`Ejecutando ${source.toUpperCase()} persistente...`);
     try {
@@ -133,6 +154,10 @@ export default function KnowledgeIntakePanel() {
                   ? "/api/knowledge-intake/jobs/run-nws"
                   : source === "noaa"
                     ? "/api/knowledge-intake/jobs/import-noaa-storm-events"
+                  : source === "noaa-coops"
+                    ? "/api/knowledge-intake/jobs/run-noaa-coops-context"
+                  : source === "ncei-tsunami"
+                    ? "/api/knowledge-intake/jobs/import-noaa-ncei-tsunami"
                   : source === "usgs-water"
                     ? "/api/knowledge-intake/jobs/run-usgs-water-context"
                   : source === "openfema"
@@ -192,6 +217,19 @@ export default function KnowledgeIntakePanel() {
             limit: Number(noaaLimit) || 1000,
             persist: true,
           }
+        : source === "noaa-coops"
+          ? {
+            purpose: coopsPurpose,
+            radiusKm: Number(coopsRadiusKm) || 25,
+            products: coopsProducts.split(/[;,]/).map((item) => item.trim()).filter(Boolean),
+            datum: coopsDatum || "MLLW",
+            units: "metric",
+            timeZone: "gmt",
+            maxIncidents: 25,
+            sinceHours: 24,
+            persist: true,
+            includeAirGap: coopsProducts.includes("air_gap"),
+          }
         : source === "openfema"
           ? {
             year: Number(openFemaYear) || undefined,
@@ -199,6 +237,17 @@ export default function KnowledgeIntakePanel() {
             incidentTypes: openFemaIncidentTypes.split(/[;,]/).map((item) => item.trim()).filter(Boolean),
             disasterNumber: openFemaDisasterNumber || undefined,
             limit: Number(openFemaLimit) || 1000,
+            persist: true,
+          }
+        : source === "ncei-tsunami"
+          ? {
+            dataset: "events-with-runups",
+            startYear: Number(nceiTsunamiStartYear) || undefined,
+            endYear: Number(nceiTsunamiEndYear) || undefined,
+            country: nceiTsunamiCountry || undefined,
+            includeRunups: nceiTsunamiIncludeRunups,
+            maxRunupsPerEvent: 50,
+            limit: Number(nceiTsunamiLimit) || 100,
             persist: true,
           }
         : body;
@@ -217,6 +266,8 @@ export default function KnowledgeIntakePanel() {
             ? `Run ${data.runId}: ${data.evidenceCreated ?? 0} contextos hidrologicos, ${data.skippedAlreadyFresh ?? 0} frescos, ${data.skippedNoNearbyStation ?? 0} sin estacion cercana.`
           : source === "noaa"
             ? `Run ${data.runId}: ${data.inserted ?? 0} NOAA historicos nuevos, ${data.updated ?? 0} actualizados, evidencia ${data.evidenceCreated ?? 0}.`
+          : source === "ncei-tsunami"
+            ? `Run ${data.runId}: ${data.insertedIncidents ?? 0} tsunamis historicos nuevos, ${data.updatedIncidents ?? 0} actualizados, runups ${data.associatedRunups ?? 0}, evidencia ${data.evidenceCreated ?? 0}.`
           : source === "openfema"
             ? `Run ${data.runId}: ${data.inserted ?? 0} OpenFEMA nuevos, ${data.updated ?? 0} actualizados, evidencia ${data.evidenceCreated ?? 0}, precedentes ${data.operationalPrecedentsCreated ?? 0}.`
           : `Run ${data.runId}: ${data.inserted ?? 0} nuevos, ${data.updated ?? 0} actualizados, ${data.skipped ?? 0} omitidos.`
@@ -409,6 +460,73 @@ export default function KnowledgeIntakePanel() {
               <span className="rounded border border-cyan-200/20 px-2 py-1">Modern API preferred</span>
             </div>
           </div>
+          <div className="grid w-full gap-2 rounded border border-sky-300/20 bg-sky-400/10 p-3 lg:grid-cols-[110px_100px_100px_90px_150px_190px_90px_auto]">
+            <input
+              value={coopsStationId}
+              onChange={(event) => setCoopsStationId(event.target.value)}
+              className="min-h-10 rounded border border-sky-300/20 bg-slate-950 px-3 text-sm text-sky-100 outline-none"
+              aria-label="NOAA CO-OPS station"
+              placeholder="stationId"
+            />
+            <input
+              value={coopsLat}
+              onChange={(event) => setCoopsLat(event.target.value)}
+              className="min-h-10 rounded border border-sky-300/20 bg-slate-950 px-3 text-sm text-sky-100 outline-none"
+              aria-label="NOAA CO-OPS latitude"
+              placeholder="lat"
+            />
+            <input
+              value={coopsLon}
+              onChange={(event) => setCoopsLon(event.target.value)}
+              className="min-h-10 rounded border border-sky-300/20 bg-slate-950 px-3 text-sm text-sky-100 outline-none"
+              aria-label="NOAA CO-OPS longitude"
+              placeholder="lon"
+            />
+            <input
+              value={coopsRadiusKm}
+              onChange={(event) => setCoopsRadiusKm(event.target.value)}
+              className="min-h-10 rounded border border-sky-300/20 bg-slate-950 px-3 text-sm text-sky-100 outline-none"
+              aria-label="NOAA CO-OPS radius"
+            />
+            <select
+              value={coopsPurpose}
+              onChange={(event) => setCoopsPurpose(event.target.value)}
+              className="min-h-10 rounded border border-sky-300/20 bg-slate-950 px-3 text-sm text-sky-100 outline-none"
+              aria-label="NOAA CO-OPS purpose"
+            >
+              {["tsunami_context", "hurricane_context", "storm_surge_context", "nav", "fenix", "aura", "incident_context", "coastal_monitoring", "general"].map((purpose) => (
+                <option key={purpose} value={purpose}>{purpose}</option>
+              ))}
+            </select>
+            <input
+              value={coopsProducts}
+              onChange={(event) => setCoopsProducts(event.target.value)}
+              className="min-h-10 rounded border border-sky-300/20 bg-slate-950 px-3 text-sm text-sky-100 outline-none"
+              aria-label="NOAA CO-OPS products"
+            />
+            <input
+              value={coopsDatum}
+              onChange={(event) => setCoopsDatum(event.target.value)}
+              className="min-h-10 rounded border border-sky-300/20 bg-slate-950 px-3 text-sm text-sky-100 outline-none"
+              aria-label="NOAA CO-OPS datum"
+            />
+            <button
+              type="button"
+              onClick={() => runLiveTest("noaa-coops")}
+              disabled={liveStatus === "loading"}
+              className="rounded bg-sky-200 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+            >
+              Test NOAA CO-OPS
+            </button>
+            <div className="flex flex-wrap items-center gap-1 text-[0.62rem] font-semibold uppercase text-sky-100 lg:col-span-8">
+              <span className="rounded border border-sky-200/20 px-2 py-1">Coastal Observation Context</span>
+              <span className="rounded border border-sky-200/20 px-2 py-1">Official NOAA</span>
+              <span className="rounded border border-sky-200/20 px-2 py-1">Not incident source</span>
+              <span className="rounded border border-sky-200/20 px-2 py-1">No API key</span>
+              <span className="rounded border border-sky-200/20 px-2 py-1">Datum required</span>
+              <span className="rounded border border-sky-200/20 px-2 py-1">Observed vs Predicted</span>
+            </div>
+          </div>
           <div className="grid w-full gap-2 rounded border border-indigo-300/20 bg-indigo-400/10 p-3 lg:grid-cols-[90px_90px_minmax(180px,1fr)_90px_auto_auto]">
             <input
               value={noaaYear}
@@ -446,6 +564,59 @@ export default function KnowledgeIntakePanel() {
               <span className="rounded border border-indigo-200/20 px-2 py-1">Historical dataset</span>
               <span className="rounded border border-indigo-200/20 px-2 py-1">Not live</span>
               <span className="rounded border border-indigo-200/20 px-2 py-1">Controlled import</span>
+              <span className="rounded border border-amber-200/30 px-2 py-1 text-amber-100">Data quality caution</span>
+            </div>
+          </div>
+          <div className="grid w-full gap-2 rounded border border-cyan-300/20 bg-cyan-400/10 p-3 lg:grid-cols-[90px_90px_minmax(140px,1fr)_90px_auto_auto]">
+            <input
+              value={nceiTsunamiStartYear}
+              onChange={(event) => setNceiTsunamiStartYear(event.target.value)}
+              className="min-h-10 rounded border border-cyan-300/20 bg-slate-950 px-3 text-sm text-cyan-100 outline-none"
+              aria-label="NOAA NCEI tsunami start year"
+              placeholder="start"
+            />
+            <input
+              value={nceiTsunamiEndYear}
+              onChange={(event) => setNceiTsunamiEndYear(event.target.value)}
+              className="min-h-10 rounded border border-cyan-300/20 bg-slate-950 px-3 text-sm text-cyan-100 outline-none"
+              aria-label="NOAA NCEI tsunami end year"
+              placeholder="end"
+            />
+            <input
+              value={nceiTsunamiCountry}
+              onChange={(event) => setNceiTsunamiCountry(event.target.value)}
+              className="min-h-10 rounded border border-cyan-300/20 bg-slate-950 px-3 text-sm text-cyan-100 outline-none"
+              aria-label="NOAA NCEI tsunami country"
+              placeholder="country"
+            />
+            <input
+              value={nceiTsunamiLimit}
+              onChange={(event) => setNceiTsunamiLimit(event.target.value)}
+              className="min-h-10 rounded border border-cyan-300/20 bg-slate-950 px-3 text-sm text-cyan-100 outline-none"
+              aria-label="NOAA NCEI tsunami limit"
+            />
+            <label className="flex min-h-10 items-center gap-2 rounded border border-cyan-300/20 bg-slate-950 px-3 text-xs font-semibold text-cyan-100">
+              <input
+                type="checkbox"
+                checked={nceiTsunamiIncludeRunups}
+                onChange={(event) => setNceiTsunamiIncludeRunups(event.target.checked)}
+              />
+              Runups
+            </label>
+            <button
+              type="button"
+              onClick={() => runLiveTest("ncei-tsunami")}
+              disabled={liveStatus === "loading"}
+              className="rounded bg-cyan-300 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+            >
+              Preview historical tsunamis
+            </button>
+            <div className="flex flex-wrap items-center gap-1 text-[0.62rem] font-semibold uppercase text-cyan-100 lg:col-span-6">
+              <span className="rounded border border-cyan-200/20 px-2 py-1">Historical Tsunami Dataset</span>
+              <span className="rounded border border-cyan-200/20 px-2 py-1">Global historical</span>
+              <span className="rounded border border-cyan-200/20 px-2 py-1">Events + Runups</span>
+              <span className="rounded border border-cyan-200/20 px-2 py-1">Not live</span>
+              <span className="rounded border border-cyan-200/20 px-2 py-1">Citation required</span>
               <span className="rounded border border-amber-200/30 px-2 py-1 text-amber-100">Data quality caution</span>
             </div>
           </div>
@@ -568,11 +739,27 @@ export default function KnowledgeIntakePanel() {
           </button>
           <button
             type="button"
+            onClick={() => runPersistentJob("noaa-coops")}
+            disabled={jobStatus === "loading"}
+            className="rounded bg-sky-200 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+          >
+            Run CO-OPS context
+          </button>
+          <button
+            type="button"
             onClick={() => runPersistentJob("noaa")}
             disabled={jobStatus === "loading"}
             className="rounded bg-indigo-300 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
           >
             Import NOAA Storm Events
+          </button>
+          <button
+            type="button"
+            onClick={() => runPersistentJob("ncei-tsunami")}
+            disabled={jobStatus === "loading"}
+            className="rounded bg-cyan-300 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+          >
+            Import historical tsunamis
           </button>
           <button
             type="button"
@@ -605,8 +792,14 @@ export default function KnowledgeIntakePanel() {
         <div className="mt-3 rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3 text-xs leading-5 text-cyan-100">
           USGS Water Conditions: official USGS hydrological context for United States and USGS monitored locations. Parameters 00060 streamflow and 00065 gage height; not a forecast, incident source, evacuation order or route closure.
         </div>
+        <div className="mt-3 rounded-lg border border-sky-300/20 bg-sky-300/10 p-3 text-xs leading-5 text-sky-100">
+          NOAA CO-OPS Coastal Observations: official NOAA coastal station context for water level, tide predictions, wind, air pressure and optional air gap. Datum and staleness are mandatory; observed and predicted values stay separate. Not a warning center, incident source, evacuation order, bridge closure or global bulk source.
+        </div>
         <div className="mt-3 rounded-lg border border-indigo-300/20 bg-indigo-300/10 p-3 text-xs leading-5 text-indigo-100">
           NOAA Storm Events Historical: NOAA/NCEI official historical severe-weather records for United States and NOAA/NWS territories. Controlled import by year/state/event type/limit only; do not import all history at once or treat it as live alerts.
+        </div>
+        <div className="mt-3 rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3 text-xs leading-5 text-cyan-100">
+          Historical tsunami data supports ARGUS memory and simulation; it is not a live warning or evacuation order. Cite NCEI/WDS Global Historical Tsunami Database, DOI 10.7289/V5PN93H7.
         </div>
         <div className="mt-3 rounded-lg border border-sky-300/20 bg-sky-300/10 p-3 text-xs leading-5 text-sky-100">
           OpenFEMA Disaster Declarations: FEMA/OpenFEMA institutional records for United States and FEMA territories. FEMA precedent supports ARGUS recommendations but does not create official FEMA instructions or promise federal assistance.
