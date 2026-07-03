@@ -48,6 +48,7 @@ export default function ExternalEventPopup({
   const isGdacs = event.sourceId === "gdacs";
   const isNoaa = event.sourceId === "noaa_tsunami";
   const isFirms = event.sourceId === "nasa_firms";
+  const isEonet = event.sourceId === "nasa-eonet";
   const isSeismic =
     event.category === "earthquake" &&
     typeof event.rawMagnitude === "number";
@@ -72,7 +73,9 @@ export default function ExternalEventPopup({
     event.rawConfidence,
     event.confidence
   );
-  const humanWhyItMatters = isFirms
+  const humanWhyItMatters = isEonet
+    ? `NASA EONET registra un evento natural global actualizado ${eventTime.combinedLabel}. Es contexto informativo ARGUS y requiere validacion oficial local para decisiones criticas.`
+    : isFirms
     ? `${firmsSensor} detectó una anomalía térmica el ${eventTime.combinedLabel}, con confianza ${firmsConfidence}${
         typeof event.rawFrp === "number"
           ? ` y FRP ${event.rawFrp.toFixed(2)} MW`
@@ -100,7 +103,9 @@ export default function ExternalEventPopup({
       ? "NOAA"
       : isFirms
         ? "NASA FIRMS"
-        : "USGS";
+        : isEonet
+          ? "NASA EONET"
+          : "USGS";
 
   return (
     <div

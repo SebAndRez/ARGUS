@@ -19,6 +19,12 @@ export interface MapLayerState {
   gdacsAlerts?: boolean;
   noaaTsunami?: boolean;
   nasaFirms?: boolean;
+  nasaEonet?: boolean;
+  nwsWeatherAlerts?: boolean;
+  openMeteoWeatherContext?: boolean;
+  usgsWaterConditions?: boolean;
+  noaaStormEventsHistorical?: boolean;
+  openFemaDisasterDeclarations?: boolean;
   reliefWeb?: boolean;
   sos: boolean;
   alerts: boolean;
@@ -97,6 +103,12 @@ const layerGroups: Array<{
       "gdacsAlerts",
       "noaaTsunami",
       "nasaFirms",
+      "nasaEonet",
+      "nwsWeatherAlerts",
+      "openMeteoWeatherContext",
+      "usgsWaterConditions",
+      "noaaStormEventsHistorical",
+      "openFemaDisasterDeclarations",
       // ReliefWeb temporarily hidden from UI until ingest reliability is fixed.
       "sos",
       "alerts",
@@ -142,6 +154,12 @@ const labels: Record<keyof MapLayerState, string> = {
   gdacsAlerts: "GDACS Desastres",
   noaaTsunami: "NOAA Tsunami",
   nasaFirms: "NASA FIRMS",
+  nasaEonet: "NASA EONET Natural Events",
+  nwsWeatherAlerts: "NWS Weather Alerts",
+  openMeteoWeatherContext: "Open-Meteo Weather Context",
+  usgsWaterConditions: "USGS Water Conditions",
+  noaaStormEventsHistorical: "NOAA Storm Events Historical",
+  openFemaDisasterDeclarations: "OpenFEMA Disaster Declarations",
   reliefWeb: "ReliefWeb Contexto",
   sos: "SOS",
   alerts: "Alertas",
@@ -267,6 +285,36 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
       label: "FIRMS",
       enabled: Boolean(layers.nasaFirms),
       available: Object.prototype.hasOwnProperty.call(layers, "nasaFirms"),
+    },
+    {
+      label: "EONET",
+      enabled: Boolean(layers.nasaEonet),
+      available: Object.prototype.hasOwnProperty.call(layers, "nasaEonet"),
+    },
+    {
+      label: "NWS",
+      enabled: Boolean(layers.nwsWeatherAlerts),
+      available: Object.prototype.hasOwnProperty.call(layers, "nwsWeatherAlerts"),
+    },
+    {
+      label: "Open-Meteo",
+      enabled: Boolean(layers.openMeteoWeatherContext),
+      available: Object.prototype.hasOwnProperty.call(layers, "openMeteoWeatherContext"),
+    },
+    {
+      label: "USGS Water",
+      enabled: Boolean(layers.usgsWaterConditions),
+      available: Object.prototype.hasOwnProperty.call(layers, "usgsWaterConditions"),
+    },
+    {
+      label: "NOAA Hist.",
+      enabled: Boolean(layers.noaaStormEventsHistorical),
+      available: Object.prototype.hasOwnProperty.call(layers, "noaaStormEventsHistorical"),
+    },
+    {
+      label: "OpenFEMA",
+      enabled: Boolean(layers.openFemaDisasterDeclarations),
+      available: Object.prototype.hasOwnProperty.call(layers, "openFemaDisasterDeclarations"),
     },
     {
       label: "Conflictos",

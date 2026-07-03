@@ -1,5 +1,4 @@
 import type { Prisma } from "@prisma/client";
-import type { ArgusNormalizedEvent } from "@/types/ingestion";
 import type {
   ArgusRiskAssessment,
   ArgusRiskEngineInput,
@@ -10,6 +9,7 @@ import { evaluateEarthquakeEntrapmentRisk } from "@/lib/prediction/rules/earthqu
 import { evaluateFireSmokeRisk } from "@/lib/prediction/rules/fireSmokeRisk";
 import { evaluateHumanitarianImpactRisk } from "@/lib/prediction/rules/humanitarianImpactRisk";
 import { evaluateTsunamiRisk } from "@/lib/prediction/rules/tsunamiRisk";
+import { evaluateVolcanoHansRisk } from "@/lib/prediction/rules/volcanoHansRisk";
 
 const SEVERITY_RANK: Record<string, number> = {
   low: 1,
@@ -27,6 +27,7 @@ export function generateRiskAssessments(
     ...evaluateEarthquakeEntrapmentRisk(input.externalEvents),
     ...evaluateFireSmokeRisk(input.externalEvents),
     ...evaluateHumanitarianImpactRisk(input.externalEvents),
+    ...evaluateVolcanoHansRisk(input.externalEvents),
   ];
 
   const withContext = assessments.map((assessment) => {

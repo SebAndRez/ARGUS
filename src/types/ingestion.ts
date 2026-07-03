@@ -1,7 +1,13 @@
 export type ArgusExternalSourceId =
   | "usgs_earthquake"
+  | "usgs-volcano-hans"
   | "gdacs"
   | "nasa_firms"
+  | "nasa-eonet"
+  | "nws"
+  | "noaa-storm-events"
+  | "openfema"
+  | "open-meteo"
   | "met_norway"
   | "noaa_tsunami"
   | "reliefweb"
@@ -23,6 +29,8 @@ export type ArgusIngestionCategory =
   | "thermal_anomaly"
   | "wildfire"
   | "weather"
+  | "weather_context"
+  | "weather_alert"
   | "tsunami"
   | "humanitarian"
   | "humanitarian_context"
@@ -33,8 +41,13 @@ export type ArgusIngestionCategory =
   | "conflict"
   | "news"
   | "cyclone"
+  | "storm"
   | "volcano"
   | "drought"
+  | "landslide"
+  | "natural_disaster"
+  | "environmental_hazard"
+  | "extreme_weather"
   | "unknown";
 
 export type ArgusIngestionSeverity = "low" | "medium" | "high" | "critical";

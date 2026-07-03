@@ -10,8 +10,23 @@ export type ArgusHazardDomain =
   | "landslide"
   | "avalanche"
   | "drought"
+  | "weather_alert"
+  | "weather_context"
+  | "hydrology"
+  | "water_conditions"
+  | "river_level"
+  | "streamflow"
+  | "flood_context"
+  | "drought_context"
+  | "nav_water_context"
+  | "fenix_flood_context"
+  | "aura_flood_context"
+  | "forecast_context"
   | "heatwave"
   | "coldwave"
+  | "winter_storm"
+  | "wildfire_weather"
+  | "marine_weather"
   | "wildfire"
   | "urban_fire"
   | "industrial_fire"
@@ -19,6 +34,7 @@ export type ArgusHazardDomain =
   | "road_accident"
   | "rail_accident"
   | "aviation_accident"
+  | "aviation_hazard"
   | "maritime_accident"
   | "pipeline_accident"
   | "chemical_accident"
@@ -38,6 +54,12 @@ export type ArgusHazardDomain =
   | "civil_unrest"
   | "conflict_zone"
   | "humanitarian_crisis"
+  | "environmental_hazard"
+  | "nav_context"
+  | "aura_context"
+  | "fenix_context"
+  | "ashfall"
+  | "extreme_weather"
   | "unknown";
 
 export type ArgusHazardSubtype = string;
@@ -83,6 +105,9 @@ export type ArgusKnowledgeProcessingStatus =
 
 export type ArgusKnowledgeSourceStatus =
   | "active"
+  | "active_contextual"
+  | "active_historical"
+  | "active_institutional"
   | "planned"
   | "manual"
   | "disabled"
@@ -101,12 +126,14 @@ export type ArgusKnowledgeSourceKind =
   | "local_chile"
   | "citizen"
   | "manual"
+  | "contextual"
   | "future_admin";
 
 export type ArgusKnowledgeLicenseType =
   | "openAccess"
   | "publicDomain"
   | "nonCommercial"
+  | "nonCommercialFree"
   | "requiresAttribution"
   | "restricted"
   | "unknown"
@@ -242,7 +269,9 @@ export type ArgusKnowledgeEvidenceItem = {
 
 export type ArgusCasualties = {
   fatalities?: number;
+  deaths?: number;
   injured?: number;
+  injuries?: number;
   missing?: number;
   displaced?: number;
   unknownText?: string;
@@ -254,6 +283,8 @@ export type ArgusIncidentImpact = {
   infrastructureAffected?: string[];
   economicLossText?: string;
   environmentalImpact?: string;
+  propertyDamage?: number;
+  cropDamage?: number;
 };
 
 export type ArgusIncidentTechnicalFactors = {
@@ -294,6 +325,191 @@ export type ArgusIncidentTechnicalFactors = {
   instrument?: string;
   frp?: number;
   firmsConfidence?: string | number;
+  gdacsEventType?: string;
+  gdacsEventId?: string;
+  gdacsEpisodeId?: string;
+  gdacsAlertLevel?: "green" | "orange" | "red" | "unknown";
+  gdacsSeverity?: string;
+  eonetStatus?: "open" | "closed" | "unknown";
+  eonetCategories?: string[];
+  eonetSources?: string[];
+  eonetClosedAt?: string;
+  nwsEvent?: string;
+  nwsSeverity?: string;
+  nwsUrgency?: string;
+  nwsCertainty?: string;
+  nwsMessageType?: string;
+  nwsCategory?: string;
+  nwsResponse?: string;
+  nwsAreaDesc?: string;
+  nwsZones?: string[];
+  onsetAt?: string;
+  effectiveAt?: string;
+  expiresAt?: string;
+  endsAt?: string;
+  senderName?: string;
+  headline?: string;
+  instruction?: string;
+  weatherOffice?: string;
+  coverageNote?: string;
+  volcanoName?: string;
+  volcanoNumber?: string;
+  volcanoCode?: string;
+  observatory?: string;
+  alertLevel?: VolcanoAlertLevel | string;
+  previousAlertLevel?: VolcanoAlertLevel | string;
+  aviationColorCode?: VolcanoAviationColorCode | string;
+  previousAviationColorCode?: VolcanoAviationColorCode | string;
+  nvewsThreat?: string | number;
+  noticeId?: string;
+  noticeType?: string;
+  noticeSynopsis?: string;
+  ashfallRisk?: string;
+  aviationRisk?: string;
+  lastNoticeAt?: string;
+  sourceCoverageNote?: string;
+  magnitudeValue?: number;
+  magnitudeUnit?: string;
+  magnitudeDescription?: string;
+  vulnerability?: string | number;
+  priorityHint?: "P0" | "P1" | "P2" | "P3" | "P4";
+  medicalContext?: string[];
+  routingContext?: string[];
+  fenixScenarioContext?: string[];
+  episodeId?: string;
+  eventType?: string;
+  magnitudeType?: string;
+  tornadoScale?: string;
+  floodCause?: string;
+  beginLocation?: string;
+  endLocation?: string;
+  beginRange?: string | number;
+  beginAzimuth?: string;
+  endRange?: string | number;
+  endAzimuth?: string;
+  beginLat?: number;
+  beginLon?: number;
+  endLat?: number;
+  endLon?: number;
+  originalReportSource?: string;
+  dataQualityFlags?: string[];
+  historicalDataset?: boolean;
+  notLiveSource?: boolean;
+  sourceRole?: string;
+  sourceUrl?: string;
+  historicalPriority?: "P0" | "P1" | "P2" | "P3" | "P4";
+  geospatialConfidence?: number;
+  rawDamageProperty?: string;
+  rawDamageCrops?: string;
+  disasterNumber?: string | number;
+  femaDeclarationString?: string;
+  declarationType?: string;
+  incidentType?: string;
+  declaredAt?: string;
+  incidentBeginDate?: string;
+  incidentEndDate?: string;
+  disasterCloseoutDate?: string;
+  designatedArea?: string;
+  fipsStateCode?: string | number;
+  fipsCountyCode?: string | number;
+  placeCode?: string | number;
+  individualHouseholdsProgramDeclared?: boolean;
+  individualAssistanceDeclared?: boolean;
+  publicAssistanceDeclared?: boolean;
+  hazardMitigationDeclared?: boolean;
+  isDeclaration?: boolean;
+  isLiveSensor?: boolean;
+  institutionalDataset?: boolean;
+  groupKey?: string;
+  operationalPrecedent?: Record<string, unknown>;
+  institutionalLessons?: string[];
+};
+
+export type VolcanoAlertLevel = "NORMAL" | "ADVISORY" | "WATCH" | "WARNING" | "UNASSIGNED" | "UNKNOWN";
+
+export type VolcanoAviationColorCode = "GREEN" | "YELLOW" | "ORANGE" | "RED" | "UNASSIGNED" | "UNKNOWN";
+
+export type VolcanoAlertSource = {
+  sourceId: string;
+  sourceName: string;
+  authorityScope: string;
+  coverageNote: string;
+};
+
+export type VolcanoAlertRecord = {
+  volcanoName?: string;
+  volcanoNumber?: string;
+  volcanoCode?: string;
+  observatory?: string;
+  alertLevel?: VolcanoAlertLevel | string;
+  aviationColorCode?: VolcanoAviationColorCode | string;
+  latitude?: number;
+  longitude?: number;
+  updatedAt?: string;
+  raw?: Record<string, unknown>;
+};
+
+export type VolcanoNoticeEvidence = {
+  noticeId?: string;
+  volcanoCode?: string;
+  volcanoName?: string;
+  observatory?: string;
+  noticeType?: string;
+  synopsis?: string;
+  url?: string;
+  sentUtc?: string;
+  raw?: Record<string, unknown>;
+};
+
+export type WeatherSeverity = "Extreme" | "Severe" | "Moderate" | "Minor" | "Unknown";
+
+export type WeatherUrgency = "Immediate" | "Expected" | "Future" | "Past" | "Unknown";
+
+export type WeatherCertainty = "Observed" | "Likely" | "Possible" | "Unlikely" | "Unknown";
+
+export type WeatherAlertSource = {
+  sourceId: string;
+  sourceName: string;
+  authorityScope: string;
+  coverageNote: string;
+  licenseNotes: string;
+};
+
+export type WeatherAlertRecord = {
+  externalId: string;
+  event: string;
+  severity?: WeatherSeverity | string;
+  urgency?: WeatherUrgency | string;
+  certainty?: WeatherCertainty | string;
+  areaDesc?: string;
+  onsetAt?: string;
+  effectiveAt?: string;
+  expiresAt?: string;
+  endsAt?: string;
+  latitude?: number;
+  longitude?: number;
+  geometry?: Record<string, unknown>;
+  sourceUrl?: string;
+  raw?: Record<string, unknown>;
+};
+
+export type WeatherForecastContext = {
+  sourceId: string;
+  point: { latitude: number; longitude: number };
+  office?: string;
+  gridX?: number;
+  gridY?: number;
+  periods?: unknown[];
+  raw?: Record<string, unknown>;
+};
+
+export type WeatherObservationContext = {
+  sourceId: string;
+  stationId?: string;
+  observedAt?: string;
+  latitude?: number;
+  longitude?: number;
+  raw?: Record<string, unknown>;
 };
 
 export type ArgusLessonLearned = {

@@ -81,7 +81,7 @@ const externalSources: SourceDefinition[] = ARGUS_SOURCE_REGISTRY.map((source) =
   rateLimitNotes: source.accessType === "paid" ? "Requiere licencia/contrato." : "Respetar terminos y cache local.",
   termsNotes: source.notes,
   argusUse: `ARGUS usa esta fuente como ${source.category}; no reemplaza autoridad local.`,
-  isOfficial: ["usgs_earthquake", "gdacs", "noaa_tsunami", "met_norway", "nasa_firms"].includes(source.id),
+  isOfficial: ["usgs_earthquake", "gdacs", "noaa_tsunami", "met_norway", "nasa_firms", "nasa-eonet"].includes(source.id),
   isDemo: source.status !== "active" && source.status !== "active_if_configured",
   lastReviewedAt: reviewedAt,
 }));
@@ -200,7 +200,8 @@ function mapRegistryCategory(category: string): SourceCategory {
 }
 
 function mapRegistryReliability(sourceId: string, category: string): SourceReliability {
-  if (["usgs_earthquake", "gdacs", "noaa_tsunami", "met_norway", "nasa_firms"].includes(sourceId)) return "OFFICIAL";
+  if (["usgs_earthquake", "gdacs", "noaa_tsunami", "met_norway", "nasa_firms", "nasa-eonet"].includes(sourceId)) return "OFFICIAL";
+  if (sourceId === "open-meteo" || category === "weather_context") return "TECHNICAL";
   if (["reliefweb", "hdx_hapi"].includes(sourceId)) return "HUMANITARIAN";
   if (["gdelt", "ap_reuters_bloomberg"].includes(sourceId)) return "MEDIA";
   if (["acled", "liveuamap"].includes(sourceId)) return "CURATED";
@@ -214,8 +215,10 @@ function recommendedRefreshMinutes(sourceId: string) {
     gdacs: 5,
     noaa_tsunami: 5,
     nasa_firms: 15,
+    "nasa-eonet": 30,
     met_norway: 10,
     reliefweb: 30,
+    "open-meteo": 60,
     gdelt: 15,
     openstreetmap: 1440,
   };
@@ -228,8 +231,10 @@ function sourcePublicUrl(sourceId: string) {
     gdacs: "https://www.gdacs.org/",
     noaa_tsunami: "https://www.tsunami.gov/",
     nasa_firms: "https://firms.modaps.eosdis.nasa.gov/",
+    "nasa-eonet": "https://eonet.gsfc.nasa.gov/",
     met_norway: "https://api.met.no/",
     reliefweb: "https://reliefweb.int/",
+    "open-meteo": "https://open-meteo.com/",
     gdelt: "https://www.gdeltproject.org/",
     openstreetmap: "https://www.openstreetmap.org/",
   };

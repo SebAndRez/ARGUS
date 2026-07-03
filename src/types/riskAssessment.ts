@@ -8,6 +8,7 @@ export type ArgusRiskType =
   | "tsunami"
   | "earthquake_impact"
   | "fire_smoke"
+  | "volcano_activity"
   | "humanitarian_impact"
   | "general_escalation";
 

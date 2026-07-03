@@ -78,6 +78,7 @@ const getExternalKind = (event: ArgusNormalizedEvent): ArgusMapEventKind => {
     return "tsunami";
   }
   if (
+    event.sourceId === "nasa-eonet" ||
     event.sourceId === "nasa_firms" ||
     event.category === "wildfire" ||
     event.category === "thermal_anomaly"

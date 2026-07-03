@@ -40,6 +40,7 @@ export interface CrisisEvent {
   confidence?: number | null;
   confidenceLabel?: string | null;
   sourceCategory?: string | null;
+  sourceId?: string | null;
   sourceSummary?: string | null;
   lastUpdatedLabel?: string | null;
   whyItMatters?: string | null;

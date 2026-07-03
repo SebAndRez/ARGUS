@@ -20,6 +20,21 @@ export function getExternalIdFromIncident(incident: ArgusIncidentKnowledge) {
   if (sourceId === "reliefweb" && incident.id.startsWith("reliefweb-")) {
     return incident.id.slice("reliefweb-".length);
   }
+  if (sourceId === "gdacs" && incident.id.startsWith("gdacs-")) {
+    return incident.id.slice("gdacs-".length);
+  }
+  if (sourceId === "nasa-eonet" && incident.id.startsWith("eonet-")) {
+    return incident.id.slice("eonet-".length);
+  }
+  if (sourceId === "nws" && incident.id.startsWith("nws-")) {
+    return incident.id.slice("nws-".length);
+  }
+  if (sourceId === "noaa-storm-events" && incident.id.startsWith("noaa-storm-events-")) {
+    return incident.id.slice("noaa-storm-events-".length);
+  }
+  if (sourceId === "openfema" && incident.id.startsWith("openfema-")) {
+    return incident.id.slice("openfema-".length);
+  }
   return incident.id;
 }
 
@@ -64,11 +79,30 @@ export async function findExistingIncident(incident: ArgusIncidentKnowledge) {
 }
 
 export function shouldUpdateExistingIncident(
-  existing: { confidenceScore: number; updatedAt: Date; evidenceCount?: number | null },
+  existing: {
+    sourceId?: string;
+    confidenceScore: number;
+    updatedAt: Date;
+    evidenceCount?: number | null;
+    severity?: string | null;
+    geometryJson?: unknown;
+    technicalFactorsJson?: unknown;
+    summary?: string | null;
+  },
   incoming: ArgusIncidentKnowledge
 ) {
   if (incoming.confidenceScore > existing.confidenceScore) return true;
   if ((incoming.evidenceCount ?? 0) > (existing.evidenceCount ?? 0)) return true;
+  if (existing.sourceId === "nws" || existing.sourceId === "noaa-storm-events" || existing.sourceId === "openfema") {
+    if (existing.severity !== incoming.severity) return true;
+    const existingTech = JSON.stringify(existing.technicalFactorsJson ?? {});
+    const incomingTech = JSON.stringify(incoming.technicalFactors ?? {});
+    if (existingTech !== incomingTech) return true;
+    const existingGeometry = JSON.stringify(existing.geometryJson ?? null);
+    const incomingGeometry = JSON.stringify(incoming.geometry ?? null);
+    if (existingGeometry !== incomingGeometry) return true;
+    if ((existing.summary ?? "") !== incoming.summary) return true;
+  }
   const incomingUpdatedAt = new Date(incoming.updatedAt);
   return Number.isFinite(incomingUpdatedAt.getTime()) && incomingUpdatedAt > existing.updatedAt;
 }

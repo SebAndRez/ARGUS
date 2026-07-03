@@ -29,6 +29,7 @@ export function knowledgeIncidentToOperationalMapEvent(incident: ArgusIncidentKn
     confidence: incident.confidenceScore,
     confidenceLabel: incident.confidenceScore >= 80 ? "high" : incident.confidenceScore >= 60 ? "medium" : "low",
     sourceCategory: "knowledge_intake",
+    sourceId: incident.sourceIds[0] ?? null,
     sourceSummary: incident.sourceNames.join(", "),
     whyItMatters: incident.lessonsLearned[0]?.summary ?? null,
     recommendedAction: incident.recommendedActions[0]?.text ?? null,

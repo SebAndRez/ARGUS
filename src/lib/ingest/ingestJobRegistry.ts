@@ -3,6 +3,7 @@ import type { IngestJobDefinition } from "@/lib/ingest/ingestJobTypes";
 export const ARGUS_INGEST_JOBS: IngestJobDefinition[] = [
   { id: "usgs-earthquakes", sourceId: "usgs_earthquake", name: "USGS Earthquakes", enabled: true, intervalMinutes: 1, timeoutMs: 8000, maxRetries: 2, backoffSeconds: 10 },
   { id: "gdacs-alerts", sourceId: "gdacs", name: "GDACS Alerts", enabled: true, intervalMinutes: 5, timeoutMs: 10000, maxRetries: 2, backoffSeconds: 20 },
+  { id: "nws-weather-alerts", sourceId: "nws", name: "NWS Weather Alerts", enabled: true, intervalMinutes: 5, timeoutMs: 12000, maxRetries: 2, backoffSeconds: 20 },
   { id: "nasa-firms", sourceId: "nasa_firms", name: "NASA FIRMS", enabled: false, intervalMinutes: 15, timeoutMs: 12000, maxRetries: 1, backoffSeconds: 60 },
   { id: "met-weather", sourceId: "met_norway", name: "MET Norway Weather", enabled: true, intervalMinutes: 10, timeoutMs: 8000, maxRetries: 1, backoffSeconds: 30 },
   { id: "reliefweb", sourceId: "reliefweb", name: "ReliefWeb Reports", enabled: false, intervalMinutes: 30, timeoutMs: 12000, maxRetries: 1, backoffSeconds: 60 },

@@ -15,7 +15,7 @@ export function getAllKnowledgeSources() {
 }
 
 export function getEnabledKnowledgeSources() {
-  return getAllKnowledgeSources().filter((source) => source.status === "active");
+  return getAllKnowledgeSources().filter((source) => source.status === "active" || source.status === "active_contextual" || source.status === "active_historical" || source.status === "active_institutional");
 }
 
 export function getSourcesByDomain(domain: ArgusHazardDomain) {
@@ -50,7 +50,7 @@ export function getKnowledgeSourceStats() {
   const sources = getAllKnowledgeSources();
   return {
     total: sources.length,
-    active: sources.filter((source) => source.status === "active").length,
+    active: sources.filter((source) => source.status === "active" || source.status === "active_contextual" || source.status === "active_historical" || source.status === "active_institutional").length,
     planned: sources.filter((source) => source.status === "planned").length,
     manual: sources.filter((source) => source.status === "manual").length,
     disabled: sources.filter((source) => source.status === "disabled").length,

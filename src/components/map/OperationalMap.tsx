@@ -37,6 +37,12 @@ interface MapLayerSettings {
   gdacsAlerts?: boolean;
   noaaTsunami?: boolean;
   nasaFirms?: boolean;
+  nasaEonet?: boolean;
+  nwsWeatherAlerts?: boolean;
+  openMeteoWeatherContext?: boolean;
+  usgsWaterConditions?: boolean;
+  noaaStormEventsHistorical?: boolean;
+  openFemaDisasterDeclarations?: boolean;
   reliefWeb?: boolean;
   sos: boolean;
   alerts: boolean;
@@ -142,7 +148,11 @@ const getExternalEventKind = (event: ArgusNormalizedEvent): ArgusMapEventKind =>
   if (event.sourceId === "noaa_tsunami" || event.category === "tsunami") {
     return "tsunami";
   }
+  if (event.sourceId === "nws" || event.category === "weather_alert") {
+    return "weather";
+  }
   if (
+    event.sourceId === "nasa-eonet" ||
     event.sourceId === "nasa_firms" ||
     event.category === "wildfire" ||
     event.category === "thermal_anomaly"
@@ -160,6 +170,8 @@ const getExternalConfidence = (
     return "official";
   }
   if (event.sourceId === "gdacs") return "multi_source";
+  if (event.sourceId === "nasa-eonet") return "official";
+  if (event.sourceId === "nws") return "official";
   if (event.sourceId === "nasa_firms") return "raw";
   return event.confidence >= 85 ? "verified" : "unknown";
 };
@@ -379,12 +391,20 @@ export default function OperationalMap({
           (event.sourceId === "usgs_earthquake" && layerSettings.usgsEarthquakes) ||
           (event.sourceId === "gdacs" && layerSettings.gdacsAlerts) ||
           (event.sourceId === "noaa_tsunami" && layerSettings.noaaTsunami) ||
-          (event.sourceId === "nasa_firms" && layerSettings.nasaFirms)
+          (event.sourceId === "nasa_firms" && layerSettings.nasaFirms) ||
+          (event.sourceId === "nasa-eonet" && layerSettings.nasaEonet) ||
+          (event.sourceId === "nws" && layerSettings.nwsWeatherAlerts) ||
+          (event.sourceId === "noaa-storm-events" && layerSettings.noaaStormEventsHistorical) ||
+          (event.sourceId === "openfema" && layerSettings.openFemaDisasterDeclarations)
       ),
     [
       externalEvents,
       layerSettings.gdacsAlerts,
       layerSettings.nasaFirms,
+      layerSettings.nasaEonet,
+      layerSettings.nwsWeatherAlerts,
+      layerSettings.noaaStormEventsHistorical,
+      layerSettings.openFemaDisasterDeclarations,
       layerSettings.noaaTsunami,
       layerSettings.usgsEarthquakes,
     ]
@@ -809,6 +829,10 @@ export default function OperationalMap({
               ? event.rawMagnitude.toFixed(1)
               : event.sourceId === "nasa_firms"
                 ? "FIR"
+                : event.sourceId === "nasa-eonet"
+                  ? "EO"
+                : event.sourceId === "nws"
+                  ? "NWS"
                 : event.sourceId === "noaa_tsunami"
                   ? "TSU"
                   : event.sourceId === "gdacs"
@@ -1159,6 +1183,11 @@ export default function OperationalMap({
             />
             <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-slate-950/90 to-transparent" />
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-950/90 to-transparent" />
+            {layerSettings.openMeteoWeatherContext && (
+              <div className="pointer-events-none absolute left-4 top-4 z-[60] max-w-xs border border-cyan-300/25 bg-slate-950/88 px-3 py-2 text-[0.62rem] uppercase tracking-[0.14em] text-cyan-100 shadow-lg shadow-black/30 backdrop-blur-xl">
+                Open-Meteo Weather Context · overlay contextual · no alert source
+              </div>
+            )}
           </>
         }
         globe={

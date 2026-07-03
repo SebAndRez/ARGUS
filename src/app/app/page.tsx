@@ -71,6 +71,7 @@ import type {
   ArgusIngestionSourceResponse,
   ArgusNormalizedEvent,
 } from "@/types/ingestion";
+import type { ArgusIncidentKnowledge } from "@/types/knowledgeIntake";
 import type { ArgusRiskAssessment } from "@/types/riskAssessment";
 import type { ConflictZone } from "@/types/conflictZone";
 import type { MedicalAidRequest } from "@/types/medical";
@@ -99,6 +100,12 @@ const initialLayers = {
   gdacsAlerts: false,
   noaaTsunami: false,
   nasaFirms: false,
+  nasaEonet: false,
+  nwsWeatherAlerts: false,
+  openMeteoWeatherContext: false,
+  usgsWaterConditions: false,
+  noaaStormEventsHistorical: false,
+  openFemaDisasterDeclarations: false,
   reliefWeb: false,
   sos: true,
   alerts: true,
@@ -131,6 +138,60 @@ const defaultVisibleWidgets = {
   nearby: true,
   risk: false,
 };
+
+function eonetIncidentToExternalEvent(incident: ArgusIncidentKnowledge): ArgusNormalizedEvent {
+  return {
+    id: incident.id,
+    sourceId: "nasa-eonet",
+    sourceName: "NASA EONET",
+    externalId: incident.id.replace(/^eonet-/, ""),
+    title: incident.title,
+    description: incident.summary,
+    category: incident.domain as ArgusNormalizedEvent["category"],
+    severity: incident.severity === "unknown" ? "low" : incident.severity,
+    confidence: incident.confidenceScore,
+    latitude: incident.latitude ?? null,
+    longitude: incident.longitude ?? null,
+    occurredAt: incident.occurredAt ?? incident.detectedAt ?? incident.createdAt,
+    updatedAt: incident.updatedAt,
+    url: incident.rawEvidenceRefs[0] ?? null,
+    rawMagnitude: incident.technicalFactors.magnitudeValue ?? null,
+    rawMagnitudeType: incident.technicalFactors.magnitudeUnit ?? null,
+    locationName: [incident.locality, incident.region, incident.country].filter(Boolean).join(", ") || null,
+    country: incident.country ?? null,
+    recommendedAction: incident.recommendedActions[0]?.text ?? null,
+    whyItMatters: "NASA EONET aporta contexto global de eventos naturales; no es una orden local ni activa rutas/evacuaciones oficiales por si solo.",
+    isExternal: true,
+  };
+}
+
+function nwsIncidentToExternalEvent(incident: ArgusIncidentKnowledge): ArgusNormalizedEvent {
+  return {
+    id: incident.id,
+    sourceId: "nws",
+    sourceName: incident.sourceNames[0] ?? "NWS / api.weather.gov",
+    externalId: incident.id.replace(/^nws-/, ""),
+    title: incident.title,
+    description: incident.summary,
+    category: incident.domain as ArgusNormalizedEvent["category"],
+    severity: incident.severity === "unknown" ? "low" : incident.severity,
+    confidence: incident.confidenceScore,
+    latitude: incident.latitude ?? null,
+    longitude: incident.longitude ?? null,
+    occurredAt: incident.occurredAt ?? incident.detectedAt ?? incident.createdAt,
+    updatedAt: incident.updatedAt,
+    url: incident.rawEvidenceRefs.find((ref) => ref.startsWith("http")) ?? null,
+    rawMagnitude: null,
+    rawMagnitudeType: incident.technicalFactors.nwsSeverity ?? null,
+    locationName: incident.locality ?? incident.region ?? "United States / NWS territories",
+    country: incident.country ?? "US",
+    recommendedAction: incident.recommendedActions[0]?.text ?? null,
+    whyItMatters:
+      "NWS aporta alertas meteorologicas oficiales para Estados Unidos y territorios NWS. Es contexto ARGUS prudente, no orden automatica ni cobertura meteorologica mundial.",
+    isExternal: true,
+  };
+}
+
 type VisibleWidgetKey = keyof typeof defaultVisibleWidgets;
 type MapViewMode = "map" | "orbit";
 type ActiveMobilePanel = VisibleWidgetKey | null;
@@ -252,6 +313,21 @@ export default function AppPage() {
   const [nasaConfigError, setNasaConfigError] = useState(false);
   const [nasaRetryVersion, setNasaRetryVersion] = useState(0);
   const nasaFetchStartedRef = useRef(false);
+  const [eonetEvents, setEonetEvents] = useState<ArgusNormalizedEvent[]>([]);
+  const [eonetStatus, setEonetStatus] = useState<
+    "idle" | "loading" | "loaded" | "error"
+  >("idle");
+  const [eonetErrorMessage, setEonetErrorMessage] = useState<string | null>(null);
+  const [eonetRetryVersion, setEonetRetryVersion] = useState(0);
+  const eonetFetchStartedRef = useRef(false);
+  const [nwsEvents, setNwsEvents] = useState<ArgusNormalizedEvent[]>([]);
+  const [nwsStatus, setNwsStatus] = useState<
+    "idle" | "loading" | "loaded" | "error"
+  >("idle");
+  const [nwsErrorMessage, setNwsErrorMessage] = useState<string | null>(null);
+  const [nwsUserAgentConfigured, setNwsUserAgentConfigured] = useState<boolean | null>(null);
+  const [nwsRetryVersion, setNwsRetryVersion] = useState(0);
+  const nwsFetchStartedRef = useRef(false);
   const [reliefWebEvents, setReliefWebEvents] = useState<
     ArgusNormalizedEvent[]
   >([]);
@@ -542,6 +618,13 @@ export default function AppPage() {
     ) {
       setSelectedExternalEvent(null);
     }
+    if (
+      key === "nasaEonet" &&
+      layerSettings.nasaEonet &&
+      selectedExternalEvent?.sourceId === "nasa-eonet"
+    ) {
+      setSelectedExternalEvent(null);
+    }
     if (key === "liveCameras" && layerSettings.liveCameras) {
       setSelectedLiveCamera(null);
     }
@@ -674,9 +757,17 @@ export default function AppPage() {
     () => nasaEvents.slice(0, 250),
     [nasaEvents]
   );
+  const visibleEonetEvents = useMemo(
+    () => eonetEvents.slice(0, 250),
+    [eonetEvents]
+  );
+  const visibleNwsEvents = useMemo(
+    () => nwsEvents.slice(0, 250),
+    [nwsEvents]
+  );
   const externalEvents = useMemo(
-    () => [...usgsEvents, ...gdacsEvents, ...noaaEvents, ...visibleNasaEvents],
-    [gdacsEvents, noaaEvents, usgsEvents, visibleNasaEvents]
+    () => [...usgsEvents, ...gdacsEvents, ...noaaEvents, ...visibleNasaEvents, ...visibleEonetEvents, ...visibleNwsEvents],
+    [gdacsEvents, noaaEvents, usgsEvents, visibleNasaEvents, visibleEonetEvents, visibleNwsEvents]
   );
   const externalCorrelations = useMemo(
     () => correlateExternalEvents(externalEvents),
@@ -851,6 +942,64 @@ export default function AppPage() {
         disabled: nasaConfigured !== true,
         disabledLabel: nasaConfigured === false ? "KEY" : "...",
       },
+      nasaEonet: {
+        count: eonetEvents.length,
+        detail:
+          eonetStatus === "loading"
+            ? "Consultando eventos naturales NASA..."
+            : eonetStatus === "error"
+              ? "NASA EONET no disponible"
+              : eonetStatus === "loaded"
+                ? `${visibleEonetEvents.length}/${eonetEvents.length} eventos en mapa`
+                : "NASA EONET Natural Events bajo demanda",
+        status:
+          eonetStatus === "loaded"
+            ? "ready"
+            : eonetStatus === "error"
+              ? "error"
+              : eonetStatus,
+      },
+      nwsWeatherAlerts: {
+        count: nwsEvents.length,
+        detail:
+          nwsStatus === "loading"
+            ? "Consultando alertas meteorologicas NWS..."
+            : nwsStatus === "error"
+              ? "NWS no disponible"
+              : nwsStatus === "loaded"
+                ? `${visibleNwsEvents.length}/${nwsEvents.length} alertas en mapa${nwsUserAgentConfigured === false ? " · User-Agent fallback" : ""}`
+                : "Estados Unidos y territorios NWS bajo demanda",
+        status:
+          nwsStatus === "loaded"
+            ? "ready"
+            : nwsStatus === "error"
+              ? "error"
+              : nwsStatus,
+      },
+      openMeteoWeatherContext: {
+        count: 0,
+        detail: layerSettings.openMeteoWeatherContext
+          ? "Overlay contextual activo por incidente/coordenada"
+          : "Contexto global por coordenada, no alertas",
+        status: "ready",
+      },
+      usgsWaterConditions: {
+        count: 0,
+        detail: layerSettings.usgsWaterConditions
+          ? "Contexto hidrologico cercano; sin sensores globales"
+          : "USGS 00060/00065; no es capa de incidentes",
+        status: "ready",
+      },
+      noaaStormEventsHistorical: {
+        count: 0,
+        detail: "Dataset historico NOAA/NCEI; import controlado, apagado por defecto",
+        status: "idle",
+      },
+      openFemaDisasterDeclarations: {
+        count: 0,
+        detail: "Dataset institucional FEMA; no live, import controlado",
+        status: "idle",
+      },
       reliefWeb: {
         count: reliefWebEvents.length,
         detail:
@@ -1020,12 +1169,16 @@ export default function AppPage() {
       gdacsExpiresLabel,
       gdacsStatus,
       gdacsUpdatedLabel,
+      eonetEvents.length,
+      eonetStatus,
       gpsStatus,
       layerSettings.conflictEvents,
       layerSettings.conflictZones,
       layerSettings.demoReports,
       layerSettings.liveCameras,
       layerSettings.medicalPoints,
+      layerSettings.openMeteoWeatherContext,
+      layerSettings.usgsWaterConditions,
       quakeSenseClusters.length,
       safetyChecks.length,
       metCached,
@@ -1041,6 +1194,9 @@ export default function AppPage() {
       noaaMappedCount,
       noaaStatus,
       noaaUpdatedLabel,
+      nwsEvents.length,
+      nwsStatus,
+      nwsUserAgentConfigured,
       officialSourceCount,
       publicCameraCount,
       reliefWebCached,
@@ -1052,7 +1208,9 @@ export default function AppPage() {
       usgsExpiresLabel,
       usgsStatus,
       usgsUpdatedLabel,
+      visibleEonetEvents.length,
       visibleNasaEvents.length,
+      visibleNwsEvents.length,
     ]
   );
 
@@ -1307,6 +1465,95 @@ export default function AppPage() {
     setNasaStatus("idle");
     setNasaErrorMessage(null);
     setNasaRetryVersion((current) => current + 1);
+  };
+
+  useEffect(() => {
+    if (!layerSettings.nasaEonet || eonetFetchStartedRef.current) return;
+
+    eonetFetchStartedRef.current = true;
+    setEonetStatus("loading");
+    setEonetErrorMessage(null);
+
+    async function loadEonetEvents() {
+      try {
+        const response = await fetch("/api/knowledge-intake/live/eonet?status=open&days=30&limit=100", {
+          cache: "no-store",
+        });
+        const payload = (await response.json()) as {
+          incidents?: ArgusIncidentKnowledge[];
+          errors?: string[];
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(payload.error || payload.errors?.[0] || "No fue posible cargar NASA EONET.");
+        }
+
+        setEonetEvents(Array.isArray(payload.incidents) ? payload.incidents.map(eonetIncidentToExternalEvent) : []);
+        setEonetStatus("loaded");
+      } catch (error) {
+        setEonetStatus("error");
+        setEonetErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "No fue posible cargar NASA EONET."
+        );
+      }
+    }
+
+    loadEonetEvents();
+  }, [eonetRetryVersion, layerSettings.nasaEonet]);
+
+  const retryEonetEvents = () => {
+    eonetFetchStartedRef.current = false;
+    setEonetStatus("idle");
+    setEonetErrorMessage(null);
+    setEonetRetryVersion((current) => current + 1);
+  };
+
+  useEffect(() => {
+    if (!layerSettings.nwsWeatherAlerts || nwsFetchStartedRef.current) return;
+
+    nwsFetchStartedRef.current = true;
+    setNwsStatus("loading");
+    setNwsErrorMessage(null);
+
+    async function loadNwsAlerts() {
+      try {
+        const response = await fetch("/api/knowledge-intake/live/nws?mode=alerts&area=US&limit=100", {
+          cache: "no-store",
+        });
+        const payload = (await response.json()) as {
+          incidents?: ArgusIncidentKnowledge[];
+          userAgentConfigured?: boolean;
+          warnings?: string[];
+          errors?: string[];
+          error?: string;
+        };
+        setNwsUserAgentConfigured(payload.userAgentConfigured ?? null);
+        if (!response.ok) {
+          throw new Error(payload.error || payload.errors?.[0] || "No fue posible cargar NWS.");
+        }
+
+        setNwsEvents(Array.isArray(payload.incidents) ? payload.incidents.map(nwsIncidentToExternalEvent) : []);
+        setNwsStatus("loaded");
+      } catch (error) {
+        setNwsStatus("error");
+        setNwsErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "No fue posible cargar NWS."
+        );
+      }
+    }
+
+    loadNwsAlerts();
+  }, [layerSettings.nwsWeatherAlerts, nwsRetryVersion]);
+
+  const retryNwsAlerts = () => {
+    nwsFetchStartedRef.current = false;
+    setNwsStatus("idle");
+    setNwsErrorMessage(null);
+    setNwsRetryVersion((current) => current + 1);
   };
 
   useEffect(() => {
@@ -1900,6 +2147,44 @@ export default function AppPage() {
             type="button"
             onClick={retryNasaFirms}
             className="mt-3 border border-orange-200/30 bg-orange-400/10 px-3 py-2 text-xs font-semibold uppercase text-orange-100 transition hover:bg-orange-400/20"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {layerSettings.nasaEonet && eonetStatus === "loading" && (
+        <div className="fixed left-4 top-[30rem] z-40 border border-emerald-300/20 bg-slate-950/90 px-4 py-3 text-sm text-emerald-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-[27rem]">
+          Consultando NASA EONET Natural Events...
+        </div>
+      )}
+
+      {layerSettings.nasaEonet && eonetStatus === "error" && eonetErrorMessage && (
+        <div className="fixed left-4 top-[30rem] z-40 max-w-sm border border-emerald-300/25 bg-slate-950/92 px-4 py-3 text-sm text-emerald-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-[27rem]">
+          <p>NASA EONET no disponible: {eonetErrorMessage}</p>
+          <button
+            type="button"
+            onClick={retryEonetEvents}
+            className="mt-3 border border-emerald-200/30 bg-emerald-400/10 px-3 py-2 text-xs font-semibold uppercase text-emerald-100 transition hover:bg-emerald-400/20"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {layerSettings.nwsWeatherAlerts && nwsStatus === "loading" && (
+        <div className="fixed left-4 top-[34rem] z-40 border border-cyan-300/20 bg-slate-950/90 px-4 py-3 text-sm text-cyan-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-[31rem]">
+          Consultando NWS Weather Alerts...
+        </div>
+      )}
+
+      {layerSettings.nwsWeatherAlerts && nwsStatus === "error" && nwsErrorMessage && (
+        <div className="fixed left-4 top-[34rem] z-40 max-w-sm border border-cyan-300/25 bg-slate-950/92 px-4 py-3 text-sm text-cyan-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-[31rem]">
+          <p>NWS no disponible: {nwsErrorMessage}</p>
+          <button
+            type="button"
+            onClick={retryNwsAlerts}
+            className="mt-3 border border-cyan-200/30 bg-cyan-400/10 px-3 py-2 text-xs font-semibold uppercase text-cyan-100 transition hover:bg-cyan-400/20"
           >
             Reintentar
           </button>

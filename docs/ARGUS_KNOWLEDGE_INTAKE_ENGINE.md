@@ -22,6 +22,7 @@ This phase moves the module from architecture-only to controlled real ingestion:
 - `fetchReliefWebReports()` reads recent ReliefWeb reports from the current `/v2/reports` API with optional country, disaster type and limit filters when `RELIEFWEB_APP_NAME` is configured and approved.
 - `normalizeReliefWebReport()` creates incident knowledge and evidence records, lowering geospatial precision when coordinates are unavailable.
 - `fetchFirmsActiveFires()` is prepared for NASA FIRMS CSV area ingestion but returns `requiresApiKey` when `NASA_FIRMS_MAP_KEY` is missing.
+- `fetchUsgsVolcanoHans()` reads public USGS Volcano HANS/VSC endpoints for elevated monitored volcanoes, recent notices and optional GeoJSON fallback without an API key.
 - `/api/knowledge-intake/live/usgs`, `/api/knowledge-intake/live/reliefweb` and `/api/knowledge-intake/live/firms` expose controlled test endpoints. ReliefWeb returns `requiresConfiguration` until an approved app name is configured.
 - `/api/knowledge-intake/health` now reports active sources, stubs, sources requiring API key, adapter status and parser status.
 - `/dashboard/knowledge-intake` includes on-demand test controls for USGS and ReliefWeb plus recent normalized incidents.
@@ -74,6 +75,29 @@ POST /api/knowledge-intake/jobs/run-all
 `run-all` currently persists USGS only. ReliefWeb is skipped until
 `RELIEFWEB_APP_NAME` is configured and approved. NASA FIRMS is skipped until
 `NASA_FIRMS_MAP_KEY` is configured.
+
+### USGS Volcano HANS
+
+USGS Volcano HANS is active as a fast no-key source for USGS monitored
+volcanoes:
+
+```http
+GET /api/knowledge-intake/live/usgs-volcano-hans?mode=elevated&observatory=all&days=7&includeNotices=true&includeGeoJson=true&limit=100
+GET /api/knowledge-intake/live/usgs-volcano-hans?mode=elevated&persist=true
+POST /api/knowledge-intake/jobs/run-usgs-volcano-hans
+```
+
+The adapter keeps terrestrial `alertLevel` separate from
+`aviationColorCode`, stores HANS notices as evidence, and projects persisted
+incidents with coordinates into `/api/knowledge-intake/map-events` under the
+`USGS Volcano HANS Alerts` layer. HANS is an official USGS source for USGS
+monitored volcanoes; it is not a complete worldwide local volcano authority.
+
+The volcano source pattern is intentionally extensible:
+`VolcanoAlertSource`, `VolcanoAlertRecord`, `VolcanoAlertLevel`,
+`VolcanoAviationColorCode` and `VolcanoNoticeEvidence` can support future
+regional sources such as SERNAGEOMIN, JMA, IMO, PHIVOLCS, GNS Science, INGV,
+VAACs and Smithsonian/GVP without rewriting the HANS adapter.
 
 Vercel Cron is not active yet. These endpoints are on-demand operational hooks.
 

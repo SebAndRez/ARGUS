@@ -10,6 +10,7 @@ function eventHazardTerms(event: ArgusNormalizedEvent) {
   if (event.sourceId === "usgs_earthquake") terms.add("earthquake");
   if (event.sourceId === "noaa_tsunami") terms.add("tsunami");
   if (event.sourceId === "nasa_firms") terms.add("fire");
+  if (event.sourceId === "nasa-eonet") terms.add("natural event");
   if (event.sourceId === "reliefweb") terms.add("humanitarian");
   return terms;
 }

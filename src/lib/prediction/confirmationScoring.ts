@@ -39,6 +39,7 @@ const OFFICIAL_SOURCE_IDS = new Set([
   "noaa",
   "noaa_tsunami",
   "nasa_firms",
+  "nasa_eonet",
   "met_norway",
   "reliefweb",
   "senapred",

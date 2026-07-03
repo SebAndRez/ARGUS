@@ -36,6 +36,20 @@ type KnowledgeDocumentInput = {
   reviewStatus?: string;
 };
 
+type WeatherContextEvidenceInput = {
+  incidentId?: string;
+  sourceIncidentId?: string;
+  sourceId: "open-meteo" | "usgs-water";
+  sourceName: "Open-Meteo" | "USGS Water Data";
+  evidenceType: "weather_context" | "hydrological_context";
+  title: string;
+  url?: string;
+  excerpt: string;
+  rawRef: string;
+  confidenceScore: number;
+  metadataJson: Prisma.InputJsonValue;
+};
+
 function toJson(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
 }
@@ -104,8 +118,8 @@ export async function upsertKnowledgeSource(source: ArgusKnowledgeSource) {
       licenseNotes: source.licenseNotes,
       updateCadence: source.updateCadence,
       reliabilityScore: source.reliabilityScore.finalScore,
-      officialSource: source.reliabilityScore.finalScore >= 90,
-      enabled: source.status === "active",
+      officialSource: source.reliabilityScore.finalScore >= 90 || source.tags.includes("officialSource:true"),
+      enabled: source.status === "active" || source.status === "active_contextual" || source.status === "active_historical" || source.status === "active_institutional",
     },
     update: {
       name: source.name,
@@ -117,8 +131,8 @@ export async function upsertKnowledgeSource(source: ArgusKnowledgeSource) {
       licenseNotes: source.licenseNotes,
       updateCadence: source.updateCadence,
       reliabilityScore: source.reliabilityScore.finalScore,
-      officialSource: source.reliabilityScore.finalScore >= 90,
-      enabled: source.status === "active",
+      officialSource: source.reliabilityScore.finalScore >= 90 || source.tags.includes("officialSource:true"),
+      enabled: source.status === "active" || source.status === "active_contextual" || source.status === "active_historical" || source.status === "active_institutional",
     },
   });
 }
@@ -202,7 +216,11 @@ export async function saveKnowledgeEvidence(evidence: ArgusKnowledgeEvidenceItem
       incidentId: evidence.incidentId,
       sourceId: evidence.sourceId,
       sourceName: evidence.sourceName,
-      evidenceType: "source_report",
+      evidenceType: evidence.sourceId === "openfema"
+        ? "institutional_disaster_declaration"
+        : evidence.sourceId === "noaa-storm-events"
+          ? "historical_event_record"
+          : "source_report",
       title: evidence.title,
       url: evidence.url,
       excerpt: evidence.quote ?? evidence.summary,
@@ -215,6 +233,139 @@ export async function saveKnowledgeEvidence(evidence: ArgusKnowledgeEvidenceItem
       }),
     },
   });
+}
+
+export async function saveKnowledgeEvidenceIfNew(evidence: ArgusKnowledgeEvidenceItem) {
+  const existing = await prisma.knowledgeEvidence.findFirst({
+    where: {
+      sourceId: evidence.sourceId,
+      rawRef: evidence.id,
+      ...(evidence.incidentId ? { incidentId: evidence.incidentId } : {}),
+    },
+  });
+  if (existing) return { action: "skipped" as const, evidence: existing };
+  return { action: "inserted" as const, evidence: await saveKnowledgeEvidence(evidence) };
+}
+
+export async function findKnowledgeIncidentBySourceIncidentId(sourceIncidentId: string) {
+  return prisma.knowledgeIncident.findFirst({
+    where: {
+      OR: [
+        { id: sourceIncidentId },
+        { externalId: sourceIncidentId },
+      ],
+    },
+  });
+}
+
+export async function findFreshWeatherContextEvidence(input: {
+  incidentId: string;
+  sourceId?: string;
+  evidenceType?: "weather_context" | "hydrological_context";
+  ttlMinutes?: number;
+}) {
+  const createdAfter = new Date(Date.now() - (input.ttlMinutes ?? 60) * 60_000);
+  return prisma.knowledgeEvidence.findFirst({
+    where: {
+      incidentId: input.incidentId,
+      sourceId: input.sourceId ?? "open-meteo",
+      evidenceType: input.evidenceType ?? "weather_context",
+      createdAt: { gte: createdAfter },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function findFreshHydrologicalContextEvidence(input: {
+  incidentId: string;
+  sourceId?: string;
+  ttlMinutes?: number;
+}) {
+  return findFreshWeatherContextEvidence({
+    incidentId: input.incidentId,
+    sourceId: input.sourceId ?? "usgs-water",
+    evidenceType: "hydrological_context",
+    ttlMinutes: input.ttlMinutes,
+  });
+}
+
+export async function saveWeatherContextEvidenceIfFreshMissing(input: WeatherContextEvidenceInput, ttlMinutes = 60) {
+  const resolvedIncidentId = input.incidentId ?? (
+    input.sourceIncidentId ? (await findKnowledgeIncidentBySourceIncidentId(input.sourceIncidentId))?.id : undefined
+  );
+  if (!resolvedIncidentId) {
+    if (input.evidenceType === "hydrological_context") {
+      const existing = await prisma.knowledgeEvidence.findFirst({
+        where: {
+          sourceId: input.sourceId,
+          evidenceType: input.evidenceType,
+          rawRef: input.rawRef,
+        },
+      });
+      if (existing) {
+        return {
+          action: "skipped_fresh" as const,
+          evidence: existing,
+          incidentId: null,
+        };
+      }
+      const evidence = await prisma.knowledgeEvidence.create({
+        data: {
+          sourceId: input.sourceId,
+          sourceName: input.sourceName,
+          evidenceType: input.evidenceType,
+          title: input.title,
+          url: input.url,
+          excerpt: input.excerpt,
+          rawRef: input.rawRef,
+          confidenceScore: input.confidenceScore,
+          metadataJson: input.metadataJson,
+        },
+      });
+      return {
+        action: "inserted" as const,
+        evidence,
+        incidentId: null,
+      };
+    }
+    return {
+      action: "skipped_no_association" as const,
+      evidence: null,
+      incidentId: null,
+    };
+  }
+  const fresh = await findFreshWeatherContextEvidence({
+      incidentId: resolvedIncidentId,
+      sourceId: input.sourceId,
+      evidenceType: input.evidenceType,
+      ttlMinutes,
+    });
+  if (fresh) {
+    return {
+      action: "skipped_fresh" as const,
+      evidence: fresh,
+      incidentId: resolvedIncidentId,
+    };
+  }
+  const evidence = await prisma.knowledgeEvidence.create({
+    data: {
+      incidentId: resolvedIncidentId,
+      sourceId: input.sourceId,
+      sourceName: input.sourceName,
+      evidenceType: input.evidenceType,
+      title: input.title,
+      url: input.url,
+      excerpt: input.excerpt,
+      rawRef: input.rawRef,
+      confidenceScore: input.confidenceScore,
+      metadataJson: input.metadataJson,
+    },
+  });
+  return {
+    action: "inserted" as const,
+    evidence,
+    incidentId: resolvedIncidentId,
+  };
 }
 
 export async function saveKnowledgeLesson(lesson: ArgusLessonLearned, incidentIdOverride?: string) {

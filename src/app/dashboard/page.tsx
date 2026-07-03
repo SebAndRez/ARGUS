@@ -34,6 +34,8 @@ const initialLayers: MapLayerState = {
   officialSources: true,
   publicCameras: true,
   weatherRisk: true,
+  openMeteoWeatherContext: false,
+  openFemaDisasterDeclarations: false,
   terrestrialRoutes: true,
   airRoutes: true,
   maritimeRoutes: true,
@@ -145,6 +147,16 @@ export default function DashboardPage() {
         count: demoRiskProjections.length,
         detail: "Zonas estimadas, no exactas",
         status: "ready",
+      },
+      openMeteoWeatherContext: {
+        count: 0,
+        detail: "Overlay contextual por coordenada",
+        status: "ready",
+      },
+      openFemaDisasterDeclarations: {
+        count: 0,
+        detail: "Dataset institucional FEMA; apagado por defecto",
+        status: "idle",
       },
       terrestrialRoutes: {
         count: demoRoutes.filter((route) => route.type === "terrestrial").length,

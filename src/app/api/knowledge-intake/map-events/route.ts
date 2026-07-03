@@ -61,6 +61,37 @@ export async function GET(request: NextRequest) {
     .filter(Boolean);
   return NextResponse.json({
     count: events.length,
+    availableLayers: [
+      { id: "usgs_earthquake", label: "USGS Earthquakes", sourceId: "usgs_earthquake" },
+      { id: "gdacs", label: "GDACS Multi-Hazard", sourceId: "gdacs" },
+      { id: "nasa-eonet", label: "NASA EONET Natural Events", sourceId: "nasa-eonet" },
+      { id: "usgs-volcano-hans", label: "USGS Volcano HANS Alerts", sourceId: "usgs-volcano-hans", domain: "volcano" },
+      { id: "nws", label: "NWS Weather Alerts", sourceId: "nws", domain: "weather_alert" },
+      {
+        id: "open-meteo-weather-context",
+        label: "Open-Meteo Weather Context",
+        sourceId: "open-meteo",
+        layerType: "weather_context_overlay",
+        isIncidentLayer: false,
+      },
+      {
+        id: "openfema-disaster-declarations",
+        label: "OpenFEMA Disaster Declarations",
+        sourceId: "openfema",
+        layerType: "institutional_disaster_declarations",
+        isLiveSource: false,
+        defaultVisible: false,
+        groupKey: "disasterNumber",
+      },
+      { id: "knowledge-incidents", label: "Knowledge Incidents" },
+    ],
+    activeFilter: {
+      sourceId: params.get("sourceId") ?? null,
+      domain: params.get("domain") ?? null,
+      minConfidence: params.get("minConfidence") ?? null,
+      since: params.get("since") ?? null,
+      reviewStatus: params.get("reviewStatus") ?? null,
+    },
     events,
     note: "Read-only map projection. Knowledge incidents are not inserted into /api/events automatically.",
   });
