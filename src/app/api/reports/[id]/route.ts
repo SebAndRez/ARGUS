@@ -1,24 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/services/authService";
 import { logAuditEvent } from "@/services/auditService";
 import { adjustTrustScore, applyStrike } from "@/services/reputationService";
-
-const ALLOWED_ROLES = ["OPERATOR", "ADMIN"];
+import { requireOperator } from "@/lib/security/apiGuards";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
 export async function PATCH(req: Request, ctx: RouteContext) {
-  const user = await getCurrentUser();
-  if (!user) {
-    return NextResponse.json({ error: "Usuario no autenticado." }, { status: 401 });
-  }
-
-  if (!ALLOWED_ROLES.includes(user.role)) {
-    return NextResponse.json({ error: "Acceso no autorizado." }, { status: 403 });
-  }
+  const { user, response } = await requireOperator();
+  if (response || !user) return response;
 
   const { id: reportId } = await ctx.params;
   const body = await req.json();

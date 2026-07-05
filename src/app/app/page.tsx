@@ -85,6 +85,11 @@ import { correlateExternalEvents } from "@/lib/ingestion/correlateExternalEvents
 import { auditVigiaAction } from "@/modules/vigia/vigiaAccess";
 import { mapSessionUserToArgusRole } from "@/lib/modules/moduleAccess";
 import { getConflictProximityWarnings } from "@/lib/conflict/conflictRiskEngine";
+import {
+  getDataActiveState,
+  getDefaultLayerState,
+} from "@/lib/layers/layerPolicy";
+import { readStoredLayerState, persistLayerState } from "@/lib/layers/layerState";
 
 const OperationalMap = dynamic(
   () => import("@/components/map/OperationalMap"),
@@ -98,59 +103,7 @@ const OperationalMap = dynamic(
   }
 );
 
-const initialLayers = {
-  reports: true,
-  missingPersons: true,
-  demoReports: false,
-  usgsEarthquakes: false,
-  usgsShakeMapIntensity: false,
-  usgsPagerImpactAssessment: false,
-  gdacsAlerts: false,
-  noaaTsunami: false,
-  nasaFirms: false,
-  nasaEonet: false,
-  nwsWeatherAlerts: false,
-  openMeteoWeatherContext: false,
-  openAqAirQualityObservations: false,
-  usgsWaterConditions: false,
-  smithsonianGvpVolcanoes: false,
-  smithsonianGvpEruptionHistory: false,
-  smithsonianUsgsVolcanicActivityReports: false,
-  noaaCoopsCoastalObservations: false,
-  iocSeaLevelMonitoringStations: false,
-  noaaStormEventsHistorical: false,
-  noaaNceiHistoricalTsunamis: false,
-  openFemaDisasterDeclarations: false,
-  osmCriticalInfrastructure: false,
-  hdxHapiHumanitarianContext: false,
-  whoDiseaseOutbreakNews: false,
-  ecdcPublicHealthThreats: false,
-  gdeltMediaSignals: false,
-  copernicusGlofasFloodForecast: false,
-  copernicusGfmObservedFloodExtent: false,
-  reliefWeb: false,
-  sos: true,
-  alerts: true,
-  critical: true,
-  resolved: true,
-  user: true,
-  visualSources: true,
-  officialSources: true,
-  publicCameras: true,
-  liveCameras: false,
-  medicalPoints: false,
-  quakeSense: false,
-  safetyChecks: false,
-  weatherRisk: false,
-  terrestrialRoutes: false,
-  airRoutes: false,
-  maritimeRoutes: false,
-  conflictZones: false,
-  conflictEvents: false,
-  territorialControl: false,
-  crisisNews: false,
-  confirmedDisasters: false,
-};
+const initialLayers = getDefaultLayerState();
 
 const initialEventState: CrisisEvent[] = [];
 const defaultVisibleWidgets = {
@@ -332,7 +285,14 @@ export default function AppPage() {
   const [events, setEvents] = useState<CrisisEvent[]>(initialEventState);
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
   const [demoEvents, setDemoEvents] = useState<CrisisEvent[]>(() => [...demoCrisisEvents]);
-  const [layerSettings, setLayerSettings] = useState(initialLayers);
+  const [layerSettings, setLayerSettings] = useState(() => readStoredLayerState());
+  // Derived, never persisted: whether ARGUS actually fetches/processes each
+  // layer. Always true for always-on realtime layers regardless of the
+  // user's visual (visible) preference above — see src/lib/layers/layerPolicy.ts.
+  const dataActive = useMemo(() => getDataActiveState(layerSettings), [layerSettings]);
+  useEffect(() => {
+    persistLayerState(layerSettings);
+  }, [layerSettings]);
   const [baseMapType, setBaseMapType] = useState<BaseMapType>("tactical");
   const [demoSeverityFilter, setDemoSeverityFilter] =
     useState<DemoSeverityFilter>("ALL");
@@ -910,13 +870,16 @@ export default function AppPage() {
       visibleDemoEvents,
     ]
   );
+  // Proximity/risk processing must keep running even if the user hides the
+  // conflict layer visually — conflictZones/conflictEvents are always-on
+  // realtime layers, so this reads dataActive rather than the visible toggle.
   const activeConflictZones = useMemo(
-    () => (layerSettings.conflictZones ? curatedConflictZones : []),
-    [layerSettings.conflictZones]
+    () => (dataActive.conflictZones ? curatedConflictZones : []),
+    [dataActive.conflictZones]
   );
   const activeConflictEvents = useMemo(
-    () => (layerSettings.conflictEvents ? curatedConflictEvents : []),
-    [layerSettings.conflictEvents]
+    () => (dataActive.conflictEvents ? curatedConflictEvents : []),
+    [dataActive.conflictEvents]
   );
   const conflictProximityWarnings = useMemo(
     () =>
@@ -1474,7 +1437,7 @@ export default function AppPage() {
   }, []);
 
   useEffect(() => {
-    if (!layerSettings.usgsEarthquakes || usgsFetchStartedRef.current) return;
+    if (!dataActive.usgsEarthquakes || usgsFetchStartedRef.current) return;
 
     usgsFetchStartedRef.current = true;
     setUsgsStatus("loading");
@@ -1512,7 +1475,7 @@ export default function AppPage() {
     }
 
     loadUsgsEarthquakes();
-  }, [layerSettings.usgsEarthquakes, usgsRetryVersion]);
+  }, [dataActive.usgsEarthquakes, usgsRetryVersion]);
 
   const retryUsgsEarthquakes = () => {
     usgsFetchStartedRef.current = false;
@@ -1522,7 +1485,7 @@ export default function AppPage() {
   };
 
   useEffect(() => {
-    if (!layerSettings.gdacsAlerts || gdacsFetchStartedRef.current) return;
+    if (!dataActive.gdacsAlerts || gdacsFetchStartedRef.current) return;
 
     gdacsFetchStartedRef.current = true;
     setGdacsStatus("loading");
@@ -1560,7 +1523,7 @@ export default function AppPage() {
     }
 
     loadGdacsAlerts();
-  }, [gdacsRetryVersion, layerSettings.gdacsAlerts]);
+  }, [gdacsRetryVersion, dataActive.gdacsAlerts]);
 
   const retryGdacsAlerts = () => {
     gdacsFetchStartedRef.current = false;
@@ -1570,7 +1533,7 @@ export default function AppPage() {
   };
 
   useEffect(() => {
-    if (!layerSettings.noaaTsunami || noaaFetchStartedRef.current) return;
+    if (!dataActive.noaaTsunami || noaaFetchStartedRef.current) return;
 
     noaaFetchStartedRef.current = true;
     setNoaaStatus("loading");
@@ -1608,7 +1571,7 @@ export default function AppPage() {
     }
 
     loadNoaaTsunami();
-  }, [layerSettings.noaaTsunami, noaaRetryVersion]);
+  }, [dataActive.noaaTsunami, noaaRetryVersion]);
 
   const retryNoaaTsunami = () => {
     noaaFetchStartedRef.current = false;
@@ -1619,7 +1582,7 @@ export default function AppPage() {
 
   useEffect(() => {
     if (
-      !layerSettings.nasaFirms ||
+      !dataActive.nasaFirms ||
       nasaConfigured !== true ||
       nasaFetchStartedRef.current
     ) {
@@ -1659,7 +1622,7 @@ export default function AppPage() {
     }
 
     loadNasaFirms();
-  }, [layerSettings.nasaFirms, nasaConfigured, nasaRetryVersion]);
+  }, [dataActive.nasaFirms, nasaConfigured, nasaRetryVersion]);
 
   const retryNasaFirms = () => {
     nasaFetchStartedRef.current = false;
@@ -1712,7 +1675,7 @@ export default function AppPage() {
   };
 
   useEffect(() => {
-    if (!layerSettings.nwsWeatherAlerts || nwsFetchStartedRef.current) return;
+    if (!dataActive.nwsWeatherAlerts || nwsFetchStartedRef.current) return;
 
     nwsFetchStartedRef.current = true;
     setNwsStatus("loading");
@@ -1748,7 +1711,7 @@ export default function AppPage() {
     }
 
     loadNwsAlerts();
-  }, [layerSettings.nwsWeatherAlerts, nwsRetryVersion]);
+  }, [dataActive.nwsWeatherAlerts, nwsRetryVersion]);
 
   const retryNwsAlerts = () => {
     nwsFetchStartedRef.current = false;

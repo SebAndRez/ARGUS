@@ -10,6 +10,13 @@ import type {
   DemoSeverityFilter,
   DemoTypeFilter,
 } from "@/lib/demoEventFilters";
+import {
+  ALWAYS_ON_REALTIME_LAYERS,
+  USER_SENSOR_LAYERS,
+  OPTIONAL_CONTEXT_LAYERS,
+  isAlwaysOnRealtimeLayer,
+  isUserSensorLayer,
+} from "@/lib/layers/layerPolicy";
 
 export interface MapLayerState {
   reports: boolean;
@@ -107,74 +114,23 @@ const statusTextClasses: Record<LayerDisplayStatus, string> = {
 
 const layerGroups: Array<{
   label: string;
+  description?: string;
   keys: Array<keyof MapLayerState>;
 }> = [
   {
-    label: "Alertas y eventos",
-    keys: [
-      "reports",
-      "missingPersons",
-      "demoReports",
-      "usgsEarthquakes",
-      "usgsShakeMapIntensity",
-      "usgsPagerImpactAssessment",
-      "gdacsAlerts",
-      "noaaTsunami",
-      "nasaFirms",
-      "nasaEonet",
-      "nwsWeatherAlerts",
-      "openMeteoWeatherContext",
-      "openAqAirQualityObservations",
-      "usgsWaterConditions",
-      "smithsonianGvpVolcanoes",
-      "smithsonianGvpEruptionHistory",
-      "smithsonianUsgsVolcanicActivityReports",
-      "noaaCoopsCoastalObservations",
-      "iocSeaLevelMonitoringStations",
-      "noaaStormEventsHistorical",
-      "noaaNceiHistoricalTsunamis",
-      "openFemaDisasterDeclarations",
-      "osmCriticalInfrastructure",
-      "hdxHapiHumanitarianContext",
-      "whoDiseaseOutbreakNews",
-      "ecdcPublicHealthThreats",
-      "gdeltMediaSignals",
-      "copernicusGlofasFloodForecast",
-      "copernicusGfmObservedFloodExtent",
-      // ReliefWeb temporarily hidden from UI until ingest reliability is fixed.
-      "sos",
-      "alerts",
-      "critical",
-      "resolved",
-    ],
+    label: "Capas operativas en tiempo real",
+    description: "ARGUS procesa estas fuentes de forma continua para seguridad y análisis.",
+    keys: [...ALWAYS_ON_REALTIME_LAYERS] as Array<keyof MapLayerState>,
   },
   {
-    label: "Fuentes y contexto",
-    keys: [
-      "visualSources",
-      "officialSources",
-      "publicCameras",
-      "liveCameras",
-      "medicalPoints",
-      "quakeSense",
-      "safetyChecks",
-      "weatherRisk",
-      "user",
-    ],
+    label: "Sensores del dispositivo",
+    description: "Requieren permiso explícito del usuario. Nunca se activan solos.",
+    keys: [...USER_SENSOR_LAYERS] as Array<keyof MapLayerState>,
   },
   {
-    label: "Rutas demo",
-    keys: ["terrestrialRoutes", "airRoutes", "maritimeRoutes"],
-  },
-  {
-    label: "Conflictos y crisis",
-    keys: [
-      "conflictZones",
-      "conflictEvents",
-      "territorialControl",
-      "crisisNews",
-      "confirmedDisasters",
-    ],
+    label: "Capas contextuales",
+    description: "Opcionales, controladas manualmente por el usuario.",
+    keys: [...OPTIONAL_CONTEXT_LAYERS] as Array<keyof MapLayerState>,
   },
 ];
 
@@ -477,12 +433,17 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
             <p className="text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
               {group.label}
             </p>
+            {group.description && (
+              <p className="mt-0.5 text-[0.58rem] text-slate-600">{group.description}</p>
+            )}
             <div className="mt-2 grid gap-1.5">
               {availableKeys.map((key) => {
                 const enabled = Boolean(layers[key]);
                 const meta = layerMeta?.[key as keyof MapLayerState];
                 const emphasized = Boolean(meta?.emphasis && !enabled);
                 const disabled = Boolean(meta?.disabled);
+                const alwaysOnRealtime = isAlwaysOnRealtimeLayer(String(key));
+                const requiresPermission = isUserSensorLayer(String(key));
                 return (
                   <button
                     key={key}
@@ -513,8 +474,33 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
                           {meta.detail}
                         </span>
                       )}
+                      {alwaysOnRealtime && (
+                        <>
+                          <span className="mt-1 flex flex-wrap gap-1">
+                            <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-1.5 py-0.5 text-[0.5rem] font-bold uppercase text-emerald-200">
+                              Tiempo real
+                            </span>
+                            <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-1.5 py-0.5 text-[0.5rem] font-bold uppercase text-emerald-200">
+                              Siempre activa
+                            </span>
+                          </span>
+                          <span className="mt-1 block text-[0.58rem] text-emerald-200/80">
+                            Esta capa permanece activa para seguridad y análisis ARGUS.
+                          </span>
+                        </>
+                      )}
+                      {requiresPermission && (
+                        <>
+                          <span className="mt-1 inline-flex rounded-full border border-amber-300/20 bg-amber-400/10 px-1.5 py-0.5 text-[0.5rem] font-bold uppercase text-amber-200">
+                            Requiere permiso
+                          </span>
+                          <span className="mt-1 block text-[0.58rem] text-amber-200/80">
+                            Requiere permiso del usuario. No se activa automáticamente.
+                          </span>
+                        </>
+                      )}
                     </span>
-                    <span className="flex shrink-0 items-center gap-1.5">
+                    <span className="flex shrink-0 flex-col items-end gap-1">
                       {typeof meta?.count === "number" && (
                         <span className="rounded-full border border-white/10 bg-slate-950/70 px-2 py-1 font-mono text-[0.58rem] text-slate-300">
                           {meta.count}
@@ -536,7 +522,7 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
                 );
               })}
             </div>
-            {group.label === "Alertas y eventos" &&
+            {availableKeys.includes("demoReports" as Extract<keyof TLayers, string>) &&
               Boolean(layers.demoReports) &&
               demoFilters && <DemoEventFilterControls {...demoFilters} />}
           </section>

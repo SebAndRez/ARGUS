@@ -47,6 +47,47 @@ export function hasAnyRole(user: RbacUser | null | undefined, roles: ArgusRole[]
   return roles.includes(role);
 }
 
+/**
+ * Central hierarchy-based access assertion. Prefer this (or `hasRole`) over
+ * hardcoding literal role arrays in individual routes, since a literal list
+ * silently drifts out of sync with the hierarchy (e.g. forgetting SUPER_ADMIN).
+ */
+export function assertCanAccess(user: RbacUser | null | undefined, minimumRole: ArgusRole) {
+  return hasRole(user, minimumRole);
+}
+
+export function requirePermission(
+  user: RbacUser | null | undefined,
+  permission: (candidate: RbacUser | null | undefined) => boolean
+) {
+  return permission(user);
+}
+
+/**
+ * Policy for mutating a user's role. Encodes: only ADMIN+ can change roles,
+ * nobody can self-escalate, only SUPER_ADMIN can touch another SUPER_ADMIN's
+ * role, and only SUPER_ADMIN can grant the SUPER_ADMIN role itself.
+ */
+export function canChangeUserRole(
+  actor: RbacUser | null | undefined,
+  target: { id: string; role?: string | null },
+  nextRole: ArgusRole
+): { allowed: boolean; reason?: string } {
+  if (!hasRole(actor, "ADMIN")) {
+    return { allowed: false, reason: "Solo ADMIN o SUPER_ADMIN pueden cambiar roles." };
+  }
+  if (actor?.id && actor.id === target.id) {
+    return { allowed: false, reason: "No está permitido autoescalar el propio rol." };
+  }
+  if (normalizeRole(target.role) === "SUPER_ADMIN" && !hasRole(actor, "SUPER_ADMIN")) {
+    return { allowed: false, reason: "Solo SUPER_ADMIN puede modificar a otro SUPER_ADMIN." };
+  }
+  if (nextRole === "SUPER_ADMIN" && !hasRole(actor, "SUPER_ADMIN")) {
+    return { allowed: false, reason: "Solo SUPER_ADMIN puede otorgar el rol SUPER_ADMIN." };
+  }
+  return { allowed: true };
+}
+
 export function canAccessDashboard(user: RbacUser | null | undefined) {
   return hasAnyRole(user, commandRoles);
 }

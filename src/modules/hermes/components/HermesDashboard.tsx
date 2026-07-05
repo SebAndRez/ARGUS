@@ -174,6 +174,15 @@ export default function HermesDashboard() {
       <HermesHeader isDemoData={isDemoData} blockedCount={routes.filter((r) => r.status === "blocked").length} userRole={hermesRole} />
       <HermesKpiGrid kpis={kpis} />
 
+      <div className="mx-4 mb-3 flex flex-wrap items-center gap-2 border border-amber-300/25 bg-amber-400/8 px-4 py-2 text-[0.7rem] text-amber-100 sm:mx-6">
+        <span className="rounded-full border border-amber-300/40 bg-amber-400/15 px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-amber-200">
+          Demo
+        </span>
+        <span>
+          Ruta simulada — HERMES aún no calcula rutas reales de navegación. No usar como navegación real.
+        </span>
+      </div>
+
       {statusMessage && (
         <div className="mx-4 mb-3 border border-teal-400/20 bg-teal-500/10 px-4 py-3 text-sm text-teal-100 sm:mx-6">
           {statusMessage}

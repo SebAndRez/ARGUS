@@ -6,21 +6,33 @@ import { prisma } from "@/lib/prisma";
 const SESSION_COOKIE = "argus-grid-session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
+/**
+ * Sessions must always be HMAC-signed. There is no insecure fallback: if no
+ * secret is configured, callers fail loudly instead of issuing/accepting an
+ * unsigned cookie that anyone could forge.
+ */
+function getSessionSecret(): string {
+  const secret = process.env.AUTH_SECRET ?? process.env.SESSION_SECRET;
+  if (!secret) {
+    throw new Error("AUTH_SECRET is required for signed sessions.");
+  }
+  return secret;
+}
+
 export function createSessionCookie(userId: string) {
+  const secret = getSessionSecret();
   const payload = { userId, issuedAt: Date.now() };
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const secret = process.env.AUTH_SECRET ?? process.env.SESSION_SECRET;
-  if (!secret) return encoded;
 
   return `${encoded}.${signSessionPayload(encoded, secret)}`;
 }
 
 export function parseSessionCookie(cookieValue: string) {
   try {
+    const secret = getSessionSecret();
     const [encoded, signature] = cookieValue.split(".");
-    const secret = process.env.AUTH_SECRET ?? process.env.SESSION_SECRET;
 
-    if (signature && secret && !isValidSignature(encoded, signature, secret)) {
+    if (!encoded || !signature || !isValidSignature(encoded, signature, secret)) {
       return null;
     }
 

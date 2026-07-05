@@ -1,20 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/services/authService";
 import { logAuditEvent } from "@/services/auditService";
 import { adjustTrustScore, applyStrike } from "@/services/reputationService";
-
-const ALLOWED_ROLES = ["OPERATOR", "ADMIN"];
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export async function POST(req: Request) {
-  const user = await getCurrentUser();
-  if (!user) {
-    return NextResponse.json({ error: "Usuario no autenticado." }, { status: 401 });
-  }
-
-  if (!ALLOWED_ROLES.includes(user.role)) {
-    return NextResponse.json({ error: "Acceso no autorizado." }, { status: 403 });
-  }
+  const { user, response } = await requireOperator();
+  if (response || !user) return response;
 
   const body = await req.json();
   const reportId = String(body.reportId || "").trim();

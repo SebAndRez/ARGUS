@@ -1,18 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/services/authService";
-
-const ALLOWED_ROLES = ["OPERATOR", "ADMIN"];
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export async function GET() {
-  const user = await getCurrentUser();
-  if (!user) {
-    return NextResponse.json({ error: "Usuario no autenticado." }, { status: 401 });
-  }
-
-  if (!ALLOWED_ROLES.includes(user.role)) {
-    return NextResponse.json({ error: "Acceso no autorizado." }, { status: 403 });
-  }
+  const { response } = await requireOperator();
+  if (response) return response;
 
   const sanctions = await prisma.sanction.findMany({
     include: { createdBy: { select: { publicAlias: true } } },
@@ -24,14 +16,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const user = await getCurrentUser();
-  if (!user) {
-    return NextResponse.json({ error: "Usuario no autenticado." }, { status: 401 });
-  }
-
-  if (!ALLOWED_ROLES.includes(user.role)) {
-    return NextResponse.json({ error: "Acceso no autorizado." }, { status: 403 });
-  }
+  const { user, response } = await requireOperator();
+  if (response || !user) return response;
 
   const body = await req.json();
   const userId = String(body.userId || "").trim();
