@@ -336,9 +336,19 @@ export default function OperationalMap({
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [isGlobeMode, setIsGlobeMode] = useState(false);
+  const [globeInitialCenter, setGlobeInitialCenter] = useState(() => ({
+    lat: DEFAULT_CENTER[0],
+    lng: DEFAULT_CENTER[1],
+  }));
   const [mapInstance, setMapInstance] = useState<import("leaflet").Map | null>(null);
   const [leafletInstance, setLeafletInstance] =
     useState<typeof import("leaflet") | null>(null);
+
+  const activateGlobeMode = useCallback(() => {
+    const [lat, lng] = lastUsefulMapViewRef.current.center;
+    setGlobeInitialCenter({ lat, lng });
+    setIsGlobeMode(true);
+  }, []);
 
   useEffect(() => {
     viewModeRef.current = viewMode;
@@ -499,14 +509,6 @@ export default function OperationalMap({
         : [],
     [layerSettings.crisisNews, newsEvidence]
   );
-  const globeInitialCenter = useMemo(
-    () => ({
-      lat: lastUsefulMapViewRef.current.center[0],
-      lng: lastUsefulMapViewRef.current.center[1],
-    }),
-    [isGlobeMode]
-  );
-
   useEffect(() => {
     let isMounted = true;
 
@@ -551,7 +553,11 @@ export default function OperationalMap({
         const shouldStartInOrbit =
           viewModeRef.current === "orbit" ||
           (viewModeRef.current === undefined && map.getZoom() <= GLOBE_ZOOM_THRESHOLD);
-        setIsGlobeMode(shouldStartInOrbit);
+        if (shouldStartInOrbit) {
+          activateGlobeMode();
+        } else {
+          setIsGlobeMode(false);
+        }
 
         const rememberUsefulView = () => {
           const zoom = map.getZoom();
@@ -578,7 +584,7 @@ export default function OperationalMap({
             onViewModeChangeRef.current?.("map");
             return;
           }
-          setIsGlobeMode(true);
+          activateGlobeMode();
           onViewModeChangeRef.current?.("orbit");
         };
         map.on("zoomstart", rememberUsefulView);
@@ -623,7 +629,7 @@ export default function OperationalMap({
       newsEvidenceLayerRef.current = null;
       userLayerRef.current = null;
     };
-  }, []);
+  }, [activateGlobeMode]);
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
@@ -1225,7 +1231,7 @@ export default function OperationalMap({
   useEffect(() => {
     if (!viewMode) return;
     if (viewMode === "orbit") {
-      setIsGlobeMode(true);
+      activateGlobeMode();
       return;
     }
     if (isGlobeMode) {
@@ -1236,7 +1242,7 @@ export default function OperationalMap({
       suppressGlobeModeRef.current = true;
       mapRef.current.invalidateSize(false);
     }
-  }, [exitGlobeMode, isGlobeMode, viewMode]);
+  }, [activateGlobeMode, exitGlobeMode, isGlobeMode, viewMode]);
 
   useEffect(() => {
     const map = mapRef.current;

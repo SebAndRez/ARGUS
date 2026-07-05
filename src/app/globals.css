@@ -583,16 +583,24 @@ html {
 }
 
 @media (max-width: 639px) {
+  :root {
+    --argus-mobile-top-zone: calc(8.25rem + env(safe-area-inset-top));
+    --argus-mobile-emergency-dock: calc(10.75rem + env(safe-area-inset-bottom));
+  }
+
   .argus-top-hud-shell {
+    bottom: var(--argus-mobile-emergency-dock);
     left: max(0.5rem, env(safe-area-inset-left));
     right: max(0.5rem, env(safe-area-inset-right));
-    top: calc(8.5rem + env(safe-area-inset-top));
+    top: var(--argus-mobile-top-zone);
+    max-height: calc(100svh - 19rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   }
 
   .argus-top-hud-shell .argus-hud {
-    max-height: 4.75rem;
-    overflow: hidden;
+    max-height: inherit;
+    overflow-y: auto;
     padding: 0.55rem;
+    -webkit-overflow-scrolling: touch;
   }
 
   .argus-top-hud-shell .argus-hud > div:first-child {
@@ -613,6 +621,16 @@ html {
     right: max(0.5rem, env(safe-area-inset-right));
   }
 
+  .argus-view-toolbar button,
+  .argus-view-toolbar a {
+    height: 2.35rem;
+    min-height: 2.35rem;
+    min-width: 0;
+    overflow: hidden;
+    text-align: center;
+    white-space: nowrap;
+  }
+
   .argus-view-toolbar-command {
     top: calc(0.5rem + env(safe-area-inset-top));
   }
@@ -631,17 +649,17 @@ html {
   }
 
   .argus-layer-panel-shell {
-    bottom: auto;
+    bottom: var(--argus-mobile-emergency-dock);
     left: max(0.5rem, env(safe-area-inset-left));
-    max-height: 42vh;
-    max-height: 42svh;
+    max-height: calc(100svh - 19rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     right: max(0.5rem, env(safe-area-inset-right));
-    top: calc(8.25rem + env(safe-area-inset-top));
+    top: var(--argus-mobile-top-zone);
     width: auto;
   }
 
   .argus-layer-panel-shell .argus-tactical-panel {
     max-height: inherit;
+    overflow-y: auto;
     padding: 0.75rem;
     -webkit-overflow-scrolling: touch;
   }
@@ -722,6 +740,7 @@ html {
     height: 2.35rem;
     padding-left: 0.55rem;
     padding-right: 0.55rem;
+    overflow: visible;
   }
 
   .argus-module-launcher {
@@ -737,10 +756,10 @@ html {
   }
 
   .argus-orbit-info-panel {
-    left: auto;
+    left: max(0.5rem, env(safe-area-inset-left));
     right: max(0.75rem, env(safe-area-inset-right));
-    top: calc(5.95rem + env(safe-area-inset-top));
-    width: min(17.5rem, calc(100vw - 1.5rem));
+    top: var(--argus-mobile-top-zone);
+    width: auto;
   }
 
   .argus-orbit-info-panel.orbit-info-card {
@@ -753,21 +772,24 @@ html {
   }
 
   .argus-orbit-info-panel.orbit-info-card p {
-    letter-spacing: 0.12em;
+    letter-spacing: 0.02em;
+    line-height: 1rem;
+    white-space: normal;
   }
 
   .argus-orbit-zoom-panel {
-    bottom: calc(8.25rem + env(safe-area-inset-bottom));
+    bottom: var(--argus-mobile-emergency-dock);
     left: max(0.75rem, env(safe-area-inset-left));
     width: min(15.5rem, calc(100vw - 1.5rem));
   }
 
   .argus-nearby-sheet {
+    bottom: var(--argus-mobile-emergency-dock);
     left: max(0.5rem, env(safe-area-inset-left));
-    max-height: 42vh;
-    max-height: 42svh;
-    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+    max-height: calc(100svh - 19rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    padding-bottom: 0.75rem;
     right: max(0.5rem, env(safe-area-inset-right));
+    border-radius: 0.5rem;
   }
 
   .argus-nearby-sheet-scroll {
@@ -775,14 +797,19 @@ html {
   }
 
   .argus-mobile-weather-widget {
-    bottom: calc(1rem + env(safe-area-inset-bottom));
+    bottom: var(--argus-mobile-emergency-dock);
     display: block;
-    left: max(0.75rem, env(safe-area-inset-left));
-    max-width: calc(100% - 9.75rem);
+    left: max(0.5rem, env(safe-area-inset-left));
+    max-height: calc(100svh - 19rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-width: none;
+    overflow-y: auto;
+    right: max(0.5rem, env(safe-area-inset-right));
+    top: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .argus-mobile-weather-card {
-    width: min(16.5rem, calc(100% - 1rem));
+    width: auto;
   }
 
   .argus-mobile-weather-pill {
@@ -793,6 +820,11 @@ html {
     max-height: calc(100svh - 1.5rem);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+  }
+
+  .argus-notification-panel {
+    bottom: var(--argus-mobile-emergency-dock);
+    top: var(--argus-mobile-top-zone);
   }
 
   .argus-module-button {
@@ -851,8 +883,12 @@ html {
     max-width: min(62vw, 15rem);
   }
 
+  .argus-leaflet-map .leaflet-bottom.leaflet-left,
   .argus-leaflet-map .leaflet-bottom.leaflet-right {
-    margin-bottom: calc(4.75rem + env(safe-area-inset-bottom));
+    margin-bottom: var(--argus-mobile-emergency-dock);
+  }
+
+  .argus-leaflet-map .leaflet-bottom.leaflet-right {
     margin-right: max(0.5rem, env(safe-area-inset-right));
   }
 }

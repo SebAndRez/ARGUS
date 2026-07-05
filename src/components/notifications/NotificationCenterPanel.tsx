@@ -153,7 +153,7 @@ export default function NotificationCenterPanel({
   if (!open) return null;
 
   return (
-    <aside className="pointer-events-auto fixed inset-x-2 bottom-2 top-24 z-[64] flex flex-col border border-cyan-300/20 bg-slate-950/96 shadow-2xl shadow-black/50 backdrop-blur-xl sm:bottom-4 sm:left-auto sm:right-4 sm:top-28 sm:w-[430px]">
+    <aside className="argus-notification-panel pointer-events-auto fixed inset-x-2 bottom-2 top-24 z-[64] flex flex-col border border-cyan-300/20 bg-slate-950/96 shadow-2xl shadow-black/50 backdrop-blur-xl sm:bottom-4 sm:left-auto sm:right-4 sm:top-28 sm:w-[430px]">
       <header className="border-b border-white/10 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

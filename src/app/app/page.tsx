@@ -2025,7 +2025,7 @@ export default function AppPage() {
       />
 
       <nav
-        className={`argus-top-bar argus-view-toolbar pointer-events-auto fixed z-[55] flex max-w-[calc(100%-1rem)] items-center gap-1.5 overflow-x-auto border border-cyan-300/20 bg-slate-950/95 p-1.5 shadow-xl shadow-black/40 backdrop-blur-xl ${
+        className={`argus-top-bar argus-view-toolbar pointer-events-auto fixed z-[55] grid max-w-[calc(100%-1rem)] grid-cols-4 items-center gap-1.5 overflow-x-auto border border-cyan-300/20 bg-slate-950/95 p-1.5 shadow-xl shadow-black/40 backdrop-blur-xl sm:flex ${
           displayMode === "command"
             ? "argus-view-toolbar-command"
             : "argus-view-toolbar-map"
@@ -2040,7 +2040,7 @@ export default function AppPage() {
             key={mode}
             type="button"
             onClick={() => changeDisplayMode(mode)}
-            className={`min-h-9 shrink-0 border px-3 text-xs font-semibold ${
+            className={`min-h-9 min-w-0 shrink border px-2 text-xs font-semibold sm:shrink-0 sm:px-3 ${
               displayMode === mode
                 ? "border-cyan-300/35 bg-cyan-400/15 text-cyan-100"
                 : "border-white/8 bg-white/[0.03] text-slate-300"
@@ -2055,9 +2055,10 @@ export default function AppPage() {
             location.refreshLocation();
             setCenterRequestKey((current) => current + 1);
           }}
-          className="min-h-9 shrink-0 border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200"
+          className="min-h-9 min-w-0 shrink border border-white/10 bg-white/[0.03] px-2 text-xs font-semibold text-slate-200 sm:shrink-0 sm:px-3"
         >
-          Centrar GPS
+          <span className="sm:hidden">GPS</span>
+          <span className="hidden sm:inline">Centrar GPS</span>
         </button>
         <button
           type="button"
@@ -2068,17 +2069,24 @@ export default function AppPage() {
             }
             enterOrbitMode();
           }}
-          className={`min-h-9 shrink-0 border px-3 text-xs font-semibold ${
+          className={`min-h-9 min-w-0 shrink border px-2 text-xs font-semibold sm:shrink-0 sm:px-3 ${
             mapViewMode === "orbit"
               ? "border-cyan-300/35 bg-cyan-400/15 text-cyan-100"
               : "border-white/8 bg-white/[0.03] text-slate-300"
           }`}
         >
-          {mapViewMode === "orbit" ? "Salir Orbit" : "Orbit"}
+          {mapViewMode === "orbit" ? (
+            <>
+              <span className="sm:hidden">Salir 2D</span>
+              <span className="hidden sm:inline">Salir Orbit</span>
+            </>
+          ) : (
+            "Orbit"
+          )}
         </button>
         <a
           href="/modules"
-          className="inline-flex min-h-9 shrink-0 items-center border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200 hover:border-cyan-300/30 hover:text-cyan-100"
+          className="hidden min-h-9 shrink-0 items-center border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200 hover:border-cyan-300/30 hover:text-cyan-100 sm:inline-flex"
         >
           Módulos ARGUS
         </a>
