@@ -1,5 +1,20 @@
 [
   {
+    "changeId": "d5e2283d5d52",
+    "date": "2026-07-05",
+    "commit": "pending-d5e2283",
+    "title": "fix: use commit message in public changelog",
+    "fileCount": 3,
+    "summary": "Se actualizaron 3 archivos relacionados con Actualizaciones publicas.",
+    "changes": [
+      "Se realizaron ajustes internos para mejorar estabilidad, interfaz o mantenimiento de ARGUS."
+    ],
+    "affectedModules": [
+      "Actualizaciones publicas"
+    ],
+    "simpleExplanation": "Esta actualizacion permite que ARGUS publique un registro claro de cambios para que los usuarios entiendan que se modifico."
+  },
+  {
     "changeId": "23eb69bf8a6a",
     "date": "2026-07-05",
     "commit": "pending-23eb69b",

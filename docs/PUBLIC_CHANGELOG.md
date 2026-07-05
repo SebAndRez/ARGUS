@@ -1,5 +1,23 @@
 # ARGUS Public Changelog
 
+## 2026-07-05 - pending-d5e2283 - fix: use commit message in public changelog
+
+**Archivos modificados:** 3
+
+**Resumen publico:**  
+Se actualizaron 3 archivos relacionados con Actualizaciones publicas.
+
+**Cambios principales:**
+- Se realizaron ajustes internos para mejorar estabilidad, interfaz o mantenimiento de ARGUS.
+
+**Modulos afectados:**
+- Actualizaciones publicas
+
+**En simple:**  
+Esta actualizacion permite que ARGUS publique un registro claro de cambios para que los usuarios entiendan que se modifico.
+
+---
+
 ## 2026-07-05 - pending-23eb69b - Actualizacion en preparacion
 
 **Archivos modificados:** 230

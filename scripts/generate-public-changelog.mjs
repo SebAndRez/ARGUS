@@ -142,7 +142,10 @@ function buildSimpleExplanation(modules) {
 }
 
 function getCommitTitle() {
-  const messageFile = process.env.HUSKY_GIT_PARAMS || process.env.GIT_COMMIT_MESSAGE_FILE;
+  const messageFile =
+    process.argv[2] ||
+    process.env.HUSKY_GIT_PARAMS ||
+    process.env.GIT_COMMIT_MESSAGE_FILE;
   if (messageFile && existsSync(messageFile)) {
     const firstLine = readFileSync(messageFile, "utf8")
       .split(/\r?\n/)
