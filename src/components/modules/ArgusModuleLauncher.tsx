@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
+import { getSortedModules } from "@/data/argusModules";
 import MobileSafetyPanel from "@/components/mobile-safety/MobileSafetyPanel";
 import AuraMedicalPanel from "@/components/medical/AuraMedicalPanel";
 import FenixTwinModulePanel from "@/components/modules/FenixTwinModulePanel";
@@ -29,22 +31,12 @@ interface Props {
   embedded?: boolean;
 }
 
-const publicModules: Array<{
-  state: Extract<ModuleState, "fenix" | "aura">;
-  title: string;
-  description: string;
-}> = [
-  {
-    state: "fenix",
-    title: "ARGUS Fenix Twin",
-    description: "Evacuacion, refugios y simulacion institucional",
-  },
-  {
-    state: "aura",
-    title: "AURA Medic Mesh",
-    description: "SOS medico, ficha opcional y puntos cercanos",
-  },
-];
+const quickOpenBySlug: Partial<Record<string, Extract<ModuleState, "fenix" | "aura">>> = {
+  aura: "aura",
+  fenix: "fenix",
+};
+
+const moduleCatalog = getSortedModules();
 
 export default function ArgusModuleLauncher({
   location,
@@ -88,21 +80,48 @@ export default function ArgusModuleLauncher({
 
         {state === "menu" && (
           <div className="argus-module-menu">
-            {publicModules.map((module) => (
-              <button
-                key={module.state}
-                type="button"
-                onClick={() => openState(module.state)}
-                className="argus-module-card"
-              >
-                <span className="text-sm font-semibold text-white">
-                  {module.title}
-                </span>
-                <span className="text-[0.65rem] text-slate-400">
-                  {module.description}
-                </span>
-              </button>
-            ))}
+            {moduleCatalog.map((module) => {
+              const quickState = quickOpenBySlug[module.slug];
+              const cardContent = (
+                <>
+                  <span className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-white">
+                      {module.name}
+                    </span>
+                    <span className="shrink-0 border border-cyan-300/20 bg-cyan-400/10 px-2 py-0.5 text-[0.5rem] font-bold uppercase tracking-[0.08em] text-cyan-100">
+                      {module.status}
+                    </span>
+                  </span>
+                  <span className="text-[0.65rem] leading-4 text-slate-400">
+                    {module.description}
+                  </span>
+                </>
+              );
+
+              if (quickState) {
+                return (
+                  <button
+                    key={module.id}
+                    type="button"
+                    onClick={() => openState(quickState)}
+                    className="argus-module-card"
+                  >
+                    {cardContent}
+                  </button>
+                );
+              }
+
+              return (
+                <Link
+                  key={module.id}
+                  href={module.route}
+                  onClick={() => setState("closed")}
+                  className="argus-module-card"
+                >
+                  {cardContent}
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>
