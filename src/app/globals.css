@@ -93,9 +93,14 @@ html {
 }
 
 .argus-module-launcher {
-  top: calc(max(0.75rem, env(safe-area-inset-top)) + 4.4rem);
+  top: max(0.75rem, env(safe-area-inset-top));
   right: max(0.75rem, env(safe-area-inset-right));
   max-width: calc(100vw - 1.5rem);
+}
+
+.argus-notification-button {
+  right: calc(max(0.75rem, env(safe-area-inset-right)) + 8.25rem);
+  top: max(0.75rem, env(safe-area-inset-top));
 }
 
 .argus-module-button {
@@ -142,7 +147,7 @@ html {
 }
 
 .argus-module-drawer {
-  top: calc(max(0.75rem, env(safe-area-inset-top)) + 7.5rem);
+  top: calc(max(0.75rem, env(safe-area-inset-top)) + 3.25rem);
   right: max(0.75rem, env(safe-area-inset-right));
   width: min(26rem, 34vw);
   max-height: calc(100dvh - 8.5rem);
@@ -285,8 +290,8 @@ html {
 }
 
 .argus-login-button {
-  right: calc(1rem + env(safe-area-inset-right));
-  top: calc(0.85rem + env(safe-area-inset-top));
+  right: calc(max(0.75rem, env(safe-area-inset-right)) + 15.5rem);
+  top: max(0.75rem, env(safe-area-inset-top));
 }
 
 .argus-weather-panel {
@@ -369,9 +374,12 @@ html {
     0 28px 80px rgba(0, 0, 0, 0.55);
 }
 
-.argus-map-tactical .argus-leaflet-map .leaflet-tile-pane,
+.argus-map-tactical .argus-leaflet-map .leaflet-tile-pane {
+  filter: brightness(0.82) contrast(1.08) saturate(0.78);
+}
+
 .argus-map-satellite .argus-leaflet-map .leaflet-tile-pane {
-  filter: invert(1) hue-rotate(180deg) brightness(0.72) contrast(1.15) saturate(0.75);
+  filter: brightness(0.74) contrast(1.12) saturate(0.82);
 }
 
 .argus-map-streets .argus-leaflet-map .leaflet-tile-pane {
@@ -640,7 +648,7 @@ html {
 
   .argus-login-button {
     min-height: 2rem;
-    right: calc(0.65rem + env(safe-area-inset-right));
+    right: calc(max(0.5rem, env(safe-area-inset-right)) + 11.75rem);
     top: calc(10.35rem + env(safe-area-inset-top));
   }
 
@@ -678,8 +686,13 @@ html {
   }
 
   .argus-module-launcher {
-    top: calc(7.15rem + env(safe-area-inset-top));
+    top: calc(0.5rem + env(safe-area-inset-top));
     right: max(0.5rem, env(safe-area-inset-right));
+  }
+
+  .argus-notification-button {
+    right: calc(max(0.5rem, env(safe-area-inset-right)) + 6.4rem);
+    top: calc(0.5rem + env(safe-area-inset-top));
   }
 
   .argus-module-button {
@@ -750,7 +763,7 @@ html {
   }
 
   .argus-module-launcher {
-    top: calc(3.75rem + env(safe-area-inset-top));
+    top: calc(0.5rem + env(safe-area-inset-top));
   }
 
   .argus-medical-panel,

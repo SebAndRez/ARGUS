@@ -27,6 +27,23 @@ interface Props {
   onSafetyCheckCreated?: (check: SafetyCheck) => void;
 }
 
+const publicModules: Array<{
+  state: Extract<ModuleState, "fenix" | "aura">;
+  title: string;
+  description: string;
+}> = [
+  {
+    state: "fenix",
+    title: "ARGUS Fenix Twin",
+    description: "Evacuacion, refugios y simulacion institucional",
+  },
+  {
+    state: "aura",
+    title: "AURA Medic Mesh",
+    description: "SOS medico, ficha opcional y puntos cercanos",
+  },
+];
+
 export default function ArgusModuleLauncher({
   location,
   onOpen,
@@ -61,56 +78,21 @@ export default function ArgusModuleLauncher({
 
         {state === "menu" && (
           <div className="argus-module-menu">
-            <button
-              type="button"
-              onClick={() => openState("fenix")}
-              className="argus-module-card"
-            >
-              <span className="text-sm font-semibold text-white">ARGUS Fenix Twin</span>
-              <span className="text-[0.65rem] text-slate-400">
-                Evacuacion, refugios y simulacion institucional
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => openState("aura")}
-              className="argus-module-card"
-            >
-              <span className="text-sm font-semibold text-white">AURA Medic Mesh</span>
-              <span className="text-[0.65rem] text-slate-400">
-                SOS médico, ficha opcional y puntos cercanos
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => openState("quakesense")}
-              className="argus-module-card"
-            >
-              <span className="text-sm font-semibold text-white">ARGUS QuakeSense</span>
-              <span className="text-[0.65rem] text-slate-400">
-                Sensor ciudadano sismico experimental
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => openState("safety")}
-              className="argus-module-card"
-            >
-              <span className="text-sm font-semibold text-white">Mobile Safety Agent</span>
-              <span className="text-[0.65rem] text-slate-400">
-                Check-in post-sismo y arquitectura movil
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => openState("sensorSafety")}
-              className="argus-module-card"
-            >
-              <span className="text-sm font-semibold text-white">Sensor Safety</span>
-              <span className="text-[0.65rem] text-slate-400">
-                Sismos, accidentes, caidas y check-in
-              </span>
-            </button>
+            {publicModules.map((module) => (
+              <button
+                key={module.state}
+                type="button"
+                onClick={() => openState(module.state)}
+                className="argus-module-card"
+              >
+                <span className="text-sm font-semibold text-white">
+                  {module.title}
+                </span>
+                <span className="text-[0.65rem] text-slate-400">
+                  {module.description}
+                </span>
+              </button>
+            ))}
           </div>
         )}
       </div>

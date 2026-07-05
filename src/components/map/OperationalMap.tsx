@@ -124,6 +124,31 @@ interface Props {
 const DEFAULT_CENTER: [number, number] = [-33.4489, -70.6693];
 const GLOBE_ZOOM_THRESHOLD = 2;
 const MAP_RETURN_ZOOM = GLOBE_ZOOM_THRESHOLD + 2;
+const baseMapSources: Record<
+  BaseMapType,
+  { url: string; attribution: string; maxZoom?: number }
+> = {
+  tactical: {
+    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    attribution: "© OpenStreetMap © CARTO",
+    maxZoom: 20,
+  },
+  streets: {
+    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: "© OpenStreetMap contributors",
+    maxZoom: 19,
+  },
+  satellite: {
+    url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+    attribution: "© OpenStreetMap © CARTO",
+    maxZoom: 20,
+  },
+  light: {
+    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    attribution: "© OpenStreetMap © CARTO",
+    maxZoom: 20,
+  },
+};
 
 const isEventVisible = (event: CrisisEvent, layers: MapLayerSettings) => {
   if (event.category?.toLowerCase() === "missing_person" && !layers.missingPersons) {
@@ -283,6 +308,8 @@ export default function OperationalMap({
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<import("leaflet").Map | null>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
+  const initialBaseMapTypeRef = useRef(baseMapType);
+  const baseTileLayerRef = useRef<import("leaflet").TileLayer | null>(null);
   const eventLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
   const demoEventLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
   const externalEventLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
@@ -486,8 +513,10 @@ export default function OperationalMap({
           worldCopyJump: true,
         });
 
-        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: "© OpenStreetMap contributors",
+        const tileSource = baseMapSources[initialBaseMapTypeRef.current];
+        baseTileLayerRef.current = L.tileLayer(tileSource.url, {
+          attribution: tileSource.attribution,
+          maxZoom: tileSource.maxZoom,
         }).addTo(map);
         L.control.zoom({ position: "bottomleft" }).addTo(map);
 
@@ -1184,6 +1213,23 @@ export default function OperationalMap({
       mapRef.current.invalidateSize(false);
     }
   }, [exitGlobeMode, isGlobeMode, viewMode]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const L = leafletRef.current;
+    if (!mapReady || !map || !L) return;
+
+    if (baseTileLayerRef.current) {
+      map.removeLayer(baseTileLayerRef.current);
+    }
+
+    const tileSource = baseMapSources[baseMapType];
+    baseTileLayerRef.current = L.tileLayer(tileSource.url, {
+      attribution: tileSource.attribution,
+      maxZoom: tileSource.maxZoom,
+    }).addTo(map);
+    baseTileLayerRef.current.bringToBack();
+  }, [baseMapType, mapReady]);
 
   return (
     <div

@@ -141,10 +141,10 @@ const initialLayers = {
   medicalPoints: false,
   quakeSense: false,
   safetyChecks: false,
-  weatherRisk: true,
-  terrestrialRoutes: true,
-  airRoutes: true,
-  maritimeRoutes: true,
+  weatherRisk: false,
+  terrestrialRoutes: false,
+  airRoutes: false,
+  maritimeRoutes: false,
   conflictZones: false,
   conflictEvents: false,
   territorialControl: false,
@@ -224,6 +224,52 @@ const mobileExclusiveWidgets: VisibleWidgetKey[] = [
   "nearby",
   "risk",
 ];
+const CITIZEN_REPORT_TTL_MS = 2 * 60 * 60 * 1000;
+const CITIZEN_REPORT_ACTIVE_STATUSES = new Set([
+  "VALIDATED",
+  "ESCALATED",
+  "CONFIRMED",
+]);
+const CITIZEN_REPORT_ACTIVE_LIFECYCLES = new Set(["confirmed", "responding"]);
+
+function isCitizenReportVisible(event: CrisisEvent, nowMs: number) {
+  if (event.type !== "REPORT" || event.recordType === "HelpRequest") {
+    return true;
+  }
+
+  const normalizedStatus = event.status?.trim().toUpperCase();
+  if (
+    normalizedStatus &&
+    CITIZEN_REPORT_ACTIVE_STATUSES.has(normalizedStatus)
+  ) {
+    return true;
+  }
+  if (
+    event.lifecycleStatus &&
+    CITIZEN_REPORT_ACTIVE_LIFECYCLES.has(event.lifecycleStatus)
+  ) {
+    return true;
+  }
+
+  const explicitExpiration = event.expiresAt
+    ? new Date(event.expiresAt).getTime()
+    : Number.NaN;
+  const createdAt = new Date(event.createdAt).getTime();
+  const lastVerifiedAt =
+    event.stillHappeningCount && event.lastVerifiedAt
+      ? new Date(event.lastVerifiedAt).getTime()
+      : Number.NaN;
+  const baseTime =
+    Number.isFinite(lastVerifiedAt) &&
+    (!Number.isFinite(createdAt) || lastVerifiedAt > createdAt)
+      ? lastVerifiedAt
+      : createdAt;
+  const expiresAt = Number.isFinite(explicitExpiration)
+    ? explicitExpiration
+    : baseTime + CITIZEN_REPORT_TTL_MS;
+
+  return Number.isFinite(expiresAt) ? expiresAt > nowMs : true;
+}
 
 function persistVisibleWidgets(widgets: typeof defaultVisibleWidgets) {
   try {
@@ -238,7 +284,7 @@ export default function AppPage() {
   const [displayMode, setDisplayMode] = useState<
     "command" | "map" | "layers"
   >(() => {
-    if (typeof window === "undefined") return "command";
+    if (typeof window === "undefined") return "map";
     try {
       const storedMode = window.localStorage.getItem("argus-display-mode");
       if (
@@ -249,9 +295,9 @@ export default function AppPage() {
         return storedMode;
       }
     } catch {
-      return "command";
+      return "map";
     }
-    return "command";
+    return "map";
   });
   const [mapViewMode, setMapViewMode] = useState<MapViewMode>("map");
   const [activeMobilePanel, setActiveMobilePanel] =
@@ -287,6 +333,7 @@ export default function AppPage() {
   const [selectedConflictZone, setSelectedConflictZone] =
     useState<ConflictZone | null>(null);
   const [events, setEvents] = useState<CrisisEvent[]>(initialEventState);
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
   const [demoEvents, setDemoEvents] = useState<CrisisEvent[]>(() => [...demoCrisisEvents]);
   const [layerSettings, setLayerSettings] = useState(initialLayers);
   const [baseMapType, setBaseMapType] = useState<BaseMapType>("tactical");
@@ -408,6 +455,14 @@ export default function AppPage() {
       router.replace("/onboarding?next=/app");
     }
   }, [router, sessionLoading, sessionUser?.profileCompletionRequired]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setCurrentTimeMs(Date.now());
+    }, 60_000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
@@ -693,13 +748,17 @@ export default function AppPage() {
     demoSeverityFilter,
     demoTypeFilter,
   ]);
+  const publicEvents = useMemo(
+    () => events.filter((event) => isCitizenReportVisible(event, currentTimeMs)),
+    [currentTimeMs, events]
+  );
   const visibleDemoEvents = useMemo(
     () => (layerSettings.demoReports ? filteredDemoEvents : []),
     [filteredDemoEvents, layerSettings.demoReports]
   );
   const nearbyEventPool = useMemo(
-    () => [...events, ...visibleDemoEvents],
-    [events, visibleDemoEvents]
+    () => [...publicEvents, ...visibleDemoEvents],
+    [publicEvents, visibleDemoEvents]
   );
   const activeLayerCount = useMemo(
     () => Object.values(layerSettings).filter(Boolean).length,
@@ -823,7 +882,7 @@ export default function AppPage() {
       setMapViewMode("map");
       collapseSecondaryPanels();
 
-      const internalEvent = [...events, ...visibleDemoEvents].find(
+      const internalEvent = [...publicEvents, ...visibleDemoEvents].find(
         (event) =>
           event.id === notification.relatedEventId ||
           event.id === notification.relatedReportId ||
@@ -872,8 +931,8 @@ export default function AppPage() {
     },
     [
       collapseSecondaryPanels,
-      events,
       externalEvents,
+      publicEvents,
       selectEvent,
       selectExternalEvent,
       visibleDemoEvents,
@@ -937,11 +996,11 @@ export default function AppPage() {
   >(
     () => ({
       reports: {
-        count: events.filter((event) => event.type === "REPORT").length,
+        count: publicEvents.filter((event) => event.type === "REPORT").length,
         detail: "Reportes ciudadanos",
       },
       missingPersons: {
-        count: events.filter(
+        count: publicEvents.filter(
           (event) => event.category?.toLowerCase() === "missing_person"
         ).length,
         detail: "Reportes ciudadanos de busqueda/rescate",
@@ -1189,11 +1248,11 @@ export default function AppPage() {
         disabledLabel: reliefWebConfigured === false ? "APP" : "...",
       },
       sos: {
-        count: events.filter((event) => event.type === "SOS").length,
+        count: publicEvents.filter((event) => event.type === "SOS").length,
         detail: "Solicitudes de ayuda",
       },
       alerts: {
-        count: events.filter((event) => event.type === "ALERT").length,
+        count: publicEvents.filter((event) => event.type === "ALERT").length,
         detail: "Alertas operacionales",
       },
       critical: {
@@ -1201,7 +1260,7 @@ export default function AppPage() {
         detail: "Prioridad critica activa",
       },
       resolved: {
-        count: events.filter((event) => event.status === "RESOLVED").length,
+        count: publicEvents.filter((event) => event.status === "RESOLVED").length,
         detail: "Eventos cerrados",
       },
       visualSources: {
@@ -1327,7 +1386,6 @@ export default function AppPage() {
     [
       criticalCount,
       demoEvents.length,
-      events,
       filteredDemoEvents.length,
       gdacsCached,
       gdacsEvents.length,
@@ -1369,6 +1427,7 @@ export default function AppPage() {
       nwsUserAgentConfigured,
       officialSourceCount,
       publicCameraCount,
+      publicEvents,
       reliefWebCached,
       reliefWebConfigured,
       reliefWebEvents.length,
@@ -1841,7 +1900,7 @@ export default function AppPage() {
   };
 
   useEffect(() => {
-    if (!visibleWidgets.risk) return;
+    if (displayMode !== "command" || !visibleWidgets.risk) return;
 
     const controller = new AbortController();
     setRiskStatus("loading");
@@ -1877,7 +1936,7 @@ export default function AppPage() {
 
     loadRiskAssessments();
     return () => controller.abort();
-  }, [riskRefreshVersion, visibleWidgets.risk]);
+  }, [displayMode, riskRefreshVersion, visibleWidgets.risk]);
 
   const refreshRiskAssessments = () => {
     setRiskRefreshVersion((current) => current + 1);
@@ -1945,7 +2004,7 @@ export default function AppPage() {
   return (
     <main className="argus-app-shell relative overflow-hidden bg-slate-950 text-white">
       <OperationalMap
-        events={events}
+        events={publicEvents}
         demoEvents={filteredDemoEvents}
         externalEvents={externalEvents}
         selectedEventId={selectedEvent?.id}
@@ -2057,6 +2116,7 @@ export default function AppPage() {
         </a>
       </nav>
 
+      {displayMode === "command" && (
       <div className="argus-mobile-panel argus-widget-rail pointer-events-auto fixed z-[54] flex max-w-[calc(100%-1rem)] gap-1 overflow-x-auto border border-white/10 bg-slate-950/88 p-1 shadow-xl shadow-black/35 backdrop-blur-xl">
         {([
           ["hud", "HUD"],
@@ -2080,6 +2140,7 @@ export default function AppPage() {
           </button>
         ))}
       </div>
+      )}
 
       <ArgusModuleLauncher
         location={{ latitude: location.latitude, longitude: location.longitude }}

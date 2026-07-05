@@ -138,6 +138,59 @@ const createEarthTexture = () => {
     ctx.stroke();
   };
 
+  const project = (longitude: number, latitude: number): [number, number] => [
+    ((longitude + 180) / 360) * canvas.width,
+    ((90 - latitude) / 180) * canvas.height,
+  ];
+
+  const drawGeoLand = (points: Array<[number, number]>) => {
+    drawLand(points.map(([longitude, latitude]) => project(longitude, latitude)));
+  };
+
+  ctx.fillStyle = "rgba(9, 37, 58, 0.78)";
+  for (let index = 0; index < 1500; index += 1) {
+    const x = Math.random() * canvas.width;
+    const y = Math.random() * canvas.height;
+    const radius = Math.random() * 1.8 + 0.35;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = "rgba(29, 78, 74, 0.9)";
+  ctx.strokeStyle = "rgba(125, 211, 252, 0.3)";
+  ctx.lineWidth = 1.4;
+
+  drawGeoLand([
+    [-168, 71], [-138, 70], [-108, 56], [-96, 48], [-83, 31], [-100, 18],
+    [-116, 25], [-125, 41], [-150, 58],
+  ]);
+  drawGeoLand([
+    [-86, 13], [-74, 10], [-52, -8], [-44, -24], [-55, -44], [-70, -55],
+    [-78, -28], [-82, -4],
+  ]);
+  drawGeoLand([
+    [-11, 36], [18, 37], [33, 31], [43, 12], [35, -24], [20, -35],
+    [7, -32], [-9, 5],
+  ]);
+  drawGeoLand([
+    [-10, 58], [28, 70], [62, 56], [118, 62], [153, 48], [142, 21],
+    [104, 6], [74, 20], [44, 31], [15, 45],
+  ]);
+  drawGeoLand([
+    [69, 8], [88, 23], [103, 8], [111, -7], [94, -10], [78, 4],
+  ]);
+  drawGeoLand([
+    [112, -12], [154, -27], [146, -43], [116, -36],
+  ]);
+  drawGeoLand([
+    [-54, 77], [-22, 74], [-34, 61], [-52, 62],
+  ]);
+  drawGeoLand([
+    [-180, -62], [-120, -68], [-45, -64], [24, -69], [96, -63],
+    [180, -66], [180, -82], [-180, -82],
+  ]);
+
   // Americas
   drawLand([
     [148, 94], [222, 75], [300, 106], [316, 160], [284, 204],
@@ -198,6 +251,52 @@ const createEarthTexture = () => {
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+};
+
+const createCloudTexture = () => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1024;
+  canvas.height = 512;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (let index = 0; index < 240; index += 1) {
+    const x = Math.random() * canvas.width;
+    const y = Math.random() * canvas.height;
+    const width = 24 + Math.random() * 110;
+    const height = 4 + Math.random() * 16;
+    const alpha = 0.018 + Math.random() * 0.045;
+    ctx.fillStyle = `rgba(226, 244, 255, ${alpha})`;
+    ctx.beginPath();
+    ctx.ellipse(x, y, width, height, Math.random() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+};
+
+const createTerminatorTexture = () => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  const gradient = ctx.createRadialGradient(178, 172, 70, 256, 256, 260);
+  gradient.addColorStop(0, "rgba(255,255,255,0.22)");
+  gradient.addColorStop(0.48, "rgba(34,211,238,0.08)");
+  gradient.addColorStop(0.74, "rgba(2,6,23,0.22)");
+  gradient.addColorStop(1, "rgba(2,6,23,0.82)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const texture = new THREE.CanvasTexture(canvas);
   texture.needsUpdate = true;
   return texture;
 };
@@ -320,6 +419,8 @@ export default function GlobeView({
     scene.add(root);
 
     const earthTexture = createEarthTexture();
+    const cloudTexture = createCloudTexture();
+    const terminatorTexture = createTerminatorTexture();
     const earth = new THREE.Mesh(
       new THREE.SphereGeometry(GLOBE_RADIUS, 96, 64),
       new THREE.MeshPhongMaterial({
@@ -332,12 +433,35 @@ export default function GlobeView({
     );
     root.add(earth);
 
+    const cloudLayer = new THREE.Mesh(
+      new THREE.SphereGeometry(GLOBE_RADIUS + 0.026, 96, 64),
+      new THREE.MeshBasicMaterial({
+        map: cloudTexture ?? undefined,
+        transparent: true,
+        opacity: 0.58,
+        depthWrite: false,
+      })
+    );
+    root.add(cloudLayer);
+
+    const terminator = new THREE.Mesh(
+      new THREE.SphereGeometry(GLOBE_RADIUS + 0.032, 96, 64),
+      new THREE.MeshBasicMaterial({
+        map: terminatorTexture ?? undefined,
+        transparent: true,
+        opacity: 0.48,
+        depthWrite: false,
+      })
+    );
+    terminator.rotation.set(0.1, -0.52, 0);
+    root.add(terminator);
+
     const wire = new THREE.Mesh(
       new THREE.SphereGeometry(GLOBE_RADIUS + 0.012, 48, 32),
       new THREE.MeshBasicMaterial({
         color: 0x67e8f9,
         transparent: true,
-        opacity: 0.08,
+        opacity: 0.035,
         wireframe: true,
       })
     );
@@ -509,7 +633,8 @@ export default function GlobeView({
       if (active && !isDragging) {
         root.rotation.y += 0.0015;
       }
-      wire.rotation.y -= 0.0008;
+      wire.rotation.y -= 0.00045;
+      cloudLayer.rotation.y += 0.00035;
       renderer.render(scene, camera);
       frameId = window.requestAnimationFrame(render);
     };
@@ -535,8 +660,14 @@ export default function GlobeView({
       renderer.domElement.removeEventListener("pointerup", handlePointerUp);
       renderer.domElement.removeEventListener("pointercancel", handlePointerUp);
       earthTexture?.dispose();
+      cloudTexture?.dispose();
+      terminatorTexture?.dispose();
       earth.geometry.dispose();
       (earth.material as THREE.Material).dispose();
+      cloudLayer.geometry.dispose();
+      (cloudLayer.material as THREE.Material).dispose();
+      terminator.geometry.dispose();
+      (terminator.material as THREE.Material).dispose();
       wire.geometry.dispose();
       (wire.material as THREE.Material).dispose();
       atmosphere.geometry.dispose();
