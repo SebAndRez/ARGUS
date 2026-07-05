@@ -1,5 +1,29 @@
 # ARGUS Public Changelog
 
+## 2026-07-05 - pending-23eb69b - Actualizacion en preparacion
+
+**Archivos modificados:** 230
+
+**Resumen publico:**  
+Se actualizaron 230 archivos relacionados con Mapa operativo y Dashboard.
+
+**Cambios principales:**
+- Se actualizaron componentes del mapa operativo.
+- Se mejoro la lectura y gestion de reportes.
+- Se actualizaron eventos o fuentes externas.
+- Se ajustaron vistas y elementos de interfaz.
+
+**Modulos afectados:**
+- Mapa operativo
+- Dashboard
+- Capas del mapa
+- Reportes ciudadanos
+
+**En simple:**  
+Esta actualizacion ayuda a que los reportes sean mas claros, ordenados y faciles de revisar.
+
+---
+
 ## 2026-07-05 - pending-21fdb63 - Actualizacion en preparacion
 
 **Archivos modificados:** 5

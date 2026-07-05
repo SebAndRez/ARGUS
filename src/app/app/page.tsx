@@ -82,6 +82,8 @@ import type {
   ArgusNotificationSummary,
 } from "@/types/notificationCenter";
 import { correlateExternalEvents } from "@/lib/ingestion/correlateExternalEvents";
+import { auditVigiaAction } from "@/modules/vigia/vigiaAccess";
+import { mapSessionUserToArgusRole } from "@/lib/modules/moduleAccess";
 import { getConflictProximityWarnings } from "@/lib/conflict/conflictRiskEngine";
 
 const OperationalMap = dynamic(
@@ -1901,6 +1903,15 @@ export default function AppPage() {
       }),
       ...prev,
     ]);
+    // Reporte ciudadano creado: queda disponible para el feed de ARGUS
+    // VIGÍA (mismo /api/reports) y registrado para auditoría del módulo.
+    auditVigiaAction({
+      reportId: data.report?.id,
+      userId: sessionUser?.id,
+      userRole: mapSessionUserToArgusRole(sessionUser),
+      action: "CREATE_REPORT",
+      reason: payload.category,
+    });
   }
 
   async function createHelpRequest(payload: {
@@ -2034,7 +2045,7 @@ export default function AppPage() {
           displayMode === "command"
             ? "argus-view-toolbar-command"
             : "argus-view-toolbar-map"
-        } ${mapViewMode === "orbit" ? "argus-orbit-left-topbar" : ""}`}
+        }`}
         aria-label="Vista operacional"
       >
         {([
@@ -2076,6 +2087,12 @@ export default function AppPage() {
           Orbit
         </button>
         <a
+          href="/modules"
+          className="inline-flex min-h-9 shrink-0 items-center border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200 hover:border-cyan-300/30 hover:text-cyan-100"
+        >
+          Módulos ARGUS
+        </a>
+        <a
           href="/updates"
           className="inline-flex min-h-9 shrink-0 items-center border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200 hover:border-cyan-300/30 hover:text-cyan-100"
         >
@@ -2096,11 +2113,7 @@ export default function AppPage() {
       </nav>
 
       {displayMode === "command" && (
-      <div
-        className={`argus-mobile-panel argus-widget-rail pointer-events-auto fixed z-[54] flex max-w-[calc(100%-1rem)] gap-1 overflow-x-auto border border-white/10 bg-slate-950/88 p-1 shadow-xl shadow-black/35 backdrop-blur-xl ${
-          mapViewMode === "orbit" ? "argus-orbit-left-widget-rail" : ""
-        }`}
-      >
+      <div className="argus-mobile-panel argus-widget-rail pointer-events-auto fixed z-[54] flex max-w-[calc(100%-1rem)] gap-1 overflow-x-auto border border-white/10 bg-slate-950/88 p-1 shadow-xl shadow-black/35 backdrop-blur-xl">
         {([
           ["hud", "HUD"],
           ["layers", "Capas"],

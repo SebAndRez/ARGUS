@@ -1,5 +1,26 @@
 [
   {
+    "changeId": "23eb69bf8a6a",
+    "date": "2026-07-05",
+    "commit": "pending-23eb69b",
+    "title": "Actualizacion en preparacion",
+    "fileCount": 230,
+    "summary": "Se actualizaron 230 archivos relacionados con Mapa operativo y Dashboard.",
+    "changes": [
+      "Se actualizaron componentes del mapa operativo.",
+      "Se mejoro la lectura y gestion de reportes.",
+      "Se actualizaron eventos o fuentes externas.",
+      "Se ajustaron vistas y elementos de interfaz."
+    ],
+    "affectedModules": [
+      "Mapa operativo",
+      "Dashboard",
+      "Capas del mapa",
+      "Reportes ciudadanos"
+    ],
+    "simpleExplanation": "Esta actualizacion ayuda a que los reportes sean mas claros, ordenados y faciles de revisar."
+  },
+  {
     "changeId": "21fdb63044a3",
     "date": "2026-07-05",
     "commit": "pending-21fdb63",

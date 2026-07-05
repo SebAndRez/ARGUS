@@ -8,7 +8,10 @@ const roleRank: Record<ArgusRole, number> = {
   OPERATOR: 4,
   ANALYST: 4,
   MEDICAL_OPERATOR: 5,
+  LOGISTICS: 5,
   INSTITUTIONAL_ADMIN: 6,
+  POLICE: 6,
+  AUTHORITY: 6,
   ADMIN: 7,
   SUPER_ADMIN: 8,
 };

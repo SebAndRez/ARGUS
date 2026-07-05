@@ -222,24 +222,8 @@ html {
   width: min(17.5rem, calc(100vw - 2rem));
 }
 
-/* Orbit mode fixed grid: left topbar, secondary rail, right topbar + info card. */
-.argus-view-toolbar.argus-orbit-left-topbar {
-  top: 24px;
-  left: 24px;
-  right: auto;
-}
-
-.argus-orbit-left-topbar button,
-.argus-orbit-left-topbar a {
-  min-height: 44px;
-  height: 44px;
-}
-
-.argus-widget-rail.argus-orbit-left-widget-rail {
-  top: 76px;
-  left: 24px;
-}
-
+/* Orbit mode fixed grid: right topbar + info card. Left topbar/widget rail share
+   a single top-left layout with 2D map mode (see .argus-view-toolbar / .argus-widget-rail). */
 .orbit-right-topbar {
   top: 24px;
   right: 24px;
@@ -319,25 +303,32 @@ html {
 }
 
 .argus-view-toolbar {
-  left: max(0.5rem, env(safe-area-inset-left));
+  left: max(24px, env(safe-area-inset-left));
+  top: max(24px, env(safe-area-inset-top));
   scrollbar-width: none;
+}
+
+.argus-view-toolbar button,
+.argus-view-toolbar a {
+  min-height: 44px;
+  height: 44px;
 }
 
 .argus-view-toolbar::-webkit-scrollbar {
   display: none;
 }
 
-.argus-view-toolbar-command {
-  top: calc(7.75rem + env(safe-area-inset-top));
-}
-
+/* Fila 1 (Vista mapa/Paneles/Centrar GPS/Orbit/Novedades/Guia/Perfil) shares
+   the same top-left anchor in both Orbit and 2D map, and regardless of
+   Vista mapa vs Paneles, so the corner never jumps between modes. */
+.argus-view-toolbar-command,
 .argus-view-toolbar-map {
-  top: max(0.5rem, env(safe-area-inset-top));
+  top: max(24px, env(safe-area-inset-top));
 }
 
 .argus-widget-rail {
-  left: max(0.5rem, env(safe-area-inset-left));
-  top: calc(10.75rem + env(safe-area-inset-top));
+  left: max(24px, env(safe-area-inset-left));
+  top: calc(max(24px, env(safe-area-inset-top)) + 52px);
   scrollbar-width: none;
 }
 

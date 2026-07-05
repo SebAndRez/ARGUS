@@ -6,7 +6,10 @@ export type ArgusRole =
   | "OPERATOR"
   | "ANALYST"
   | "MEDICAL_OPERATOR"
+  | "LOGISTICS"
   | "INSTITUTIONAL_ADMIN"
+  | "POLICE"
+  | "AUTHORITY"
   | "ADMIN"
   | "SUPER_ADMIN";
 

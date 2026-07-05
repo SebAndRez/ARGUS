@@ -1,0 +1,101 @@
+import type { AuraMedicalPoint, AuraMedicalProfile, AuraMedicalStockItem, AuraTriageCase } from "@/modules/aura/types";
+
+export const auraDemoProfile: AuraMedicalProfile = {
+  userId: "demo-user",
+  bloodType: "unknown",
+  allergies: ["No declarado"],
+  chronicConditions: [],
+  medications: [],
+  emergencyNotes: "Datos medicos opcionales disponibles solo si el usuario decide compartirlos.",
+  emergencyContact: {
+    id: "contact-demo-1",
+    name: "Contacto demo protegido",
+    relationship: "Contacto de emergencia",
+    phone: "+56 *** *** ***",
+    priority: 1,
+    canReceiveEmergencyAlert: true,
+  },
+  visibility: "emergency_only",
+  consentUpdatedAt: "2026-07-05T12:00:00.000Z",
+  isComplete: false,
+  updatedAt: "2026-07-05T12:00:00.000Z",
+};
+
+export const auraDemoMedicalPoints: AuraMedicalPoint[] = [
+  {
+    id: "aura-point-1",
+    name: "Punto Medico Norte Demo",
+    type: "field_medical_point",
+    status: "active",
+    location: { lat: -33.4372, lng: -70.6506, label: "Sector norte aproximado", isApproximate: true },
+    services: { firstAid: true, emergencyCare: true, triage: true, ambulance: "unknown", pharmacy: false, traumaCare: "unknown", pediatricCare: true, mentalHealthSupport: true, oxygen: true, defibrillator: true },
+    capacity: { bedsTotal: 12, bedsAvailable: 5, emergencyBedsAvailable: 2, ambulancesAvailable: 1, staffAvailable: 6, lastUpdatedAt: "2026-07-05T13:20:00.000Z", isEstimated: true },
+    operator: { name: "Equipo sanitario demo", type: "municipal" },
+    confidence: "high",
+    publicNotes: "Atencion primaria y primeros auxilios. Disponibilidad pendiente de confirmacion institucional.",
+    internalNotes: "Stock de botiquines bajo observacion. Dato demo no oficial.",
+    updatedAt: "2026-07-05T13:20:00.000Z",
+  },
+  {
+    id: "aura-point-2",
+    name: "Hospital Base Demo",
+    type: "hospital",
+    status: "limited",
+    location: { lat: -33.448, lng: -70.669, label: "Zona hospitalaria aproximada", isApproximate: true },
+    services: { firstAid: true, emergencyCare: true, triage: true, ambulance: true, pharmacy: true, traumaCare: true, pediatricCare: "unknown", mentalHealthSupport: "unknown", oxygen: true, defibrillator: true },
+    capacity: { bedsTotal: 80, bedsAvailable: 8, emergencyBedsAvailable: 1, ambulancesAvailable: 2, staffAvailable: 18, lastUpdatedAt: "2026-07-05T12:40:00.000Z", isEstimated: true },
+    operator: { name: "Red hospitalaria demo", type: "public" },
+    confidence: "medium",
+    publicNotes: "Capacidad limitada estimada. Verificar con personal sanitario autorizado.",
+    internalNotes: "Preparado para derivaciones AURA; no contiene fichas clinicas.",
+    updatedAt: "2026-07-05T12:40:00.000Z",
+  },
+  {
+    id: "aura-point-3",
+    name: "Refugio ARCA con punto medico",
+    type: "shelter_medical_point",
+    status: "active",
+    location: { lat: -33.432, lng: -70.642, label: "Refugio demo ARCA", isApproximate: true },
+    services: { firstAid: true, emergencyCare: false, triage: "unknown", ambulance: false, pharmacy: false, traumaCare: false, pediatricCare: true, mentalHealthSupport: true, oxygen: "unknown", defibrillator: "unknown" },
+    capacity: { bedsAvailable: 0, emergencyBedsAvailable: 0, staffAvailable: 2, lastUpdatedAt: "2026-07-05T11:55:00.000Z", isEstimated: true },
+    operator: { name: "Refugio demo", type: "ngo" },
+    confidence: "medium",
+    publicNotes: "Primeros auxilios basicos dentro de refugio. No reemplaza atencion hospitalaria.",
+    updatedAt: "2026-07-05T11:55:00.000Z",
+  },
+];
+
+export const auraDemoTriageCases: AuraTriageCase[] = [
+  {
+    id: "aura-case-1",
+    status: "waiting",
+    urgency: "critical",
+    category: "trauma",
+    location: { label: "Zona de evento aproximada", isApproximate: true },
+    linkedVigiaReportId: "vigia-med-demo-1",
+    linkedTalosAssessmentId: "talos-health-demo-1",
+    assignedMedicalPointId: "aura-point-2",
+    transportRequired: true,
+    notes: "Caso demo sin datos personales. Requiere evaluacion sanitaria autorizada.",
+    createdAt: "2026-07-05T12:12:00.000Z",
+    updatedAt: "2026-07-05T12:35:00.000Z",
+  },
+  {
+    id: "aura-case-2",
+    status: "in_triage",
+    urgency: "medium",
+    category: "respiratory",
+    location: { label: "Refugio demo ARCA", isApproximate: true },
+    assignedMedicalPointId: "aura-point-3",
+    transportRequired: false,
+    notes: "Demanda agregada para coordinacion; no incluye ficha individual.",
+    createdAt: "2026-07-05T10:40:00.000Z",
+    updatedAt: "2026-07-05T11:20:00.000Z",
+  },
+];
+
+export const auraDemoStock: AuraMedicalStockItem[] = [
+  { id: "stock-1", name: "Botiquines de primeros auxilios", category: "first_aid", quantity: 4, unit: "kits", status: "low", locationId: "aura-point-1", restricted: false, updatedAt: "2026-07-05T12:30:00.000Z" },
+  { id: "stock-2", name: "Oxigeno portatil", category: "oxygen", quantity: 2, unit: "cilindros", status: "critical", locationId: "aura-point-2", restricted: true, updatedAt: "2026-07-05T12:20:00.000Z" },
+  { id: "stock-3", name: "Elementos de proteccion", category: "ppe", quantity: 120, unit: "unidades", status: "available", locationId: "aura-point-2", restricted: false, updatedAt: "2026-07-05T09:10:00.000Z" },
+];
