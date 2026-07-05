@@ -6,13 +6,24 @@ import { getGdacsAdapterStatus } from "@/lib/knowledge-intake/adapters/gdacsAdap
 import { getNwsAdapterStatus } from "@/lib/knowledge-intake/adapters/nwsAdapter";
 import { getNoaaNceiTsunamiAdapterStatus } from "@/lib/knowledge-intake/adapters/noaaNceiTsunamiAdapter";
 import { getCoopsAdapterStatus } from "@/lib/knowledge-intake/adapters/noaaCoopsAdapter";
+import { getIocSlsmfAdapterStatus } from "@/lib/knowledge-intake/adapters/iocSlsmfAdapter";
 import { getNoaaStormEventsAdapterStatus } from "@/lib/knowledge-intake/adapters/noaaStormEventsAdapter";
 import { getOpenFemaAdapterStatus } from "@/lib/knowledge-intake/adapters/openFemaAdapter";
 import { getOpenMeteoAdapterStatus } from "@/lib/knowledge-intake/adapters/openMeteoAdapter";
+import { getOpenAqAdapterStatus } from "@/lib/knowledge-intake/adapters/openAqAdapter";
+import { getOsmOverpassAdapterStatus } from "@/lib/knowledge-intake/adapters/osmOverpassAdapter";
 import { getUsgsWaterAdapterStatus } from "@/lib/knowledge-intake/adapters/usgsWaterAdapter";
+import { getHapiAdapterStatus } from "@/lib/knowledge-intake/adapters/hdxHapiAdapter";
+import { getWhoDonAdapterStatus } from "@/lib/knowledge-intake/adapters/whoDonAdapter";
+import { getEcdcAdapterStatus } from "@/lib/knowledge-intake/adapters/ecdcAdapter";
+import { getGdeltAdapterStatus } from "@/lib/knowledge-intake/adapters/gdeltAdapter";
+import { getGlofasAdapterStatus } from "@/lib/knowledge-intake/adapters/copernicusGlofasAdapter";
+import { getGfmAdapterStatus } from "@/lib/knowledge-intake/adapters/copernicusGfmAdapter";
 import { reliefwebAdapter } from "@/lib/knowledge-intake/adapters/reliefwebAdapter";
 import { usgsAdapter } from "@/lib/knowledge-intake/adapters/usgsAdapter";
 import { getUsgsVolcanoHansAdapterStatus } from "@/lib/knowledge-intake/adapters/usgsVolcanoHansAdapter";
+import { getGvpAdapterStatus } from "@/lib/knowledge-intake/adapters/smithsonianGvpAdapter";
+import { getUsgsEarthquakeImpactAdapterStatus } from "@/lib/knowledge-intake/adapters/usgsEarthquakeImpactAdapter";
 import { planKnowledgeIngestion } from "@/lib/knowledge-intake/ingestionPlanner";
 import { getKnowledgeHealthFromDb } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
 import { getAllKnowledgeSources } from "@/lib/knowledge-intake/sourceRegistry";
@@ -43,10 +54,21 @@ export async function GET() {
   const noaaStormStatus = getNoaaStormEventsAdapterStatus();
   const noaaNceiTsunamiStatus = getNoaaNceiTsunamiAdapterStatus();
   const noaaCoopsStatus = getCoopsAdapterStatus();
+  const iocSlsmfStatus = getIocSlsmfAdapterStatus();
   const openFemaStatus = getOpenFemaAdapterStatus();
   const openMeteoStatus = getOpenMeteoAdapterStatus();
+  const openAqStatus = getOpenAqAdapterStatus();
+  const osmStatus = getOsmOverpassAdapterStatus();
   const usgsWaterStatus = getUsgsWaterAdapterStatus();
-  const noKeySources = sources.filter((source) => source.id === "usgs_earthquake" || source.id === "gdacs" || source.id === "nasa-eonet" || source.id === "usgs-volcano-hans" || source.id === "nws" || source.id === "open-meteo" || source.id === "usgs-water" || source.id === "noaa-coops" || source.id === "noaa-storm-events" || source.id === "noaa-ncei-tsunami" || source.id === "openfema");
+  const hapiStatus = getHapiAdapterStatus();
+  const whoDonStatus = getWhoDonAdapterStatus();
+  const ecdcStatus = getEcdcAdapterStatus();
+  const gdeltStatus = getGdeltAdapterStatus();
+  const glofasStatus = getGlofasAdapterStatus();
+  const gfmStatus = getGfmAdapterStatus();
+  const gvpStatus = getGvpAdapterStatus();
+  const earthquakeImpactStatus = getUsgsEarthquakeImpactAdapterStatus();
+  const noKeySources = sources.filter((source) => source.id === "usgs_earthquake" || source.id === "usgs-shakemap" || source.id === "usgs-pager" || source.id === "usgs-earthquake-impact" || source.id === "gdacs" || source.id === "nasa-eonet" || source.id === "usgs-volcano-hans" || source.id === "smithsonian-gvp" || source.id === "nws" || source.id === "open-meteo" || source.id === "usgs-water" || source.id === "noaa-coops" || source.id === "noaa-storm-events" || source.id === "noaa-ncei-tsunami" || source.id === "openfema" || source.id === "osm-overpass" || source.id === "who-don" || source.id === "ecdc" || source.id === "gdelt");
   const optionalKeySources = sources.filter((source) => source.tags.some((tag) => tag.startsWith("optional_api_key:")));
   const fastActivationSources = sources.filter((source) => source.tags.includes("fast_activation") || source.tags.includes("no_api_key"));
   const contextualSources = sources.filter((source) => source.tags.includes("contextual_source") || source.sourceKinds.includes("contextual"));
@@ -72,7 +94,7 @@ export async function GET() {
     sourcesRequiringConfiguration: sourcesRequiringConfiguration.map((source) => ({
       id: source.id,
       name: source.name,
-      requiredEnv: source.id === "reliefweb" ? "RELIEFWEB_APP_NAME" : "unknown",
+      requiredEnv: source.id === "reliefweb" ? "RELIEFWEB_APP_NAME" : source.id === "ioc-slsmf" ? "IOC_SLSMF_API_KEY" : source.id === "openaq" ? "OPENAQ_API_KEY" : "unknown",
     })),
     noKeySources: noKeySources.map((source) => ({ id: source.id, name: source.name, status: source.status })),
     optionalKeySources: optionalKeySources.map((source) => ({
@@ -95,7 +117,21 @@ export async function GET() {
     coastalRiskSources: sources.filter((source) => source.tags.some((tag) => tag.includes("coastal") || tag.includes("tsunami"))).map((source) => ({ id: source.id, name: source.name, status: source.status })),
     coastalSources: sources.filter((source) => source.tags.some((tag) => tag.includes("coastal"))).map((source) => ({ id: source.id, name: source.name, status: source.status })),
     oceanObservationSources: sources.filter((source) => source.tags.some((tag) => tag.includes("ocean_observation") || tag.includes("coastal_ocean"))).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    seaLevelSources: sources.filter((source) => source.domains.includes("sea_level_observation") || source.tags.includes("domain:sea_level_observation")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    tsunamiContextSources: sources.filter((source) => source.domains.includes("tsunami_sea_level_context") || source.tags.includes("domain:tsunami_sea_level_context")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    globalObservationSources: sources.filter((source) => source.tags.includes("official_global") || source.tags.includes("global_sea_level_context")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
     tsunamiSources: sources.filter((source) => source.domains.includes("tsunami") || source.tags.includes("domain:tsunami")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    volcanoSources: sources.filter((source) => source.domains.includes("volcano") || source.tags.some((tag) => tag.includes("volcano"))).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    earthquakeSources: sources.filter((source) => source.domains.includes("earthquake") || source.tags.some((tag) => tag.includes("earthquake"))).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    impactSources: sources.filter((source) => source.tags.some((tag) => tag.includes("impact") || tag.includes("shakemap") || tag.includes("pager"))).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    scientificSources: sources.filter((source) => source.sourceKinds.includes("scientific") || source.tags.includes("scientificSource:true")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    globalKnowledgeSources: sources.filter((source) => source.tags.some((tag) => tag.includes("global") || tag.includes("knowledge"))).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    incidentCapableSources: sources.filter((source) => source.tags.some((tag) => tag.includes("isIncidentLayer:true") || tag.includes("incidentType:"))).map((source) => ({
+      id: source.id,
+      name: source.name,
+      status: source.status,
+      guardrails: source.id === "smithsonian-gvp" ? "reports_only_requiresReview" : source.tags.some((tag) => tag.includes("guardrail")) ? "guarded" : "source_specific",
+    })),
     institutionalSources: institutionalSources.map((source) => ({
       id: source.id,
       name: source.name,
@@ -111,10 +147,193 @@ export async function GET() {
       name: source.name,
       status: source.status,
       role: source.tags.find((tag) => tag.startsWith("sourceRole:"))?.replace("sourceRole:", "") ?? "context",
-      requiresApiKey: false,
+      requiresApiKey: source.id === "openaq" || source.id === "ioc-slsmf",
+      requiresConfiguration: source.status === "requiresConfiguration",
       optionalApiKey: source.tags.find((tag) => tag.startsWith("optional_api_key:"))?.replace("optional_api_key:", ""),
     })),
+    humanitarianSources: sources.filter((source) => source.tags.includes("humanitarianSource:true")).map((source) => ({ id: source.id, name: source.name, status: source.status, sourceRole: source.tags.find((tag) => tag.startsWith("sourceRole:"))?.replace("sourceRole:", "") })),
+    publicHealthSources: sources.filter((source) => source.tags.includes("publicHealthSource:true") || source.domains.includes("public_health")).map((source) => ({ id: source.id, name: source.name, status: source.status, requiresApiKey: source.tags.includes("apiKeyRequired:true") })),
+    regionalHealthSources: sources.filter((source) => source.tags.includes("regionalSource:true")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    osintSources: sources.filter((source) => source.tags.includes("osintSource:true")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    mediaSignalSources: sources.filter((source) => source.tags.includes("mediaSource:true")).map((source) => ({ id: source.id, name: source.name, status: source.status, isIncidentSource: false })),
+    earlyWarningSources: sources.filter((source) => source.tags.includes("earlyWarningSource:true")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    floodSources: sources.filter((source) => source.domains.includes("flood") || source.domains.includes("flood_context")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    forecastSources: sources.filter((source) => source.tags.includes("forecastSource:true")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    satelliteObservationSources: sources.filter((source) => source.tags.includes("satelliteObservationSource:true")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    airQualitySources: sources.filter((source) => source.domains.includes("air_quality") || source.tags.includes("domain:air_quality")).map((source) => ({ id: source.id, name: source.name, status: source.status, requiresApiKey: source.tags.includes("apiKeyRequired:true") })),
+    smokeContextSources: sources.filter((source) => source.domains.includes("smoke_context") || source.tags.includes("domain:smoke_context")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    healthContextSources: sources.filter((source) => source.domains.includes("aura_respiratory_context") || source.domains.includes("aura_context") || source.domains.includes("public_health")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    geospatialSources: sources.filter((source) => source.tags.includes("sourceRole:critical_infrastructure_geospatial_source") || source.tags.some((tag) => tag.includes("geospatial"))).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    infrastructureSources: sources.filter((source) => source.domains.includes("critical_infrastructure") || source.tags.includes("critical_infrastructure_context")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    emergencyServiceSources: sources.filter((source) => source.domains.includes("emergency_services") || source.tags.includes("domain:emergency_services")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
+    environmentalSources: sources.filter((source) => source.domains.includes("environmental_hazard") || source.domains.includes("air_quality") || source.domains.includes("water_conditions")).map((source) => ({ id: source.id, name: source.name, status: source.status })),
     sourceCapabilities: [
+      {
+        sourceId: "smithsonian-gvp",
+        status: "active_contextual_knowledge",
+        ready: true,
+        requiresApiKey: false,
+        requiresConfiguration: false,
+        optionalEnvVar: "GVP_WFS_BASE",
+        officialSource: true,
+        scientificSource: true,
+        sourceRole: gvpStatus.sourceRole,
+        isKnowledgeSource: true,
+        isIncidentSource: "false for catalog/history; true with guardrails for DVAR/WVAR reports",
+        phase1Capabilities: gvpStatus.phase1Capabilities,
+        phase1_5_or_phase2Capabilities: gvpStatus.phase1_5_or_phase2Capabilities,
+        mapLayers: gvpStatus.mapLayers,
+        capabilities: gvpStatus.capabilities,
+        limitations: gvpStatus.limitations,
+        attribution: gvpStatus.attribution,
+        citation: gvpStatus.citation,
+      },
+      {
+        sourceId: "usgs-shakemap",
+        status: "active_enrichment",
+        ready: true,
+        requiresApiKey: false,
+        officialSource: true,
+        sourceRole: "earthquake_ground_shaking_intensity_source",
+        isIncidentSource: false,
+        isEnrichmentSource: true,
+        phase1Capabilities: ["MMI intensity", "PGA/PGV/PSA metadata/URLs", "ShakeMap contours/grid/shape URLs", "fault/station URLs when available", "shaking footprint context"],
+        mapLayer: "USGS ShakeMap Intensity",
+        limitations: ["Not prediction.", "Not damage confirmation.", "Early versions can change.", "Contours may be generalized.", "No evacuation or route closure."],
+      },
+      {
+        sourceId: "usgs-pager",
+        status: "active_enrichment",
+        ready: true,
+        requiresApiKey: false,
+        officialSource: true,
+        sourceRole: "earthquake_impact_assessment_source",
+        isIncidentSource: false,
+        isEnrichmentSource: true,
+        phase1Capabilities: ["population exposure by MMI", "fatality alert estimate", "economic loss alert estimate", "affected cities when structured data is available", "vulnerability/secondary hazard notes"],
+        mapLayer: "USGS PAGER Impact Assessment",
+        limitations: ["Estimates, not confirmed losses.", "Can update.", "No evacuation, route closure, damage confirmation or casualty confirmation."],
+      },
+      {
+        sourceId: "osm-overpass",
+        status: "active_contextual",
+        ready: true,
+        requiresApiKey: false,
+        requiresConfiguration: false,
+        officialSource: false,
+        aggregatorSource: false,
+        communitySource: true,
+        sourceRole: "critical_infrastructure_geospatial_source",
+        isIncidentSource: false,
+        coverage: "Global collaborative geospatial data, quality variable by region",
+        runAllDefault: false,
+        licenseStatus: "ODbL",
+        attributionRequired: true,
+        attribution: osmStatus.attribution,
+        accessType: "overpass_ql_api",
+        phase1Capabilities: osmStatus.phase1Capabilities,
+        phase2Planned: osmStatus.phase2Planned,
+        capabilities: osmStatus.capabilities,
+        mapLayer: osmStatus.mapLayer,
+        categories: osmStatus.categories,
+        limitations: osmStatus.limitations,
+        caveat: "Critical infrastructure context only; not an official universal registry, routing engine, geocoder, tile server or availability source.",
+      },
+      {
+        sourceId: "hdx-hapi",
+        status: hapiStatus.status,
+        ready: hapiStatus.ready,
+        requiresApiKey: true,
+        requiresConfiguration: hapiStatus.requiresConfiguration,
+        requiredEnv: "HAPI_APP_IDENTIFIER",
+        optionalPhase2EnvVar: "HDX_API_TOKEN",
+        officialSource: true,
+        aggregatorSource: true,
+        humanitarianSource: true,
+        sourceRole: hapiStatus.sourceRole,
+        isIncidentSource: false,
+        runAllDefault: false,
+        phase1Capabilities: hapiStatus.phase1Capabilities,
+        phase2Planned: ["HDX CKAN metadata expansion", "HDX Tabular Data Endpoints", "selected dataset ingestion", "admin boundary geometry integration"],
+        mapLayer: hapiStatus.mapLayer,
+        limitations: hapiStatus.limitations,
+        caveat: "Humanitarian context indicators only; not a live alert, operational order, clinical source, capacity confirmation or incident generator.",
+      },
+      {
+        sourceId: "who-don",
+        status: whoDonStatus.status,
+        ready: true,
+        requiresApiKey: false,
+        sourceRole: whoDonStatus.sourceRole,
+        isIncidentSource: true,
+        officialSource: true,
+        phase1Capabilities: whoDonStatus.phase1Capabilities,
+        phase2Planned: ["ECDC", "PAHO", "CDC", "Africa CDC", "ReliefWeb health updates", "ministries of health"],
+        mapLayer: whoDonStatus.mapLayer,
+        limitations: whoDonStatus.limitations,
+      },
+      {
+        sourceId: "ecdc",
+        status: "active_contextual_incident_capable",
+        ready: true,
+        requiresApiKey: false,
+        sourceRole: ecdcStatus.sourceRole,
+        isIncidentSource: true,
+        isContextSource: true,
+        officialSource: true,
+        phase1Capabilities: ecdcStatus.phase1Capabilities,
+        phase2Planned: ["CDTR PDF parser", "CDTR section extraction", "Surveillance Atlas ingestion", "disease-specific datasets"],
+        feeds: ecdcStatus.feeds,
+        mapLayer: ecdcStatus.mapLayer,
+        limitations: ecdcStatus.limitations,
+      },
+      {
+        sourceId: "gdelt",
+        status: gdeltStatus.status,
+        ready: true,
+        requiresApiKey: false,
+        sourceRole: gdeltStatus.sourceRole,
+        isOfficialSource: false,
+        isIncidentSource: false,
+        isMediaSignalSource: true,
+        runAllDefault: false,
+        queryWhitelistRequired: true,
+        phase1Capabilities: gdeltStatus.phase1Capabilities,
+        phase2Planned: ["Events 2.0 candidate events", "GKG themes/entities/locations", "Visual GKG/image evidence review", "BigQuery/raw data integration"],
+        templates: gdeltStatus.templates,
+        mapLayer: gdeltStatus.mapLayer,
+        limitations: gdeltStatus.limitations,
+      },
+      {
+        sourceId: "copernicus-glofas",
+        status: glofasStatus.status,
+        ready: glofasStatus.ready,
+        requiresApiKey: true,
+        requiresConfiguration: glofasStatus.requiresConfiguration,
+        requiredEnv: "COPERNICUS_EWDS_API_KEY",
+        sourceRole: glofasStatus.sourceRole,
+        isForecastSource: true,
+        isIncidentSource: false,
+        runAllDefault: false,
+        phase1Capabilities: glofasStatus.phase1Capabilities,
+        mapLayer: glofasStatus.mapLayer,
+        limitations: glofasStatus.limitations,
+      },
+      {
+        sourceId: "copernicus-gfm",
+        status: gfmStatus.status,
+        ready: gfmStatus.ready,
+        requiresApiKey: true,
+        requiresConfiguration: gfmStatus.requiresConfiguration,
+        requiredEnv: "COPERNICUS_GFM_ACCESS_TOKEN",
+        sourceRole: gfmStatus.sourceRole,
+        isObservationSource: true,
+        isIncidentSource: true,
+        runAllDefault: false,
+        phase1Capabilities: gfmStatus.phase1Capabilities,
+        mapLayer: gfmStatus.mapLayer,
+        limitations: gfmStatus.limitations,
+      },
       {
         sourceId: "usgs_earthquake",
         status: "active",
@@ -242,6 +461,30 @@ export async function GET() {
         caveat: "Coastal observation context only; not a warning center, evacuation order or official inundation model.",
       },
       {
+        sourceId: "ioc-slsmf",
+        status: iocSlsmfStatus.status,
+        ready: iocSlsmfStatus.apiKeyConfigured,
+        requiresApiKey: true,
+        requiresConfiguration: iocSlsmfStatus.requiresConfiguration,
+        requiredEnv: "IOC_SLSMF_API_KEY",
+        officialSource: true,
+        sourceRole: "global_sea_level_observation_source",
+        isIncidentSource: false,
+        coverage: "Global sea level monitoring stations / tide gauges",
+        runAllDefault: false,
+        accessType: "api_json_requires_key",
+        licenseStatus: "registered_api_access",
+        citation: iocSlsmfStatus.citation,
+        phase1Capabilities: iocSlsmfStatus.phase1Capabilities,
+        phase2Planned: iocSlsmfStatus.phase2Planned,
+        capabilities: iocSlsmfStatus.capabilities,
+        mapLayer: iocSlsmfStatus.mapLayer,
+        limitations: iocSlsmfStatus.limitations,
+        datumCaution:
+          "IOC SLSMF sea level values are relative observations unless a station-specific datum is explicitly available. Do not interpret them as absolute official flood levels.",
+        caveat: "Sea level observation context only; not a warning center, evacuation order, tsunami confirmation or official inundation model.",
+      },
+      {
         sourceId: "openfema",
         status: "active_institutional",
         ready: true,
@@ -331,6 +574,31 @@ export async function GET() {
         limitations: usgsWaterStatus.limitations,
       },
       {
+        sourceId: "openaq",
+        status: openAqStatus.status,
+        ready: openAqStatus.ready,
+        requiresApiKey: true,
+        requiresConfiguration: openAqStatus.requiresConfiguration,
+        requiredEnv: "OPENAQ_API_KEY",
+        officialSource: false,
+        aggregatorSource: true,
+        sourceRole: "air_quality_observation_source",
+        isIncidentSource: false,
+        providerDependentReliability: true,
+        coverage: "Global aggregated public air quality observations, provider-dependent",
+        runAllDefault: false,
+        accessType: "api_json_requires_key",
+        licenseStatus: "provider_dependent",
+        attributionRequired: "check_license",
+        commercialUse: "check_license_per_provider",
+        phase1Capabilities: openAqStatus.phase1Capabilities,
+        phase2Planned: openAqStatus.phase2Planned,
+        capabilities: openAqStatus.capabilities,
+        mapLayer: openAqStatus.mapLayer,
+        limitations: openAqStatus.limitations,
+        caveat: "OpenAQ is air quality observation context only; not an official health alert, diagnosis, evacuation order or complete worldwide source.",
+      },
+      {
         sourceId: "reliefweb",
         status: "requiresConfiguration",
         ready: false,
@@ -350,6 +618,48 @@ export async function GET() {
     lessonCount: demoKnowledgeLessons.length,
     persistentMemory: dbHealth,
     lastIngestionRuns: [
+      {
+        id: "hdx-hapi-context-ready",
+        sourceId: "hdx-hapi",
+        status: hapiStatus.status,
+        normalizedCount: 0,
+        note: "Runs on demand through /api/knowledge-intake/live/hdx-hapi or /api/knowledge-intake/jobs/run-hdx-hapi-context. Not run-all default.",
+      },
+      {
+        id: "who-don-ready",
+        sourceId: "who-don",
+        status: whoDonStatus.status,
+        normalizedCount: 0,
+        note: "Runs on demand through /api/knowledge-intake/live/who-don or /api/knowledge-intake/jobs/run-who-don.",
+      },
+      {
+        id: "ecdc-ready",
+        sourceId: "ecdc",
+        status: "active_contextual_incident_capable",
+        normalizedCount: 0,
+        note: "Runs on demand through /api/knowledge-intake/live/ecdc or /api/knowledge-intake/jobs/run-ecdc. CDTR evidence by default.",
+      },
+      {
+        id: "gdelt-context-ready",
+        sourceId: "gdelt",
+        status: gdeltStatus.status,
+        normalizedCount: 0,
+        note: "Runs on demand through /api/knowledge-intake/live/gdelt or /api/knowledge-intake/jobs/run-gdelt-context. Not run-all default.",
+      },
+      {
+        id: "copernicus-glofas-ready",
+        sourceId: "copernicus-glofas",
+        status: glofasStatus.status,
+        normalizedCount: 0,
+        note: "Runs on demand through /api/knowledge-intake/live/copernicus-glofas or /api/knowledge-intake/jobs/run-copernicus-glofas-context. Not run-all default.",
+      },
+      {
+        id: "copernicus-gfm-ready",
+        sourceId: "copernicus-gfm",
+        status: gfmStatus.status,
+        normalizedCount: 0,
+        note: "Runs on demand through /api/knowledge-intake/live/copernicus-gfm or /api/knowledge-intake/jobs/run-copernicus-gfm-context. Not run-all default.",
+      },
       {
         id: "usgs-live-ready",
         sourceId: "usgs_earthquake",
@@ -393,6 +703,13 @@ export async function GET() {
         note: "Runs on demand through /api/knowledge-intake/live/open-meteo or as contextual enrichment through /api/knowledge-intake/jobs/run-open-meteo-context.",
       },
       {
+        id: "osm-overpass-context-ready",
+        sourceId: "osm-overpass",
+        status: osmStatus.status,
+        normalizedCount: 0,
+        note: "Runs on demand through /api/knowledge-intake/live/osm-overpass or as controlled critical infrastructure enrichment through /api/knowledge-intake/jobs/run-osm-overpass-context. Not run-all default.",
+      },
+      {
         id: "usgs-water-context-ready",
         sourceId: "usgs-water",
         status: usgsWaterStatus.status,
@@ -405,6 +722,20 @@ export async function GET() {
         status: noaaCoopsStatus.status,
         normalizedCount: 0,
         note: "Runs on demand through /api/knowledge-intake/live/noaa-coops or as controlled coastal enrichment through /api/knowledge-intake/jobs/run-noaa-coops-context. Not run-all default.",
+      },
+      {
+        id: "ioc-slsmf-context-ready",
+        sourceId: "ioc-slsmf",
+        status: iocSlsmfStatus.status,
+        normalizedCount: 0,
+        note: "Runs on demand through /api/knowledge-intake/live/ioc-slsmf or as controlled sea level context through /api/knowledge-intake/jobs/run-ioc-slsmf-context. Not run-all default.",
+      },
+      {
+        id: "openaq-context-ready",
+        sourceId: "openaq",
+        status: openAqStatus.status,
+        normalizedCount: 0,
+        note: "Runs on demand through /api/knowledge-intake/live/openaq or as controlled air quality context through /api/knowledge-intake/jobs/run-openaq-context. Not run-all default.",
       },
       {
         id: "noaa-storm-events-historical-ready",
@@ -442,7 +773,7 @@ export async function GET() {
         note: firmsAdapter().message,
       },
     ],
-    adapterStatus: [usgsAdapter(), getGdacsAdapterStatus(), getEonetAdapterStatus(), getUsgsVolcanoHansAdapterStatus(), nwsStatus, noaaStormStatus, noaaNceiTsunamiStatus, noaaCoopsStatus, openFemaStatus, openMeteoStatus, usgsWaterStatus, reliefwebAdapter(), firmsAdapter()],
+    adapterStatus: [usgsAdapter(), earthquakeImpactStatus, getGdacsAdapterStatus(), getEonetAdapterStatus(), getUsgsVolcanoHansAdapterStatus(), gvpStatus, nwsStatus, noaaStormStatus, noaaNceiTsunamiStatus, noaaCoopsStatus, iocSlsmfStatus, openFemaStatus, openMeteoStatus, usgsWaterStatus, openAqStatus, osmStatus, hapiStatus, whoDonStatus, ecdcStatus, gdeltStatus, glofasStatus, gfmStatus, reliefwebAdapter(), firmsAdapter()],
     licenseWarnings: [
       {
         sourceId: "open-meteo",
@@ -450,6 +781,13 @@ export async function GET() {
         commercialUse: "requiresReview",
         institutionalUse: "requiresReview",
         note: "Review Open-Meteo paid API or self-hosting before contractual commercial/institutional use.",
+      },
+      {
+        sourceId: "openaq",
+        licenseStatus: "provider_dependent",
+        commercialUse: "check_license_per_provider",
+        attributionRequired: "check_license",
+        note: "Preserve OpenAQ plus provider/owner/license metadata; do not assume commercial reuse is allowed universally.",
       },
     ],
     parserStatus: parserInputs.map((inputType) => ({
@@ -459,18 +797,28 @@ export async function GET() {
     })),
     warnings: [
       "USGS, GDACS, NASA EONET and ReliefWeb execute only when their live endpoints are called.",
+      "USGS ShakeMap/PAGER enrich USGS earthquake events with estimated shaking and impact; they do not confirm damage, casualties, evacuations or route closures.",
       "GDACS is a global awareness source and must not be presented as a local Chilean authority.",
       "NASA EONET is a NASA global natural-events source and must not be presented as a local Chilean authority or automatic critical-action trigger.",
       "USGS Volcano HANS is official for USGS monitored volcanoes, not a complete worldwide local volcano authority.",
+      "Smithsonian GVP is global volcanism memory and report context; catalog/history do not create incidents and GVP never replaces local volcano observatories.",
       ...(nwsStatus.userAgentConfigured ? [] : ["NWS_USER_AGENT missing. NWS uses ARGUS/preview (contact-not-configured) fallback in preview/dev."]),
       "NWS is official for the United States and NWS territories only; ARGUS remains extensible for Open-Meteo, MET Norway, WMO and national weather agencies.",
       "NOAA Storm Events is a historical NOAA/NCEI dataset only; it is not live, not forecast, not global weather coverage and not run-all default.",
       "NOAA NCEI Historical Tsunami is global historical memory only; it is not a live warning center, evacuation order, local authority or official inundation model.",
       "NOAA CO-OPS is official coastal observation context for United States and NOAA monitored stations only; it is not a global warning center, evacuation order, official inundation model or run-all default job.",
+      "IOC SLSMF requires IOC_SLSMF_API_KEY and is global relative sea level observation context only; it is not a warning center, evacuation order, tsunami confirmation, absolute datum source or run-all default job.",
       "OpenFEMA is an institutional FEMA dataset only; it is not live, not forecast, not worldwide coverage and not run-all default.",
       "Open-Meteo is active as global weather context only; it is not an official alert source and commercial/institutional use requires review.",
+      "OpenAQ requires OPENAQ_API_KEY and is contextual air quality observation only; it is not an official health alert, medical diagnosis, evacuation order, complete worldwide source or incident source.",
       "USGS Water Data is active as official US hydrological context only; it is not worldwide coverage, a forecast, evacuation order, route closure or run-all default job.",
+      "OpenStreetMap / Overpass is active as collaborative critical infrastructure context only; it is not an official universal registry, routing engine, geocoder, public tile backend, availability source or run-all default job.",
       "ReliefWeb v2 requires an approved RELIEFWEB_APP_NAME.",
+      "HDX/OCHA HAPI requires HAPI_APP_IDENTIFIER and is humanitarian context only; no indicator creates a KnowledgeIncident.",
+      "WHO DON is official public health reporting, not diagnosis, local surveillance completeness, automatic restrictions or citizen alerts.",
+      "ECDC RSS/data is EU/EEA public health context; CDTR reports are evidence by default and EpiPulse/EWRS are not integrated.",
+      "GDELT is OSINT/media signal only; it is not an official confirmation source and never creates confirmed incidents by itself.",
+      "Copernicus GloFAS requires EWDS credentials and is forecast/model context only; GFM requires access token and satellite observation caveats apply.",
       "NASA FIRMS requires NASA_FIRMS_MAP_KEY and remains disabled without it.",
       "Manual/file imports are preview normalization until storage and admin review are connected.",
     ],
@@ -482,13 +830,18 @@ export async function GET() {
     limitations: [
       "Human validation is required before operational decisions.",
       "Volcano alert level and aviation color code must remain separate operational signals.",
-      "ARGUS is prepared to add SERNAGEOMIN, JMA, IMO, PHIVOLCS, GNS Science, INGV, VAAC and Smithsonian/GVP later without treating HANS as worldwide local authority.",
+      "ARGUS is prepared to add SERNAGEOMIN, JMA, IMO, PHIVOLCS, GNS Science, INGV, VAAC, DYFI, ShakeMap grid/raster analytics and local earthquake authorities later without replacing local authorities.",
+      "Smithsonian GVP catalog/history support volcanic memory, Risk, Fenix, NAV, AURA and map context, but never automatic incidents, evacuation orders, route closures, ashfall modelling or diagnosis.",
+      "USGS ShakeMap/PAGER support impact prioritization by MMI/exposure/PAGER, but never confirmed deaths, injuries, damage or official local orders.",
       "Open-Meteo context may support Risk, Fenix, NAV and AURA analysis, but requires official validation for critical decisions.",
+      "OpenAQ context may support smoke, wildfire, volcano, dust, urban pollution, Risk, Fenix, NAV, AURA, Command Center and map context, but never automatic health alerts, diagnoses, evacuations or smoke-fire causal attribution.",
       "USGS Water context may support Risk, Fenix, NAV, AURA and Command Center hydrological panels, but sensor readings alone are not official flood orders.",
       "NOAA CO-OPS context may support tsunami, hurricane, storm surge, NAV, Fenix, AURA, Command Center and map context, but never automatic warnings, bridge closures, evacuation orders or invented inundation zones.",
+      "IOC SLSMF context may support tsunami, coastal, storm surge, NAV, Fenix, AURA, Command Center and map context, but never automatic tsunami confirmation, evacuation orders or invented flood levels.",
       "NOAA Storm Events may support historical memory, Risk, Fenix, NAV, AURA and map context, but never automatic critical decisions.",
       "NOAA NCEI Historical Tsunami may support tsunami memory, Risk, Fenix, NAV, AURA, Command Center and map context, but never automatic live warnings or invented inundation zones.",
       "OpenFEMA may support institutional memory, Risk, Fenix, NAV, AURA and map context, but never official FEMA instructions or automatic critical decisions.",
+      "OpenStreetMap / Overpass may support AURA, Fenix, NAV, Risk, Command Center and map context, but every recommendation must preserve OSM attribution and collaborative-data caveats.",
     ],
     dataQualityWarnings: [
       {

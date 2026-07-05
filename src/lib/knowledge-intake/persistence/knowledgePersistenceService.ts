@@ -39,9 +39,9 @@ type KnowledgeDocumentInput = {
 type WeatherContextEvidenceInput = {
   incidentId?: string;
   sourceIncidentId?: string;
-  sourceId: "open-meteo" | "usgs-water" | "noaa-coops";
-  sourceName: "Open-Meteo" | "USGS Water Data" | "NOAA CO-OPS";
-  evidenceType: "weather_context" | "hydrological_context" | "coastal_ocean_context";
+  sourceId: "open-meteo" | "usgs-water" | "noaa-coops" | "ioc-slsmf" | "openaq" | "osm-overpass";
+  sourceName: "Open-Meteo" | "USGS Water Data" | "NOAA CO-OPS" | "IOC Sea Level Monitoring Facility" | "OpenAQ" | "OpenStreetMap / Overpass";
+  evidenceType: "weather_context" | "hydrological_context" | "coastal_ocean_context" | "sea_level_observation_context" | "air_quality_observation_context" | "critical_infrastructure_context";
   title: string;
   url?: string;
   excerpt: string;
@@ -263,7 +263,7 @@ export async function findKnowledgeIncidentBySourceIncidentId(sourceIncidentId: 
 export async function findFreshWeatherContextEvidence(input: {
   incidentId: string;
   sourceId?: string;
-  evidenceType?: "weather_context" | "hydrological_context" | "coastal_ocean_context";
+  evidenceType?: "weather_context" | "hydrological_context" | "coastal_ocean_context" | "sea_level_observation_context" | "air_quality_observation_context" | "critical_infrastructure_context";
   ttlMinutes?: number;
 }) {
   const createdAfter = new Date(Date.now() - (input.ttlMinutes ?? 60) * 60_000);
@@ -304,12 +304,51 @@ export async function findFreshCoastalOceanContextEvidence(input: {
   });
 }
 
+export async function findFreshSeaLevelObservationContextEvidence(input: {
+  incidentId: string;
+  sourceId?: string;
+  ttlMinutes?: number;
+}) {
+  return findFreshWeatherContextEvidence({
+    incidentId: input.incidentId,
+    sourceId: input.sourceId ?? "ioc-slsmf",
+    evidenceType: "sea_level_observation_context",
+    ttlMinutes: input.ttlMinutes,
+  });
+}
+
+export async function findFreshAirQualityObservationContextEvidence(input: {
+  incidentId: string;
+  sourceId?: string;
+  ttlMinutes?: number;
+}) {
+  return findFreshWeatherContextEvidence({
+    incidentId: input.incidentId,
+    sourceId: input.sourceId ?? "openaq",
+    evidenceType: "air_quality_observation_context",
+    ttlMinutes: input.ttlMinutes,
+  });
+}
+
+export async function findFreshCriticalInfrastructureContextEvidence(input: {
+  incidentId: string;
+  sourceId?: string;
+  ttlMinutes?: number;
+}) {
+  return findFreshWeatherContextEvidence({
+    incidentId: input.incidentId,
+    sourceId: input.sourceId ?? "osm-overpass",
+    evidenceType: "critical_infrastructure_context",
+    ttlMinutes: input.ttlMinutes,
+  });
+}
+
 export async function saveWeatherContextEvidenceIfFreshMissing(input: WeatherContextEvidenceInput, ttlMinutes = 60) {
   const resolvedIncidentId = input.incidentId ?? (
     input.sourceIncidentId ? (await findKnowledgeIncidentBySourceIncidentId(input.sourceIncidentId))?.id : undefined
   );
   if (!resolvedIncidentId) {
-    if (input.evidenceType === "hydrological_context" || input.evidenceType === "coastal_ocean_context") {
+    if (input.evidenceType === "hydrological_context" || input.evidenceType === "coastal_ocean_context" || input.evidenceType === "sea_level_observation_context" || input.evidenceType === "air_quality_observation_context" || input.evidenceType === "critical_infrastructure_context") {
       const existing = await prisma.knowledgeEvidence.findFirst({
         where: {
           sourceId: input.sourceId,

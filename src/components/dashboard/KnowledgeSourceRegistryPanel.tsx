@@ -29,9 +29,18 @@ export default function KnowledgeSourceRegistryPanel({ sources }: { sources: Arg
               <span className="rounded bg-white/[0.05] px-2 py-1 text-slate-300">{source.licenseType}</span>
               <span className="rounded bg-white/[0.05] px-2 py-1 text-slate-300">{source.coverage.global ? "global" : source.coverage.countries?.join(", ")}</span>
               {source.tags.includes("official_noaa") && <span className="rounded bg-sky-400/10 px-2 py-1 text-sky-100">Official NOAA</span>}
+              {source.tags.includes("ioc_slsmf") && <span className="rounded bg-cyan-400/10 px-2 py-1 text-cyan-100">IOC / SLSMF</span>}
+              {source.tags.includes("global_sea_level_context") && <span className="rounded bg-blue-400/10 px-2 py-1 text-blue-100">Global Sea Level Context</span>}
               {source.tags.includes("no_api_key") && <span className="rounded bg-emerald-400/10 px-2 py-1 text-emerald-100">No API key</span>}
+              {source.tags.includes("apiKeyRequired:true") && <span className="rounded bg-amber-400/10 px-2 py-1 text-amber-100">Requires API key</span>}
               {source.tags.includes("isIncidentLayer:false") && <span className="rounded bg-slate-400/10 px-2 py-1 text-slate-200">Not incident source</span>}
+              {source.tags.includes("communitySource:true") && <span className="rounded bg-lime-400/10 px-2 py-1 text-lime-100">Community source</span>}
+              {source.tags.includes("officialSource:false") && <span className="rounded bg-slate-400/10 px-2 py-1 text-slate-200">Not official registry</span>}
+              {source.tags.includes("licenseStatus:ODbL") && <span className="rounded bg-lime-400/10 px-2 py-1 text-lime-100">ODbL attribution required</span>}
+              {source.tags.includes("cacheRequired:true") && <span className="rounded bg-lime-400/10 px-2 py-1 text-lime-100">Cache required</span>}
               {source.tags.includes("datumRequired:true") && <span className="rounded bg-amber-400/10 px-2 py-1 text-amber-100">Datum required</span>}
+              {source.tags.includes("relativeSeaLevel:true") && <span className="rounded bg-teal-400/10 px-2 py-1 text-teal-100">Relative sea level</span>}
+              {source.tags.includes("datumCaution:true") && <span className="rounded bg-orange-400/10 px-2 py-1 text-orange-100">Datum caution</span>}
               {source.tags.includes("observedVsPredictedSeparated:true") && <span className="rounded bg-cyan-400/10 px-2 py-1 text-cyan-100">Observed vs Predicted</span>}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">

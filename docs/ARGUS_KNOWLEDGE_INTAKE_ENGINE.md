@@ -75,6 +75,44 @@ POST /api/knowledge-intake/jobs/run-all
 `run-all` currently persists USGS only. ReliefWeb is skipped until
 `RELIEFWEB_APP_NAME` is configured and approved. NASA FIRMS is skipped until
 `NASA_FIRMS_MAP_KEY` is configured.
+OpenAQ is skipped by default and only runs as contextual enrichment through
+`/api/knowledge-intake/jobs/run-openaq-context` or a future explicit
+`includeAirQualityContext=true` flag.
+
+### OpenAQ Air Quality Context
+
+OpenAQ is registered as `openaq` with source role
+`air_quality_observation_source`. ARGUS uses OpenAQ API v3 as provider-dependent
+air quality observation context for smoke, wildfire health context, volcanic
+ash/dust/haze, urban pollution, NAV, Fenix and AURA respiratory context.
+
+```http
+GET /api/knowledge-intake/live/openaq?lat=-33.4489&lon=-70.6693&radiusKm=25&parameters=pm25,pm10,o3,no2,so2,co
+POST /api/knowledge-intake/jobs/run-openaq-context
+```
+
+`OPENAQ_API_KEY` is required. Without it, health and live endpoints return
+`requiresConfiguration` and do not call OpenAQ. Phase 1 supports locations,
+sensors, latest measurements, parameters, providers, owners and licenses by
+`locationId`, `sensorId`, `lat/lon/radius` or `bbox`.
+
+ARGUS persists OpenAQ only as `KnowledgeEvidence` with evidence type
+`air_quality_observation_context`. It does not create `KnowledgeIncident`
+records for measurements, high PM values or isolated air quality readings.
+
+Required caveats:
+
+- Preserve OpenAQ, provider, owner, license, API URL, locationId, sensorId,
+  parameter, value, unit, observedAt and staleness.
+- Treat commercial reuse as `check_license_per_provider`.
+- Do not present OpenAQ as an official health alert, complete worldwide source,
+  medical diagnosis, evacuation order or causal smoke attribution.
+- No scraping, global bulk polling or hourly/long-range history in phase 1.
+
+Prepared later phases include hourly/recent measurements, FIRMS smoke
+correlation, EONET/GDACS volcano/dust/haze correlation, NWS/local AQ alert
+integration, NAV exposure routing, AURA respiratory guidance and local official
+AQ APIs such as Chile MMA/SINCA, EPA AirNow, EEA and CAMS.
 
 ### USGS Volcano HANS
 

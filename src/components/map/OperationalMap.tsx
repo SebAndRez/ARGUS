@@ -34,17 +34,29 @@ interface MapLayerSettings {
   missingPersons?: boolean;
   demoReports?: boolean;
   usgsEarthquakes?: boolean;
+  usgsShakeMapIntensity?: boolean;
+  usgsPagerImpactAssessment?: boolean;
   gdacsAlerts?: boolean;
   noaaTsunami?: boolean;
   nasaFirms?: boolean;
   nasaEonet?: boolean;
   nwsWeatherAlerts?: boolean;
   openMeteoWeatherContext?: boolean;
+  openAqAirQualityObservations?: boolean;
   usgsWaterConditions?: boolean;
+  smithsonianGvpVolcanoes?: boolean;
+  smithsonianGvpEruptionHistory?: boolean;
+  smithsonianUsgsVolcanicActivityReports?: boolean;
   noaaCoopsCoastalObservations?: boolean;
   noaaStormEventsHistorical?: boolean;
   noaaNceiHistoricalTsunamis?: boolean;
   openFemaDisasterDeclarations?: boolean;
+  hdxHapiHumanitarianContext?: boolean;
+  whoDiseaseOutbreakNews?: boolean;
+  ecdcPublicHealthThreats?: boolean;
+  gdeltMediaSignals?: boolean;
+  copernicusGlofasFloodForecast?: boolean;
+  copernicusGfmObservedFloodExtent?: boolean;
   reliefWeb?: boolean;
   sos: boolean;
   alerts: boolean;
@@ -1208,6 +1220,11 @@ export default function OperationalMap({
             {layerSettings.openMeteoWeatherContext && (
               <div className="pointer-events-none absolute left-4 top-4 z-[60] max-w-xs border border-cyan-300/25 bg-slate-950/88 px-3 py-2 text-[0.62rem] uppercase tracking-[0.14em] text-cyan-100 shadow-lg shadow-black/30 backdrop-blur-xl">
                 Open-Meteo Weather Context · overlay contextual · no alert source
+              </div>
+            )}
+            {layerSettings.openAqAirQualityObservations && (
+              <div className="pointer-events-none absolute left-4 top-16 z-[60] max-w-sm border border-emerald-300/25 bg-slate-950/88 px-3 py-2 text-[0.62rem] uppercase tracking-[0.14em] text-emerald-100 shadow-lg shadow-black/30 backdrop-blur-xl">
+                OpenAQ Air Quality Observations - contextual - requires key/provider license - not incident source
               </div>
             )}
           </>

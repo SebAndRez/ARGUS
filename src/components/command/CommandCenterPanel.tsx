@@ -1,7 +1,10 @@
 import ArgusLimitationsNotice from "@/components/command/ArgusLimitationsNotice";
 import CommandOverviewCards from "@/components/command/CommandOverviewCards";
 import IncidentCommandCard from "@/components/command/IncidentCommandCard";
+import OpenAqAirQualityPanel from "@/components/command/OpenAqAirQualityPanel";
+import SmithsonianGvpVolcanoIntelligencePanel from "@/components/command/SmithsonianGvpVolcanoIntelligencePanel";
 import SourceHealthPanel from "@/components/command/SourceHealthPanel";
+import UsgsEarthquakeImpactPanel from "@/components/command/UsgsEarthquakeImpactPanel";
 import MobileAppReadinessPanel from "@/components/mobile/MobileAppReadinessPanel";
 import SourceStatusPanel from "@/components/sources/SourceStatusPanel";
 import { buildDemoIncidents } from "@/lib/command/incidentBuilder";
@@ -29,6 +32,9 @@ export default function CommandCenterPanel() {
       <div className="mt-4 grid gap-4">
         <CommandOverviewCards incidents={incidents} />
         <IncidentCommandCard incident={incidents[0]} />
+        <UsgsEarthquakeImpactPanel />
+        <SmithsonianGvpVolcanoIntelligencePanel />
+        <OpenAqAirQualityPanel />
         <SourceHealthPanel sources={sources} />
         <SourceStatusPanel />
         <MobileAppReadinessPanel />

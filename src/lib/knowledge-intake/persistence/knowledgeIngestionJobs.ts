@@ -6,15 +6,32 @@ import {
   type OpenMeteoPurpose,
 } from "@/lib/knowledge-intake/adapters/openMeteoAdapter";
 import {
+  buildOpenAqEvidence,
+  fetchAndBuildOpenAqAirQualityObservationContext,
+  getOpenAqApiKeyStatus,
+  type OpenAqRequestParams,
+} from "@/lib/knowledge-intake/adapters/openAqAdapter";
+import {
   buildUsgsWaterEvidence,
   fetchAndBuildUsgsWaterContext,
   type UsgsWaterRequestParams,
 } from "@/lib/knowledge-intake/adapters/usgsWaterAdapter";
 import {
+  buildOsmEvidence,
+  fetchAndBuildOsmCriticalInfrastructureContext,
+  type OsmOverpassRequestParams,
+} from "@/lib/knowledge-intake/adapters/osmOverpassAdapter";
+import {
   buildCoopsEvidence,
   fetchAndBuildCoopsContext,
   type NoaaCoopsRequestParams,
 } from "@/lib/knowledge-intake/adapters/noaaCoopsAdapter";
+import {
+  buildIocSlsmfEvidence,
+  fetchAndBuildIocSlsmfContext,
+  getIocSlsmfApiKeyStatus,
+  type IocSlsmfRequestParams,
+} from "@/lib/knowledge-intake/adapters/iocSlsmfAdapter";
 import { fetchEonetEvents, type EonetFetchParams } from "@/lib/knowledge-intake/adapters/eonetAdapter";
 import { fetchGdacsEvents, type GdacsAlertLevel, type GdacsEventType } from "@/lib/knowledge-intake/adapters/gdacsAdapter";
 import { fetchNwsActiveAlerts, type NwsFetchParams } from "@/lib/knowledge-intake/adapters/nwsAdapter";
@@ -33,11 +50,15 @@ import {
 import { fetchReliefWebReports } from "@/lib/knowledge-intake/adapters/reliefwebAdapter";
 import { fetchUsgsEarthquakes } from "@/lib/knowledge-intake/adapters/usgsAdapter";
 import { fetchUsgsVolcanoHans, type UsgsVolcanoHansFetchParams } from "@/lib/knowledge-intake/adapters/usgsVolcanoHansAdapter";
+import { runSmithsonianGvpActivityReports } from "@/lib/knowledge-intake/persistence/smithsonianGvpIngestionJobs";
 import {
   createIngestionRun,
   findFreshCoastalOceanContextEvidence,
+  findFreshAirQualityObservationContextEvidence,
+  findFreshSeaLevelObservationContextEvidence,
   findFreshWeatherContextEvidence,
   findFreshHydrologicalContextEvidence,
+  findFreshCriticalInfrastructureContextEvidence,
   finishIngestionRun,
   getKnowledgeIncidents,
   saveWeatherContextEvidenceIfFreshMissing,
@@ -81,12 +102,31 @@ export type OpenMeteoContextJobInput = {
   persist?: boolean;
 };
 
+export type OpenAqContextJobInput = {
+  purpose?: OpenAqRequestParams["purpose"];
+  maxIncidents?: number;
+  sinceHours?: number;
+  radiusKm?: number;
+  parameters?: string[];
+  persist?: boolean;
+};
+
 export type UsgsWaterContextJobInput = Pick<UsgsWaterRequestParams, "purpose" | "parameters" | "radiusKm" | "persist"> & {
   maxIncidents?: number;
   sinceHours?: number;
 };
 
+export type OsmOverpassContextJobInput = Pick<OsmOverpassRequestParams, "purpose" | "categories" | "radiusKm" | "persist" | "limit" | "timeoutSeconds" | "cacheTtlMinutes"> & {
+  maxIncidents?: number;
+  sinceHours?: number;
+};
+
 export type NoaaCoopsContextJobInput = Pick<NoaaCoopsRequestParams, "purpose" | "products" | "radiusKm" | "datum" | "units" | "timeZone" | "persist" | "includeAirGap"> & {
+  maxIncidents?: number;
+  sinceHours?: number;
+};
+
+export type IocSlsmfContextJobInput = Pick<IocSlsmfRequestParams, "purpose" | "radiusKm" | "minutes" | "persist" | "apiVersion"> & {
   maxIncidents?: number;
   sinceHours?: number;
 };
@@ -718,6 +758,202 @@ export async function runOpenMeteoContextEnrichment(input: OpenMeteoContextJobIn
   }
 }
 
+export async function runOpenAqContextEnrichment(input: OpenAqContextJobInput = {}) {
+  const keyStatus = getOpenAqApiKeyStatus();
+  if (!keyStatus.apiKeyConfigured) {
+    return {
+      runId: null,
+      status: "requiresConfiguration" as const,
+      sourceId: "openaq",
+      requiresApiKey: true,
+      envVar: "OPENAQ_API_KEY",
+      consideredIncidents: 0,
+      enrichedIncidents: 0,
+      skippedAlreadyFresh: 0,
+      skippedMissingCoordinates: 0,
+      skippedNoNearbyLocation: 0,
+      skippedRequiresConfiguration: 1,
+      evidenceCreated: 0,
+      rateLimited: 0,
+      warnings: [keyStatus.message],
+      errors: [],
+      sampleContexts: [],
+    };
+  }
+
+  const purpose = input.purpose ?? "wildfire_smoke_context";
+  const maxIncidents = Math.min(Math.max(input.maxIncidents ?? 25, 1), 50);
+  const sinceHours = Math.min(Math.max(input.sinceHours ?? 24, 1), 168);
+  const radiusKm = Math.min(Math.max(input.radiusKm ?? 25, 1), 50);
+  const parameters = input.parameters?.length ? input.parameters : ["pm25", "pm10", "o3", "no2", "so2", "co"];
+  let run;
+  try {
+    const source = getSourceById("openaq");
+    if (source) await upsertKnowledgeSource(source);
+    run = await createIngestionRun({
+      sourceId: "openaq",
+      sourceName: "OpenAQ",
+      status: "partial",
+      metadataJson: JSON.parse(JSON.stringify({
+        purpose,
+        maxIncidents,
+        sinceHours,
+        radiusKm,
+        parameters,
+        persist: input.persist ?? true,
+        contextualOnly: true,
+        globalBulkIngestion: false,
+      })),
+    });
+  } catch (error) {
+    return {
+      runId: null,
+      status: "failed" as const,
+      consideredIncidents: 0,
+      enrichedIncidents: 0,
+      skippedAlreadyFresh: 0,
+      skippedMissingCoordinates: 0,
+      skippedNoNearbyLocation: 0,
+      skippedRequiresConfiguration: 0,
+      evidenceCreated: 0,
+      rateLimited: 0,
+      warnings: ["Knowledge persistence is unavailable. Preview endpoint can still work without persistence."],
+      errors: [error instanceof Error ? error.message : "Knowledge persistence is unavailable"],
+      sampleContexts: [],
+    };
+  }
+
+  const warnings = [
+    "OpenAQ context enrichment is not global ingestion and does not create KnowledgeIncident records.",
+    "OpenAQ is air quality observation context only; validate official health or environmental authorities before critical decisions.",
+  ];
+  const errors: string[] = [];
+  let consideredIncidents = 0;
+  let enrichedIncidents = 0;
+  let skippedAlreadyFresh = 0;
+  let skippedMissingCoordinates = 0;
+  let skippedNoNearbyLocation = 0;
+  let rateLimited = 0;
+  let evidenceCreated = 0;
+  const sampleContexts = [];
+
+  try {
+    const since = new Date(Date.now() - sinceHours * 60 * 60_000).toISOString();
+    const incidents = await getKnowledgeIncidents({ since, withCoordinates: true, limit: maxIncidents });
+    const relevantDomains = new Set(["wildfire", "volcano", "environmental_hazard", "weather_alert", "storm", "public_health", "urban_fire", "industrial_fire"]);
+    const relevant = incidents.filter((incident) => {
+      const tags = Array.isArray(incident.tagsJson) ? incident.tagsJson.map(String) : [];
+      return relevantDomains.has(incident.domain) ||
+        tags.some((tag) => ["fire", "smoke", "volcanic_ash", "dust_haze", "urban_pollution", "citizen_report"].includes(tag));
+    });
+    consideredIncidents = relevant.length;
+
+    for (const incident of relevant.slice(0, maxIncidents)) {
+      if (typeof incident.latitude !== "number" || typeof incident.longitude !== "number") {
+        skippedMissingCoordinates += 1;
+        continue;
+      }
+      const fresh = await findFreshAirQualityObservationContextEvidence({ incidentId: incident.id, ttlMinutes: 60 });
+      if (fresh) {
+        skippedAlreadyFresh += 1;
+        continue;
+      }
+      const result = await fetchAndBuildOpenAqAirQualityObservationContext({
+        lat: incident.latitude,
+        lon: incident.longitude,
+        radiusKm,
+        parameters,
+        purpose,
+        incidentId: incident.id,
+        persist: input.persist ?? true,
+      });
+      if (result.status === "rateLimited") {
+        rateLimited += 1;
+        warnings.push("OpenAQ rate limit encountered; stopped additional context calls for this run.");
+        break;
+      }
+      if (!result.context) {
+        errors.push(...(result.errors ?? []));
+        continue;
+      }
+      if (result.context.riskFactors.noNearbyLocation) {
+        skippedNoNearbyLocation += 1;
+        continue;
+      }
+      const evidence = buildOpenAqEvidence(result.context, { incidentId: incident.id, purpose, persist: true });
+      const saved = await saveWeatherContextEvidenceIfFreshMissing({
+        incidentId: incident.id,
+        sourceId: "openaq",
+        sourceName: "OpenAQ",
+        evidenceType: "air_quality_observation_context",
+        title: evidence.title,
+        url: evidence.url,
+        excerpt: evidence.summary,
+        rawRef: result.context.rawRefs[0] ?? result.context.generatedAt,
+        confidenceScore: evidence.confidenceScore.finalConfidence,
+        metadataJson: JSON.parse(JSON.stringify(result.context)),
+      });
+      if (saved.action === "inserted") {
+        evidenceCreated += 1;
+        enrichedIncidents += 1;
+      }
+      if (sampleContexts.length < 5) sampleContexts.push(result.context);
+    }
+
+    await finishIngestionRun(run.id, {
+      status: errors.length > 0 && evidenceCreated === 0 ? "partial" : "success",
+      recordsFetched: consideredIncidents,
+      recordsNormalized: sampleContexts.length,
+      recordsInserted: evidenceCreated,
+      recordsSkipped: skippedAlreadyFresh + skippedMissingCoordinates + skippedNoNearbyLocation,
+      warningsJson: JSON.parse(JSON.stringify(warnings)),
+      metadataJson: JSON.parse(JSON.stringify({ purpose, maxIncidents, sinceHours, radiusKm, parameters, errors, rateLimited })),
+    });
+
+    return {
+      runId: run.id,
+      status: errors.length > 0 && evidenceCreated === 0 ? "partial" as const : "success" as const,
+      consideredIncidents,
+      enrichedIncidents,
+      skippedAlreadyFresh,
+      skippedMissingCoordinates,
+      skippedNoNearbyLocation,
+      skippedRequiresConfiguration: 0,
+      evidenceCreated,
+      rateLimited,
+      warnings,
+      errors,
+      sampleContexts,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "OpenAQ context job failed";
+    await finishIngestionRun(run.id, {
+      status: "failed",
+      recordsFetched: consideredIncidents,
+      recordsInserted: evidenceCreated,
+      recordsSkipped: skippedAlreadyFresh + skippedMissingCoordinates + skippedNoNearbyLocation,
+      errorMessage: message,
+      warningsJson: JSON.parse(JSON.stringify(warnings)),
+      metadataJson: JSON.parse(JSON.stringify({ errors, rateLimited })),
+    });
+    return {
+      runId: run.id,
+      status: "failed" as const,
+      consideredIncidents,
+      enrichedIncidents,
+      skippedAlreadyFresh,
+      skippedMissingCoordinates,
+      skippedNoNearbyLocation,
+      skippedRequiresConfiguration: 0,
+      evidenceCreated,
+      rateLimited,
+      warnings,
+      errors: [...errors, message],
+      sampleContexts,
+    };
+  }
+}
+
 export async function runUsgsWaterContextEnrichment(input: UsgsWaterContextJobInput = {}) {
   const source = getSourceById("usgs-water");
   const purpose = input.purpose ?? "flood";
@@ -907,6 +1143,181 @@ export async function runUsgsWaterContextEnrichment(input: UsgsWaterContextJobIn
   }
 }
 
+export async function runOsmOverpassContextEnrichment(input: OsmOverpassContextJobInput = {}) {
+  const source = getSourceById("osm-overpass");
+  const purpose = input.purpose ?? "command_center_nearby";
+  const radiusKm = Math.min(Math.max(Math.trunc(input.radiusKm ?? 5), 1), 10);
+  const categories = input.categories?.length ? input.categories : ["medical_hospital", "emergency_fire_station", "emergency_police", "shelter", "fuel"];
+  const maxIncidents = Math.min(Math.max(Math.trunc(input.maxIncidents ?? 25), 1), 50);
+  const sinceHours = Math.min(Math.max(Math.trunc(input.sinceHours ?? 24), 1), 168);
+  let run: Awaited<ReturnType<typeof createIngestionRun>>;
+  try {
+    if (source) await upsertKnowledgeSource(source);
+    run = await createIngestionRun({
+      sourceId: "osm-overpass",
+      sourceName: "OpenStreetMap / Overpass",
+      metadataJson: JSON.parse(JSON.stringify({
+        purpose,
+        radiusKm,
+        categories,
+        maxIncidents,
+        sinceHours,
+        persist: input.persist ?? true,
+        contextualOnly: true,
+        globalBulkIngestion: false,
+        createsIncidents: false,
+      })),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Knowledge persistence is unavailable";
+    return {
+      runId: null,
+      status: "failed" as const,
+      sourceId: "osm-overpass",
+      consideredIncidents: 0,
+      enrichedIncidents: 0,
+      skippedAlreadyFresh: 0,
+      skippedMissingCoordinates: 0,
+      skippedInvalidArea: 0,
+      skippedOverpassTimeout: 0,
+      evidenceCreated: 0,
+      warnings: ["Knowledge persistence is unavailable. Apply the Knowledge Intake migration before using OSM Overpass context jobs."],
+      errors: [message],
+      sampleContexts: [],
+    };
+  }
+
+  const warnings = [
+    "OSM Overpass context enrichment is bounded contextual enrichment and does not create KnowledgeIncident records.",
+    "OpenStreetMap is collaborative data; availability and official status must be verified locally.",
+  ];
+  const errors: string[] = [];
+  let consideredIncidents = 0;
+  let enrichedIncidents = 0;
+  let skippedAlreadyFresh = 0;
+  let skippedMissingCoordinates = 0;
+  let skippedInvalidArea = 0;
+  let skippedOverpassTimeout = 0;
+  let evidenceCreated = 0;
+  const sampleContexts = [];
+
+  try {
+    const since = new Date(Date.now() - sinceHours * 60 * 60_000).toISOString();
+    const incidents = await getKnowledgeIncidents({ since, withCoordinates: true, limit: maxIncidents });
+    consideredIncidents = incidents.length;
+
+    for (const incident of incidents) {
+      if (typeof incident.latitude !== "number" || typeof incident.longitude !== "number") {
+        skippedMissingCoordinates += 1;
+        continue;
+      }
+      const fresh = await findFreshCriticalInfrastructureContextEvidence({ incidentId: incident.id, ttlMinutes: input.cacheTtlMinutes ?? 360 });
+      if (fresh) {
+        skippedAlreadyFresh += 1;
+        continue;
+      }
+      const result = await fetchAndBuildOsmCriticalInfrastructureContext({
+        lat: incident.latitude,
+        lon: incident.longitude,
+        radiusKm,
+        purpose,
+        categories,
+        limit: input.limit ?? 100,
+        timeoutSeconds: input.timeoutSeconds ?? 15,
+        incidentId: incident.id,
+        persist: input.persist ?? true,
+        cacheTtlMinutes: input.cacheTtlMinutes ?? 360,
+      });
+      warnings.push(...result.warnings);
+      if (result.status === "invalidRequest") {
+        skippedInvalidArea += 1;
+        errors.push(...result.errors);
+        continue;
+      }
+      if (result.status === "timeout" || result.status === "rateLimited") {
+        skippedOverpassTimeout += 1;
+        errors.push(...result.errors);
+        continue;
+      }
+      if (!result.context) {
+        errors.push(...result.errors);
+        continue;
+      }
+      if (sampleContexts.length < 5) sampleContexts.push(result.context);
+      const evidence = buildOsmEvidence(result.context, { incidentId: incident.id, purpose, persist: true });
+      const saved = await saveWeatherContextEvidenceIfFreshMissing({
+        incidentId: incident.id,
+        sourceId: "osm-overpass",
+        sourceName: "OpenStreetMap / Overpass",
+        evidenceType: "critical_infrastructure_context",
+        title: evidence.title,
+        url: evidence.url,
+        excerpt: evidence.summary,
+        rawRef: result.context.id,
+        confidenceScore: evidence.confidenceScore.finalConfidence,
+        metadataJson: JSON.parse(JSON.stringify(result.context)),
+      }, input.cacheTtlMinutes ?? 360);
+      if (saved.action === "inserted") {
+        evidenceCreated += 1;
+        enrichedIncidents += 1;
+      } else if (saved.action === "skipped_fresh") {
+        skippedAlreadyFresh += 1;
+      }
+    }
+
+    await finishIngestionRun(run.id, {
+      status: errors.length ? "partial" : "success",
+      recordsFetched: consideredIncidents,
+      recordsNormalized: enrichedIncidents,
+      recordsInserted: evidenceCreated,
+      recordsSkipped: skippedAlreadyFresh + skippedMissingCoordinates + skippedInvalidArea + skippedOverpassTimeout,
+      warningsJson: JSON.parse(JSON.stringify([...new Set(warnings)])),
+      metadataJson: JSON.parse(JSON.stringify({ purpose, radiusKm, categories, sampleCount: sampleContexts.length })),
+    });
+    return {
+      runId: run.id,
+      status: errors.length ? "partial" as const : "success" as const,
+      sourceId: "osm-overpass",
+      consideredIncidents,
+      enrichedIncidents,
+      skippedAlreadyFresh,
+      skippedMissingCoordinates,
+      skippedInvalidArea,
+      skippedOverpassTimeout,
+      evidenceCreated,
+      warnings: [...new Set(warnings)],
+      errors: [...new Set(errors)],
+      sampleContexts,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "OSM Overpass context job failed";
+    await finishIngestionRun(run.id, {
+      status: "failed",
+      recordsFetched: consideredIncidents,
+      recordsNormalized: enrichedIncidents,
+      recordsInserted: evidenceCreated,
+      recordsSkipped: skippedAlreadyFresh + skippedMissingCoordinates + skippedInvalidArea + skippedOverpassTimeout,
+      errorMessage: message,
+      warningsJson: JSON.parse(JSON.stringify([...new Set(warnings)])),
+    }).catch(() => undefined);
+    return {
+      runId: run.id,
+      status: "failed" as const,
+      sourceId: "osm-overpass",
+      consideredIncidents,
+      enrichedIncidents,
+      skippedAlreadyFresh,
+      skippedMissingCoordinates,
+      skippedInvalidArea,
+      skippedOverpassTimeout,
+      evidenceCreated,
+      warnings: [...new Set(warnings)],
+      errors: [...errors, message],
+      sampleContexts,
+    };
+  }
+}
+
 export async function runNoaaCoopsContextEnrichment(input: NoaaCoopsContextJobInput = {}) {
   const source = getSourceById("noaa-coops");
   const purpose = input.purpose ?? "tsunami_context";
@@ -1084,6 +1495,195 @@ export async function runNoaaCoopsContextEnrichment(input: NoaaCoopsContextJobIn
       skippedAlreadyFresh,
       skippedMissingCoordinates,
       skippedNoNearbyStation,
+      evidenceCreated,
+      warnings: [...new Set(warnings)],
+      errors: [...errors, message],
+      sampleContexts,
+    };
+  }
+}
+
+export async function runIocSlsmfContextEnrichment(input: IocSlsmfContextJobInput = {}) {
+  const keyStatus = getIocSlsmfApiKeyStatus();
+  if (!keyStatus.apiKeyConfigured) {
+    return {
+      runId: null,
+      status: "requiresConfiguration" as const,
+      sourceId: "ioc-slsmf",
+      consideredIncidents: 0,
+      enrichedIncidents: 0,
+      skippedAlreadyFresh: 0,
+      skippedMissingCoordinates: 0,
+      skippedNoNearbyStation: 0,
+      skippedRequiresConfiguration: 1,
+      evidenceCreated: 0,
+      warnings: [keyStatus.message],
+      errors: [],
+      sampleContexts: [],
+    };
+  }
+
+  const source = getSourceById("ioc-slsmf");
+  const purpose = input.purpose ?? "tsunami_context";
+  const radiusKm = Math.min(Math.max(Math.trunc(input.radiusKm ?? 100), 1), 250);
+  const minutes = Math.min(Math.max(Math.trunc(input.minutes ?? 120), 1), 180);
+  const maxIncidents = Math.min(Math.max(Math.trunc(input.maxIncidents ?? 25), 1), 50);
+  const sinceHours = Math.min(Math.max(Math.trunc(input.sinceHours ?? 24), 1), 168);
+  let run: Awaited<ReturnType<typeof createIngestionRun>>;
+  try {
+    if (source) await upsertKnowledgeSource(source);
+    run = await createIngestionRun({
+      sourceId: "ioc-slsmf",
+      sourceName: "IOC Sea Level Monitoring Facility",
+      metadataJson: JSON.parse(JSON.stringify({
+        purpose,
+        radiusKm,
+        minutes,
+        maxIncidents,
+        sinceHours,
+        persist: input.persist ?? true,
+        apiVersion: input.apiVersion ?? "v2",
+        contextualOnly: true,
+        globalBulkIngestion: false,
+        createsIncidents: false,
+      })),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Knowledge persistence is unavailable";
+    return {
+      runId: null,
+      status: "failed" as const,
+      sourceId: "ioc-slsmf",
+      consideredIncidents: 0,
+      enrichedIncidents: 0,
+      skippedAlreadyFresh: 0,
+      skippedMissingCoordinates: 0,
+      skippedNoNearbyStation: 0,
+      skippedRequiresConfiguration: 0,
+      evidenceCreated: 0,
+      warnings: ["Knowledge persistence is unavailable. Apply the Knowledge Intake migration before using IOC SLSMF context jobs."],
+      errors: [message],
+      sampleContexts: [],
+    };
+  }
+
+  const warnings = [
+    "IOC SLSMF context enrichment is not global polling and does not create KnowledgeIncident records.",
+    "IOC SLSMF readings are relative sea level observation context only, not warnings, evacuation orders or tsunami confirmations.",
+  ];
+  const errors: string[] = [];
+  let consideredIncidents = 0;
+  let enrichedIncidents = 0;
+  let skippedAlreadyFresh = 0;
+  let skippedMissingCoordinates = 0;
+  let skippedNoNearbyStation = 0;
+  let evidenceCreated = 0;
+  const sampleContexts = [];
+
+  try {
+    const since = new Date(Date.now() - sinceHours * 60 * 60_000).toISOString();
+    const incidents = await getKnowledgeIncidents({ since, withCoordinates: true, limit: maxIncidents });
+    const relevant = incidents.filter((incident) => {
+      const haystack = `${incident.domain} ${incident.subtype} ${incident.title} ${incident.summary} ${JSON.stringify(incident.tagsJson ?? [])}`.toLowerCase();
+      return ["tsunami", "earthquake_tsunami_context", "coastal_report", "coastal", "tropical_cyclone", "storm_surge", "coastal_flood", "hurricane", "flood"].some((term) => haystack.includes(term));
+    });
+    consideredIncidents = relevant.length;
+
+    for (const incident of relevant) {
+      if (typeof incident.latitude !== "number" || typeof incident.longitude !== "number") {
+        skippedMissingCoordinates += 1;
+        continue;
+      }
+      const fresh = await findFreshSeaLevelObservationContextEvidence({ incidentId: incident.id, ttlMinutes: 60 });
+      if (fresh) {
+        skippedAlreadyFresh += 1;
+        continue;
+      }
+      const result = await fetchAndBuildIocSlsmfContext({
+        lat: incident.latitude,
+        lon: incident.longitude,
+        radiusKm,
+        minutes,
+        purpose,
+        incidentId: incident.id,
+        persist: input.persist ?? true,
+        apiVersion: input.apiVersion ?? "v2",
+      });
+      if (!result.context) {
+        errors.push(...result.errors);
+        continue;
+      }
+      warnings.push(...result.warnings);
+      if (result.context.riskFactors.noNearbyStation) {
+        skippedNoNearbyStation += 1;
+        if (sampleContexts.length < 5) sampleContexts.push(result.context);
+        continue;
+      }
+      const evidence = buildIocSlsmfEvidence(result.context, { incidentId: incident.id, purpose, persist: true });
+      const saved = await saveWeatherContextEvidenceIfFreshMissing({
+        incidentId: incident.id,
+        sourceId: "ioc-slsmf",
+        sourceName: "IOC Sea Level Monitoring Facility",
+        evidenceType: "sea_level_observation_context",
+        title: evidence.title,
+        url: evidence.url,
+        excerpt: evidence.summary,
+        rawRef: result.context.id,
+        confidenceScore: evidence.confidenceScore.finalConfidence,
+        metadataJson: JSON.parse(JSON.stringify(result.context)),
+      });
+      if (saved.action === "inserted") {
+        evidenceCreated += 1;
+        enrichedIncidents += 1;
+      }
+      if (sampleContexts.length < 5) sampleContexts.push(result.context);
+    }
+
+    await finishIngestionRun(run.id, {
+      status: errors.length > 0 && evidenceCreated === 0 ? "partial" : "success",
+      recordsFetched: consideredIncidents,
+      recordsNormalized: sampleContexts.length,
+      recordsInserted: evidenceCreated,
+      recordsSkipped: skippedAlreadyFresh + skippedMissingCoordinates + skippedNoNearbyStation,
+      warningsJson: JSON.parse(JSON.stringify([...new Set(warnings)])),
+      metadataJson: JSON.parse(JSON.stringify({ purpose, radiusKm, minutes, maxIncidents, sinceHours, skippedAlreadyFresh, skippedMissingCoordinates, skippedNoNearbyStation, errors })),
+    });
+
+    return {
+      runId: run.id,
+      status: errors.length > 0 && evidenceCreated === 0 ? "partial" as const : "success" as const,
+      sourceId: "ioc-slsmf",
+      consideredIncidents,
+      enrichedIncidents,
+      skippedAlreadyFresh,
+      skippedMissingCoordinates,
+      skippedNoNearbyStation,
+      skippedRequiresConfiguration: 0,
+      evidenceCreated,
+      warnings: [...new Set(warnings)],
+      errors,
+      sampleContexts,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "IOC SLSMF context job failed";
+    await finishIngestionRun(run.id, {
+      status: "failed",
+      errorMessage: message,
+      recordsFetched: consideredIncidents,
+      recordsInserted: evidenceCreated,
+      recordsSkipped: skippedAlreadyFresh + skippedMissingCoordinates + skippedNoNearbyStation,
+      warningsJson: JSON.parse(JSON.stringify([...new Set(warnings)])),
+    }).catch(() => undefined);
+    return {
+      runId: run.id,
+      status: "failed" as const,
+      sourceId: "ioc-slsmf",
+      consideredIncidents,
+      enrichedIncidents,
+      skippedAlreadyFresh,
+      skippedMissingCoordinates,
+      skippedNoNearbyStation,
+      skippedRequiresConfiguration: 0,
       evidenceCreated,
       warnings: [...new Set(warnings)],
       errors: [...errors, message],
@@ -1609,7 +2209,7 @@ function asArray(value?: string | string[]) {
   return Array.isArray(value) ? value : value.split(/[;,]/).map((item) => item.trim()).filter(Boolean);
 }
 
-export async function runAllConfiguredKnowledgeIngestion(options: { includeContextual?: boolean; includeHydrologicalContext?: boolean; includeCoastalObservationContext?: boolean } = {}) {
+export async function runAllConfiguredKnowledgeIngestion(options: { includeContextual?: boolean; includeHydrologicalContext?: boolean; includeCoastalObservationContext?: boolean; includeSeaLevelObservationContext?: boolean; includeAirQualityContext?: boolean; includeCriticalInfrastructureContext?: boolean; includeHumanitarianContext?: boolean; includePublicHealth?: boolean; includeEcdc?: boolean; includeMediaSignals?: boolean; includeFloodForecastContext?: boolean; includeObservedFloodContext?: boolean; includeVolcanoReports?: boolean; includeSmithsonianGvp?: boolean; includeImpact?: boolean; includeShakeMap?: boolean; includePager?: boolean; purpose?: OpenAqRequestParams["purpose"]; maxIncidents?: number; radiusKm?: number; categories?: string[] } = {}) {
   const results = [];
   results.push({ sourceId: "usgs_earthquake", result: await runUsgsKnowledgeIngestion({ feedType: "relevant", limit: 50 }) });
   results.push({
@@ -1640,6 +2240,32 @@ export async function runAllConfiguredKnowledgeIngestion(options: { includeConte
       includeGeoJson: true,
       limit: 100,
     }),
+  });
+  results.push({
+    sourceId: "smithsonian-gvp",
+    status: options.includeVolcanoReports && options.includeSmithsonianGvp ? "volcano_reports_enabled" : "skipped",
+    skipped: !(options.includeVolcanoReports && options.includeSmithsonianGvp),
+    message: options.includeVolcanoReports && options.includeSmithsonianGvp
+      ? "Smithsonian GVP runs report context only; catalog/history are controlled imports and never run-all defaults."
+      : "Smithsonian GVP catalog/history are not run-all defaults. Activity reports require includeVolcanoReports=true and includeSmithsonianGvp=true.",
+    runAllDefault: false,
+    sourceRole: "global_volcanism_knowledge_source",
+    result: options.includeVolcanoReports && options.includeSmithsonianGvp
+      ? await runSmithsonianGvpActivityReports({ includeDVAR: true, includeWVAR: true, sinceDays: 14, persist: true, createIncidents: false, limit: 100 })
+      : null,
+  });
+  results.push({
+    sourceId: "usgs-earthquake-impact",
+    status: options.includeImpact ? "dedicated_event_required" : "skipped",
+    skipped: true,
+    message: options.includeImpact
+      ? "USGS ShakeMap/PAGER enrichment requires bounded eventId or a later recent-earthquake scheduler. Use /api/knowledge-intake/jobs/run-usgs-earthquake-impact with eventId."
+      : "USGS ShakeMap/PAGER are enrichment sources and are skipped by run-all unless includeImpact=true and bounded event selection is provided.",
+    runAllDefault: false,
+    sourceRole: "earthquake_impact_enrichment_source",
+    includeShakeMap: options.includeShakeMap ?? true,
+    includePager: options.includePager ?? true,
+    requiredMode: "POST /api/knowledge-intake/jobs/run-usgs-earthquake-impact with eventId",
   });
   results.push({
     sourceId: "nws",
@@ -1687,6 +2313,119 @@ export async function runAllConfiguredKnowledgeIngestion(options: { includeConte
     result: options.includeCoastalObservationContext
       ? await runNoaaCoopsContextEnrichment({ purpose: "tsunami_context", maxIncidents: 25, sinceHours: 24, radiusKm: 25, products: ["water_level", "predictions", "wind", "air_pressure"], datum: "MLLW", persist: true })
       : null,
+  });
+  results.push({
+    sourceId: "ioc-slsmf",
+    status: options.includeSeaLevelObservationContext ? "sea_level_observation_context_enabled" : "skipped",
+    skipped: !options.includeSeaLevelObservationContext,
+    message: options.includeSeaLevelObservationContext
+      ? "IOC SLSMF will run only as sea level observation context for recent relevant incidents with coordinates."
+      : "IOC SLSMF is a contextual global tide gauge source and is skipped by run-all unless includeSeaLevelObservationContext=true.",
+    runAllDefault: false,
+    sourceRole: "global_sea_level_observation_source",
+    result: options.includeSeaLevelObservationContext
+      ? await runIocSlsmfContextEnrichment({ purpose: "tsunami_context", maxIncidents: 25, sinceHours: 24, radiusKm: 100, minutes: 120, persist: true })
+      : null,
+  });
+  results.push({
+    sourceId: "openaq",
+    status: options.includeAirQualityContext ? "air_quality_context_enabled" : "skipped",
+    skipped: !options.includeAirQualityContext,
+    message: options.includeAirQualityContext
+      ? "OpenAQ will run only as air quality observation context for recent relevant incidents with coordinates."
+      : "OpenAQ is a contextual air quality observation source and is skipped by run-all unless includeAirQualityContext=true.",
+    runAllDefault: false,
+    sourceRole: "air_quality_observation_source",
+    result: options.includeAirQualityContext
+      ? await runOpenAqContextEnrichment({
+        purpose: options.purpose ?? "wildfire_smoke_context",
+        maxIncidents: options.maxIncidents ?? 25,
+        sinceHours: 24,
+        radiusKm: options.radiusKm ?? 25,
+        parameters: ["pm25", "pm10", "o3", "no2", "so2", "co"],
+        persist: true,
+      })
+      : null,
+  });
+  results.push({
+    sourceId: "osm-overpass",
+    status: options.includeCriticalInfrastructureContext ? "critical_infrastructure_context_enabled" : "skipped",
+    skipped: !options.includeCriticalInfrastructureContext,
+    message: options.includeCriticalInfrastructureContext
+      ? "OSM Overpass will run only as bounded critical infrastructure context for recent incidents with coordinates."
+      : "OpenStreetMap / Overpass is a contextual critical infrastructure source and is skipped by run-all unless includeCriticalInfrastructureContext=true.",
+    runAllDefault: false,
+    sourceRole: "critical_infrastructure_geospatial_source",
+    result: options.includeCriticalInfrastructureContext
+      ? await runOsmOverpassContextEnrichment({
+        purpose: "command_center_nearby",
+        maxIncidents: options.maxIncidents ?? 25,
+        sinceHours: 24,
+        radiusKm: options.radiusKm ?? 5,
+        categories: options.categories ?? ["medical_hospital", "emergency_fire_station", "emergency_police", "shelter", "fuel"],
+        persist: true,
+      })
+      : null,
+  });
+  results.push({
+    sourceId: "hdx-hapi",
+    status: options.includeHumanitarianContext ? "dedicated_job_required" : "skipped",
+    skipped: true,
+    message: options.includeHumanitarianContext
+      ? "HDX/OCHA HAPI requires a bounded country/admin/p-code context. Use /api/knowledge-intake/jobs/run-hdx-hapi-context with locationCode/admin/pCode."
+      : "HDX/OCHA HAPI is contextual humanitarian intelligence and is skipped by run-all unless a dedicated context job is called.",
+    runAllDefault: false,
+    sourceRole: "humanitarian_context_indicator_source",
+    requiredMode: "POST /api/knowledge-intake/jobs/run-hdx-hapi-context",
+  });
+  results.push({
+    sourceId: "who-don",
+    status: options.includePublicHealth ? "dedicated_job_available" : "skipped",
+    skipped: !options.includePublicHealth,
+    message: options.includePublicHealth
+      ? "WHO DON is available through the dedicated ingest job; run-all does not call it here to keep public health activation controlled."
+      : "WHO DON is skipped by run-all unless includePublicHealth=true and the dedicated job is called.",
+    runAllDefault: false,
+    sourceRole: "official_public_health_outbreak_source",
+    requiredMode: "POST /api/knowledge-intake/jobs/run-who-don",
+  });
+  results.push({
+    sourceId: "ecdc",
+    status: options.includeEcdc || options.includePublicHealth ? "dedicated_job_available" : "skipped",
+    skipped: !(options.includeEcdc || options.includePublicHealth),
+    message: "ECDC RSS/data uses /api/knowledge-intake/jobs/run-ecdc. CDTR remains evidence by default and no citizen alerts are created.",
+    runAllDefault: false,
+    sourceRole: "european_public_health_threats_source",
+    requiredMode: "POST /api/knowledge-intake/jobs/run-ecdc",
+  });
+  results.push({
+    sourceId: "gdelt",
+    status: options.includeMediaSignals ? "dedicated_job_required" : "skipped",
+    skipped: true,
+    message: options.includeMediaSignals
+      ? "GDELT requires controlled templates/country/context. Use /api/knowledge-intake/jobs/run-gdelt-context; no confirmed incidents are created."
+      : "GDELT is OSINT/media signal context and is skipped by run-all by default.",
+    runAllDefault: false,
+    sourceRole: "global_osint_media_signal_source",
+    requiredMode: "POST /api/knowledge-intake/jobs/run-gdelt-context",
+  });
+  results.push({
+    sourceId: "copernicus-glofas",
+    status: options.includeFloodForecastContext ? "dedicated_job_required" : "skipped",
+    skipped: true,
+    message: "Copernicus GloFAS requires bounded point/bbox/AOI context and EWDS credentials. Use the dedicated context job; no confirmed flood incident is created.",
+    runAllDefault: false,
+    sourceRole: "global_flood_forecast_source",
+    requiredMode: "POST /api/knowledge-intake/jobs/run-copernicus-glofas-context",
+  });
+  results.push({
+    sourceId: "copernicus-gfm",
+    status: options.includeObservedFloodContext ? "dedicated_job_required" : "skipped",
+    skipped: true,
+    message: "Copernicus GFM requires product/AOI/bbox context and access token. Use the dedicated context job; flood_observed incident creation is guarded.",
+    runAllDefault: false,
+    sourceRole: "satellite_flood_observation_source",
+    requiredMode: "POST /api/knowledge-intake/jobs/run-copernicus-gfm-context",
   });
   results.push({
     sourceId: "noaa-storm-events",

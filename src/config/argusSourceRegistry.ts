@@ -91,6 +91,18 @@ export const ARGUS_SOURCE_REGISTRY: ArgusSourceRegistryEntry[] = [
       "Feeds Atom oficiales de los centros NTWC y PTWC para mensajes y alertas de tsunami.",
   },
   {
+    id: "ioc-slsmf",
+    name: "IOC Sea Level Monitoring",
+    category: "sea_level_observation",
+    tier: 1,
+    priority: 91,
+    status: "active_if_configured",
+    reliabilityScore: 91,
+    accessType: "api_key",
+    notes:
+      "IOC Sea Level Monitoring Facility / SLSMF; mareografos globales y nivel del mar relativo. Requiere IOC_SLSMF_API_KEY. Contexto observacional, no warning center, no orden de evacuacion, no confirmacion automatica de tsunami.",
+  },
+  {
     id: "open-meteo",
     name: "Open-Meteo Weather Forecast API",
     category: "weather_context",
@@ -130,7 +142,18 @@ export const ARGUS_SOURCE_REGISTRY: ArgusSourceRegistryEntry[] = [
   { id: "openstreetmap", name: "OpenStreetMap Data", category: "geospatial", tier: 1, priority: 85, status: "planned", reliabilityScore: 88, accessType: "free_with_terms", notes: "Base geográfica y contexto territorial." },
   { id: "copernicus_glofas", name: "Copernicus GloFAS / GFM", category: "flood", tier: 2, priority: 80, status: "planned", reliabilityScore: 91, accessType: "free_with_terms", notes: "Inundaciones y caudales." },
   { id: "hdx_hapi", name: "HDX HAPI", category: "humanitarian", tier: 2, priority: 70, status: "planned", reliabilityScore: 82, accessType: "free_with_terms", notes: "Datasets humanitarios normalizados." },
-  { id: "openaq", name: "OpenAQ", category: "air_quality", tier: 2, priority: 68, status: "planned", reliabilityScore: 78, accessType: "free_with_terms", notes: "Calidad del aire según cobertura disponible." },
+  {
+    id: "openaq",
+    name: "OpenAQ",
+    category: "air_quality",
+    tier: 2,
+    priority: 76,
+    status: "active_if_configured",
+    reliabilityScore: 86,
+    accessType: "free_with_terms",
+    notes:
+      "Contexto global agregado de calidad del aire; requiere OPENAQ_API_KEY, staleness y metadata proveedor/licencia. No es alerta sanitaria oficial ni fuente de incidentes.",
+  },
   {
     id: "nasa-eonet",
     name: "NASA EONET",

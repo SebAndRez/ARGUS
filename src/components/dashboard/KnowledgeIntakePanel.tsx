@@ -29,6 +29,22 @@ export default function KnowledgeIntakePanel() {
   const [openMeteoLat, setOpenMeteoLat] = useState("-33.4489");
   const [openMeteoLon, setOpenMeteoLon] = useState("-70.6693");
   const [openMeteoPurpose, setOpenMeteoPurpose] = useState("general");
+  const [openAqLocationId, setOpenAqLocationId] = useState("");
+  const [openAqLat, setOpenAqLat] = useState("-33.4489");
+  const [openAqLon, setOpenAqLon] = useState("-70.6693");
+  const [openAqBbox, setOpenAqBbox] = useState("");
+  const [openAqRadiusKm, setOpenAqRadiusKm] = useState("25");
+  const [openAqParameters, setOpenAqParameters] = useState("pm25,pm10,o3,no2,so2,co");
+  const [openAqPurpose, setOpenAqPurpose] = useState("wildfire_smoke_context");
+  const [openAqPersist, setOpenAqPersist] = useState(false);
+  const [osmLat, setOsmLat] = useState("-33.4489");
+  const [osmLon, setOsmLon] = useState("-70.6693");
+  const [osmBbox, setOsmBbox] = useState("");
+  const [osmRadiusKm, setOsmRadiusKm] = useState("5");
+  const [osmPurpose, setOsmPurpose] = useState("command_center_nearby");
+  const [osmCategories, setOsmCategories] = useState("medical_hospital,emergency_fire_station,emergency_police,shelter,fuel");
+  const [osmLimit, setOsmLimit] = useState("100");
+  const [osmPersist, setOsmPersist] = useState(false);
   const [usgsWaterSite, setUsgsWaterSite] = useState("01646500");
   const [usgsWaterLat, setUsgsWaterLat] = useState("38.9498");
   const [usgsWaterLon, setUsgsWaterLon] = useState("-77.1277");
@@ -56,6 +72,12 @@ export default function KnowledgeIntakePanel() {
   const [openFemaIncidentTypes, setOpenFemaIncidentTypes] = useState("Fire,Flood");
   const [openFemaDisasterNumber, setOpenFemaDisasterNumber] = useState("");
   const [openFemaLimit, setOpenFemaLimit] = useState("100");
+  const [hapiLocationCode, setHapiLocationCode] = useState("CHL");
+  const [hapiIndicators, setHapiIndicators] = useState("baseline_population,humanitarian_needs,idps,refugees,returnees,operational_presence,food_security");
+  const [gdeltTemplateId, setGdeltTemplateId] = useState("gdelt-flood-disaster-media");
+  const [gdeltCountry, setGdeltCountry] = useState("Chile");
+  const [copernicusBbox, setCopernicusBbox] = useState("-71,-34,-70,-33");
+  const [copernicusAoiId, setCopernicusAoiId] = useState("");
   const [jobStatus, setJobStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [jobMessage, setJobMessage] = useState("Sin job persistente ejecutado.");
   const [healthSummary, setHealthSummary] = useState<{
@@ -80,7 +102,7 @@ export default function KnowledgeIntakePanel() {
   const stubSources = sources.filter((source) => source.status === "planned" || source.status === "stub");
   const requiresKeySources = sources.filter((source) => source.status === "requiresApiKey");
   const requiresConfigSources = sources.filter((source) => source.status === "requiresConfiguration");
-  async function runLiveTest(source: "usgs" | "gdacs" | "eonet" | "hans" | "nws" | "open-meteo" | "usgs-water" | "noaa-coops" | "noaa" | "ncei-tsunami" | "openfema" | "reliefweb") {
+  async function runLiveTest(source: "usgs" | "gdacs" | "eonet" | "hans" | "nws" | "open-meteo" | "openaq" | "osm-overpass" | "usgs-water" | "noaa-coops" | "noaa" | "ncei-tsunami" | "openfema" | "reliefweb" | "hdx-hapi" | "who-don" | "ecdc" | "gdelt" | "copernicus-glofas" | "copernicus-gfm") {
     setLiveStatus("loading");
     setLiveMessage(`Probando ${source.toUpperCase()}...`);
     try {
@@ -97,6 +119,10 @@ export default function KnowledgeIntakePanel() {
                   ? `/api/knowledge-intake/live/nws?mode=alerts&${nwsQuery}&limit=8`
                   : source === "open-meteo"
                     ? `/api/knowledge-intake/live/open-meteo?lat=${encodeURIComponent(openMeteoLat)}&lon=${encodeURIComponent(openMeteoLon)}&forecastDays=3&purpose=${encodeURIComponent(openMeteoPurpose)}`
+                    : source === "openaq"
+                      ? `/api/knowledge-intake/live/openaq?${openAqLocationId ? `locationId=${encodeURIComponent(openAqLocationId)}` : openAqBbox ? `bbox=${encodeURIComponent(openAqBbox)}` : `lat=${encodeURIComponent(openAqLat)}&lon=${encodeURIComponent(openAqLon)}`}&radiusKm=${encodeURIComponent(openAqRadiusKm)}&parameters=${encodeURIComponent(openAqParameters)}&purpose=${encodeURIComponent(openAqPurpose)}&persist=${openAqPersist}`
+                    : source === "osm-overpass"
+                      ? `/api/knowledge-intake/live/osm-overpass?${osmBbox ? `bbox=${encodeURIComponent(osmBbox)}` : `lat=${encodeURIComponent(osmLat)}&lon=${encodeURIComponent(osmLon)}`}&radiusKm=${encodeURIComponent(osmRadiusKm)}&purpose=${encodeURIComponent(osmPurpose)}&categories=${encodeURIComponent(osmCategories)}&limit=${encodeURIComponent(osmLimit)}&timeoutSeconds=15&persist=${osmPersist}`
                     : source === "usgs-water"
                       ? `/api/knowledge-intake/live/usgs-water?${usgsWaterSite ? `site=${encodeURIComponent(usgsWaterSite)}` : `lat=${encodeURIComponent(usgsWaterLat)}&lon=${encodeURIComponent(usgsWaterLon)}`}&radiusKm=${encodeURIComponent(usgsWaterRadiusKm)}&purpose=${encodeURIComponent(usgsWaterPurpose)}&parameters=${encodeURIComponent(usgsWaterParameters)}`
                     : source === "noaa-coops"
@@ -107,6 +133,18 @@ export default function KnowledgeIntakePanel() {
                       ? `/api/knowledge-intake/live/noaa-ncei-tsunami?dataset=events-with-runups&startYear=${encodeURIComponent(nceiTsunamiStartYear)}&endYear=${encodeURIComponent(nceiTsunamiEndYear)}&country=${encodeURIComponent(nceiTsunamiCountry)}&includeRunups=${nceiTsunamiIncludeRunups}&limit=${encodeURIComponent(nceiTsunamiLimit)}`
                     : source === "openfema"
                       ? `/api/knowledge-intake/live/openfema?dataset=disaster-declarations&year=${encodeURIComponent(openFemaYear)}&state=${encodeURIComponent(openFemaState)}&incidentTypes=${encodeURIComponent(openFemaIncidentTypes)}&disasterNumber=${encodeURIComponent(openFemaDisasterNumber)}&limit=${encodeURIComponent(openFemaLimit)}`
+                    : source === "hdx-hapi"
+                      ? `/api/knowledge-intake/live/hdx-hapi?locationCode=${encodeURIComponent(hapiLocationCode)}&indicators=${encodeURIComponent(hapiIndicators)}&purpose=command_center_humanitarian&limit=100`
+                    : source === "who-don"
+                      ? "/api/knowledge-intake/live/who-don?top=10"
+                    : source === "ecdc"
+                      ? "/api/knowledge-intake/live/ecdc?feeds=ecdc-cdtr,ecdc-epidemiological-updates,ecdc-risk-assessments&top=10"
+                    : source === "gdelt"
+                      ? `/api/knowledge-intake/live/gdelt?templateId=${encodeURIComponent(gdeltTemplateId)}&country=${encodeURIComponent(gdeltCountry)}&timespan=24h&maxRecords=25`
+                    : source === "copernicus-glofas"
+                      ? `/api/knowledge-intake/live/copernicus-glofas?bbox=${encodeURIComponent(copernicusBbox)}&leadTimeDays=7`
+                    : source === "copernicus-gfm"
+                      ? `/api/knowledge-intake/live/copernicus-gfm?${copernicusAoiId ? `aoiId=${encodeURIComponent(copernicusAoiId)}` : `bbox=${encodeURIComponent(copernicusBbox)}`}&includeGeometry=false`
                     : "/api/knowledge-intake/live/reliefweb?limit=6";
       const response = await fetch(endpoint, { cache: "no-store" });
       const data = await response.json();
@@ -116,6 +154,19 @@ export default function KnowledgeIntakePanel() {
       if (source === "open-meteo") {
         const flags = Object.entries(data.riskFactors ?? {}).filter(([, active]) => active).map(([key]) => key);
         setLiveMessage(`Open-Meteo entrego contexto ${data.weatherContext?.forecastDays ?? 3}d sin crear incidentes. Riesgos: ${flags.length ? flags.join(", ") : "sin factores elevados"}.`);
+      } else if (source === "openaq") {
+        const context = data.airQualityObservationContext;
+        const latest = context?.latest ?? {};
+        setLiveMessage(
+          data.status === "requiresConfiguration"
+            ? "OpenAQ requiere OPENAQ_API_KEY; fuente en requiresConfiguration, no falla del sistema."
+            : `OpenAQ: ${data.locationsFound ?? 0} location(s), ${data.latestFetched ?? 0} medicion(es), PM2.5 ${latest.pm25 ?? "n/a"}, PM10 ${latest.pm10 ?? "n/a"}, staleness ${context?.stalenessMinutes ?? "n/a"} min, evidenceCreated ${data.evidenceCreated ? "si" : "no"}.`
+        );
+      } else if (source === "osm-overpass") {
+        const context = data.criticalInfrastructureContext;
+        const nearestHospital = context?.medical?.nearestHospital?.name ?? context?.medical?.nearestHospital?.osmId ?? "n/a";
+        const nearestFire = context?.emergency?.nearestFireStation?.name ?? context?.emergency?.nearestFireStation?.osmId ?? "n/a";
+        setLiveMessage(`OSM/Overpass: ${data.poisFound ?? 0} POI(s), categorias ${Object.keys(data.countsByCategory ?? {}).length}, hospital ${nearestHospital}, bomberos ${nearestFire}, fromCache ${context?.cache?.fromCache ? "si" : "no"}, evidenceCreated ${data.evidenceCreated ? "si" : "no"}.`);
       } else if (source === "usgs-water") {
         const context = data.hydrologicalContext;
         setLiveMessage(`USGS Water: ${context?.locations?.length ?? 0} estacion(es), ${context?.measurements?.length ?? 0} medicion(es), staleness ${context?.stalenessMinutes ?? "n/a"} min, evidenceCreated ${data.evidenceCreated ? "si" : "no"}.`);
@@ -128,6 +179,22 @@ export default function KnowledgeIntakePanel() {
         setLiveMessage(`NOAA NCEI Tsunami preview: ${data.normalizedEvents ?? 0} evento(s), runups ${data.normalizedRunups ?? 0}, evidencia ${data.evidence?.length ?? 0}. No es alerta viva.`);
       } else if (source === "openfema") {
         setLiveMessage(`OpenFEMA preview: ${data.normalized ?? 0} declaracion(es), evidencia ${data.evidence?.length ?? 0}, precedentes ${data.operationalPrecedents?.length ?? 0}. No es sensor live.`);
+      } else if (source === "hdx-hapi") {
+        setLiveMessage(
+          data.status === "requiresConfiguration"
+            ? "HDX/OCHA HAPI requiere HAPI_APP_IDENTIFIER; status requiresConfiguration sin romper la app."
+            : `HDX/OCHA HAPI: fetched ${data.indicatorsFetched?.length ?? 0} indicador(es), missing ${data.indicatorsMissing?.length ?? 0}, evidenceCreated ${data.evidenceCreated ? "si" : "no"}.`
+        );
+      } else if (source === "who-don") {
+        setLiveMessage(`WHO DON: ${data.normalized ?? 0} DON normalizado(s), incident source controlado, evidenceCreated ${data.evidenceCreated ?? 0}. No diagnostico/no alertas automaticas.`);
+      } else if (source === "ecdc") {
+        setLiveMessage(`ECDC: ${data.feedsFetched ?? 0} feed(s), ${data.normalized ?? 0} item(s), requiresReview ${data.requiresReview ?? 0}. CDTR como evidencia por defecto.`);
+      } else if (source === "gdelt") {
+        setLiveMessage(`GDELT: ${data.articlesFetched ?? 0} articulo(s), ${data.uniqueDomains ?? 0} dominio(s), coverageSpike ${data.coverageSpike ? "si" : "no"}. Senal OSINT, no incidente confirmado.`);
+      } else if (source === "copernicus-glofas") {
+        setLiveMessage(data.status === "requiresConfiguration" ? "GloFAS requiere COPERNICUS_EWDS_API_KEY; status requiresConfiguration." : `GloFAS: contexto forecast preparado, evidenceCreated ${data.evidenceCreated ? "si" : "no"}. No confirma inundacion.`);
+      } else if (source === "copernicus-gfm") {
+        setLiveMessage(data.status === "requiresConfiguration" ? "GFM requiere COPERNICUS_GFM_ACCESS_TOKEN; status requiresConfiguration." : `GFM: ${data.productsFetched ?? 0} producto(s), evidenceCreated ${data.evidenceCreated ? "si" : "no"}, incidentCreated ${data.incidentCreated ? "si" : "no"}.`);
       } else {
         setLiveMessage(`${data.sourceName ?? data.source ?? source} entrego ${data.count ?? data.normalized ?? 0} incidente(s) normalizado(s).`);
       }
@@ -137,7 +204,7 @@ export default function KnowledgeIntakePanel() {
     }
   }
 
-  async function runPersistentJob(source: "usgs" | "gdacs" | "eonet" | "hans" | "nws" | "open-meteo" | "usgs-water" | "noaa-coops" | "noaa" | "ncei-tsunami" | "openfema") {
+  async function runPersistentJob(source: "usgs" | "gdacs" | "eonet" | "hans" | "nws" | "open-meteo" | "openaq" | "osm-overpass" | "usgs-water" | "noaa-coops" | "noaa" | "ncei-tsunami" | "openfema" | "hdx-hapi" | "who-don" | "ecdc" | "gdelt" | "copernicus-glofas" | "copernicus-gfm") {
     setJobStatus("loading");
     setJobMessage(`Ejecutando ${source.toUpperCase()} persistente...`);
     try {
@@ -150,8 +217,12 @@ export default function KnowledgeIntakePanel() {
               ? "/api/knowledge-intake/jobs/run-eonet"
               : source === "hans"
                 ? "/api/knowledge-intake/jobs/run-usgs-volcano-hans"
-                : source === "nws"
-                  ? "/api/knowledge-intake/jobs/run-nws"
+                  : source === "nws"
+                    ? "/api/knowledge-intake/jobs/run-nws"
+                  : source === "openaq"
+                    ? "/api/knowledge-intake/jobs/run-openaq-context"
+                  : source === "osm-overpass"
+                    ? "/api/knowledge-intake/jobs/run-osm-overpass-context"
                   : source === "noaa"
                     ? "/api/knowledge-intake/jobs/import-noaa-storm-events"
                   : source === "noaa-coops"
@@ -162,6 +233,18 @@ export default function KnowledgeIntakePanel() {
                     ? "/api/knowledge-intake/jobs/run-usgs-water-context"
                   : source === "openfema"
                     ? "/api/knowledge-intake/jobs/import-openfema-disaster-declarations"
+                  : source === "hdx-hapi"
+                    ? "/api/knowledge-intake/jobs/run-hdx-hapi-context"
+                  : source === "who-don"
+                    ? "/api/knowledge-intake/jobs/run-who-don"
+                  : source === "ecdc"
+                    ? "/api/knowledge-intake/jobs/run-ecdc"
+                  : source === "gdelt"
+                    ? "/api/knowledge-intake/jobs/run-gdelt-context"
+                  : source === "copernicus-glofas"
+                    ? "/api/knowledge-intake/jobs/run-copernicus-glofas-context"
+                  : source === "copernicus-gfm"
+                    ? "/api/knowledge-intake/jobs/run-copernicus-gfm-context"
                     : "/api/knowledge-intake/jobs/run-open-meteo-context";
       const body = source === "usgs"
         ? { feedType: "relevant", limit: 25 }
@@ -199,6 +282,26 @@ export default function KnowledgeIntakePanel() {
             maxIncidents: 25,
             sinceHours: 24,
             persist: true,
+          }
+        : source === "openaq"
+          ? {
+            purpose: openAqPurpose,
+            radiusKm: Number(openAqRadiusKm) || 25,
+            parameters: openAqParameters.split(/[;,]/).map((item) => item.trim()).filter(Boolean),
+            maxIncidents: 25,
+            sinceHours: 24,
+            persist: true,
+          }
+        : source === "osm-overpass"
+          ? {
+            purpose: osmPurpose,
+            radiusKm: Number(osmRadiusKm) || 5,
+            categories: osmCategories.split(/[;,]/).map((item) => item.trim()).filter(Boolean),
+            limit: Number(osmLimit) || 100,
+            maxIncidents: 25,
+            sinceHours: 24,
+            persist: true,
+            cacheTtlMinutes: 360,
           }
         : source === "usgs-water"
           ? {
@@ -250,6 +353,53 @@ export default function KnowledgeIntakePanel() {
             limit: Number(nceiTsunamiLimit) || 100,
             persist: true,
           }
+        : source === "hdx-hapi"
+          ? {
+            locationCode: hapiLocationCode,
+            indicators: hapiIndicators.split(/[;,]/).map((item) => item.trim()).filter(Boolean),
+            purpose: "command_center_humanitarian",
+            persist: true,
+            limit: 100,
+          }
+        : source === "who-don"
+          ? {
+            top: 20,
+            sinceDays: 30,
+            persist: true,
+            createIncidents: true,
+            updateExisting: true,
+          }
+        : source === "ecdc"
+          ? {
+            feeds: ["ecdc-cdtr", "ecdc-epidemiological-updates", "ecdc-risk-assessments"],
+            top: 20,
+            sinceDays: 30,
+            persist: true,
+            createIncidents: true,
+            updateExisting: true,
+          }
+        : source === "gdelt"
+          ? {
+            templates: [gdeltTemplateId],
+            country: gdeltCountry,
+            timespan: "24h",
+            maxRecords: 25,
+            persist: true,
+            createCandidate: false,
+          }
+        : source === "copernicus-glofas"
+          ? {
+            bbox: copernicusBbox,
+            leadTimeDays: 7,
+            persist: true,
+          }
+        : source === "copernicus-gfm"
+          ? {
+            aoiId: copernicusAoiId || undefined,
+            bbox: copernicusAoiId ? undefined : copernicusBbox,
+            persist: true,
+            createIncident: false,
+          }
         : body;
       const response = await fetch(endpoint, {
         method: "POST",
@@ -262,6 +412,12 @@ export default function KnowledgeIntakePanel() {
       setJobMessage(
         source === "open-meteo"
           ? `Run ${data.runId}: ${data.evidenceCreated ?? 0} contextos creados, ${data.skippedAlreadyFresh ?? 0} frescos, ${data.skippedMissingCoordinates ?? 0} sin coordenadas.`
+          : source === "openaq"
+            ? data.status === "requiresConfiguration"
+              ? "OpenAQ requiere OPENAQ_API_KEY; job omitido sin romper otras fuentes."
+              : `Run ${data.runId}: ${data.evidenceCreated ?? 0} contextos OpenAQ, ${data.skippedAlreadyFresh ?? 0} frescos, ${data.skippedNoNearbyLocation ?? 0} sin location cercana.`
+          : source === "osm-overpass"
+            ? `Run ${data.runId}: ${data.evidenceCreated ?? 0} contextos OSM, ${data.skippedAlreadyFresh ?? 0} frescos, ${data.skippedOverpassTimeout ?? 0} timeout/rate-limit, ${data.skippedMissingCoordinates ?? 0} sin coordenadas.`
           : source === "usgs-water"
             ? `Run ${data.runId}: ${data.evidenceCreated ?? 0} contextos hidrologicos, ${data.skippedAlreadyFresh ?? 0} frescos, ${data.skippedNoNearbyStation ?? 0} sin estacion cercana.`
           : source === "noaa"
@@ -270,6 +426,24 @@ export default function KnowledgeIntakePanel() {
             ? `Run ${data.runId}: ${data.insertedIncidents ?? 0} tsunamis historicos nuevos, ${data.updatedIncidents ?? 0} actualizados, runups ${data.associatedRunups ?? 0}, evidencia ${data.evidenceCreated ?? 0}.`
           : source === "openfema"
             ? `Run ${data.runId}: ${data.inserted ?? 0} OpenFEMA nuevos, ${data.updated ?? 0} actualizados, evidencia ${data.evidenceCreated ?? 0}, precedentes ${data.operationalPrecedentsCreated ?? 0}.`
+          : source === "hdx-hapi"
+            ? data.status === "requiresConfiguration"
+              ? "HDX/OCHA HAPI requiere HAPI_APP_IDENTIFIER; job omitido sin romper otras fuentes."
+              : `Run ${data.runId}: ${data.evidenceCreated ?? 0} evidencia humanitarian_context, indicadores ${data.indicatorsFetched?.length ?? 0}.`
+          : source === "who-don"
+            ? `Run ${data.runId}: WHO DON incidents ${data.incidentsCreated ?? 0}/${data.incidentsUpdated ?? 0}, evidencia ${data.evidenceCreated ?? 0}, review ${data.requiresReview ?? 0}.`
+          : source === "ecdc"
+            ? `Run ${data.runId}: ECDC items ${data.normalized ?? 0}, evidencia ${data.evidenceCreated ?? 0}, incidents ${data.incidentsCreated ?? 0}/${data.incidentsUpdated ?? 0}, CDTR evidence ${data.cdtrReportsAsEvidence ?? 0}.`
+          : source === "gdelt"
+            ? `Run ${data.runId}: GDELT evidencia ${data.evidenceCreated ?? 0}, templates ${data.templatesRun?.length ?? 0}, spikes ${data.coverageSpikesFound ?? 0}. No crea incidentes confirmados.`
+          : source === "copernicus-glofas"
+            ? data.status === "requiresConfiguration"
+              ? "GloFAS requiere COPERNICUS_EWDS_API_KEY; job omitido sin romper otras fuentes."
+              : `Run ${data.runId}: GloFAS evidence ${data.evidenceCreated ?? 0}; forecast/model context.`
+          : source === "copernicus-gfm"
+            ? data.status === "requiresConfiguration"
+              ? "GFM requiere COPERNICUS_GFM_ACCESS_TOKEN; job omitido sin romper otras fuentes."
+              : `Run ${data.runId}: GFM products ${data.productsFetched ?? 0}, evidence ${data.evidenceCreated ?? 0}, incidents ${data.incidentCreated ?? 0}/${data.incidentUpdated ?? 0}.`
           : `Run ${data.runId}: ${data.inserted ?? 0} nuevos, ${data.updated ?? 0} actualizados, ${data.skipped ?? 0} omitidos.`
       );
       await refreshPersistentHealth();
@@ -400,6 +574,158 @@ export default function KnowledgeIntakePanel() {
           >
             Test Open-Meteo
           </button>
+          <div className="grid w-full gap-2 rounded border border-emerald-300/20 bg-emerald-400/10 p-3 lg:grid-cols-[110px_100px_100px_minmax(160px,1fr)_90px_190px_170px_auto_auto]">
+            <input
+              value={openAqLocationId}
+              onChange={(event) => setOpenAqLocationId(event.target.value)}
+              className="min-h-10 rounded border border-emerald-300/20 bg-slate-950 px-3 text-sm text-emerald-100 outline-none"
+              aria-label="OpenAQ locationId"
+              placeholder="locationId"
+            />
+            <input
+              value={openAqLat}
+              onChange={(event) => setOpenAqLat(event.target.value)}
+              className="min-h-10 rounded border border-emerald-300/20 bg-slate-950 px-3 text-sm text-emerald-100 outline-none"
+              aria-label="OpenAQ latitude"
+              placeholder="lat"
+            />
+            <input
+              value={openAqLon}
+              onChange={(event) => setOpenAqLon(event.target.value)}
+              className="min-h-10 rounded border border-emerald-300/20 bg-slate-950 px-3 text-sm text-emerald-100 outline-none"
+              aria-label="OpenAQ longitude"
+              placeholder="lon"
+            />
+            <input
+              value={openAqBbox}
+              onChange={(event) => setOpenAqBbox(event.target.value)}
+              className="min-h-10 rounded border border-emerald-300/20 bg-slate-950 px-3 text-sm text-emerald-100 outline-none"
+              aria-label="OpenAQ bbox"
+              placeholder="bbox minLon,minLat,maxLon,maxLat"
+            />
+            <input
+              value={openAqRadiusKm}
+              onChange={(event) => setOpenAqRadiusKm(event.target.value)}
+              className="min-h-10 rounded border border-emerald-300/20 bg-slate-950 px-3 text-sm text-emerald-100 outline-none"
+              aria-label="OpenAQ radius"
+            />
+            <input
+              value={openAqParameters}
+              onChange={(event) => setOpenAqParameters(event.target.value)}
+              className="min-h-10 rounded border border-emerald-300/20 bg-slate-950 px-3 text-sm text-emerald-100 outline-none"
+              aria-label="OpenAQ parameters"
+            />
+            <select
+              value={openAqPurpose}
+              onChange={(event) => setOpenAqPurpose(event.target.value)}
+              className="min-h-10 rounded border border-emerald-300/20 bg-slate-950 px-3 text-sm text-emerald-100 outline-none"
+              aria-label="OpenAQ purpose"
+            >
+              {["wildfire_smoke_context", "volcanic_ash_context", "dust_haze_context", "urban_pollution_context", "aura", "nav", "fenix", "incident_context", "air_quality_monitoring", "general"].map((purpose) => (
+                <option key={purpose} value={purpose}>{purpose}</option>
+              ))}
+            </select>
+            <label className="flex min-h-10 items-center gap-2 rounded border border-emerald-300/20 bg-slate-950 px-3 text-xs font-semibold text-emerald-100">
+              <input
+                type="checkbox"
+                checked={openAqPersist}
+                onChange={(event) => setOpenAqPersist(event.target.checked)}
+              />
+              Persist
+            </label>
+            <button
+              type="button"
+              onClick={() => runLiveTest("openaq")}
+              disabled={liveStatus === "loading"}
+              className="rounded bg-emerald-300 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+            >
+              Test OpenAQ
+            </button>
+            <div className="flex flex-wrap items-center gap-1 text-[0.62rem] font-semibold uppercase text-emerald-100 lg:col-span-9">
+              <span className="rounded border border-emerald-200/20 px-2 py-1">Air Quality Context</span>
+              <span className="rounded border border-emerald-200/20 px-2 py-1">Requires API key</span>
+              <span className="rounded border border-emerald-200/20 px-2 py-1">Provider-dependent</span>
+              <span className="rounded border border-emerald-200/20 px-2 py-1">License metadata required</span>
+              <span className="rounded border border-emerald-200/20 px-2 py-1">Not incident source</span>
+              <span className="rounded border border-emerald-200/20 px-2 py-1">No medical diagnosis</span>
+            </div>
+          </div>
+          <div className="grid w-full gap-2 rounded border border-lime-300/20 bg-lime-400/10 p-3 lg:grid-cols-[100px_100px_minmax(160px,1fr)_80px_190px_minmax(190px,1fr)_80px_auto_auto]">
+            <input
+              value={osmLat}
+              onChange={(event) => setOsmLat(event.target.value)}
+              className="min-h-10 rounded border border-lime-300/20 bg-slate-950 px-3 text-sm text-lime-100 outline-none"
+              aria-label="OSM latitude"
+              placeholder="lat"
+            />
+            <input
+              value={osmLon}
+              onChange={(event) => setOsmLon(event.target.value)}
+              className="min-h-10 rounded border border-lime-300/20 bg-slate-950 px-3 text-sm text-lime-100 outline-none"
+              aria-label="OSM longitude"
+              placeholder="lon"
+            />
+            <input
+              value={osmBbox}
+              onChange={(event) => setOsmBbox(event.target.value)}
+              className="min-h-10 rounded border border-lime-300/20 bg-slate-950 px-3 text-sm text-lime-100 outline-none"
+              aria-label="OSM bbox"
+              placeholder="bbox west,south,east,north"
+            />
+            <input
+              value={osmRadiusKm}
+              onChange={(event) => setOsmRadiusKm(event.target.value)}
+              className="min-h-10 rounded border border-lime-300/20 bg-slate-950 px-3 text-sm text-lime-100 outline-none"
+              aria-label="OSM radius"
+            />
+            <select
+              value={osmPurpose}
+              onChange={(event) => setOsmPurpose(event.target.value)}
+              className="min-h-10 rounded border border-lime-300/20 bg-slate-950 px-3 text-sm text-lime-100 outline-none"
+              aria-label="OSM purpose"
+            >
+              {["command_center_nearby", "aura_medical", "fenix_shelter", "fenix_exposure", "nav_route_context", "emergency_services", "logistics", "incident_context", "map_viewport", "general"].map((purpose) => (
+                <option key={purpose} value={purpose}>{purpose}</option>
+              ))}
+            </select>
+            <input
+              value={osmCategories}
+              onChange={(event) => setOsmCategories(event.target.value)}
+              className="min-h-10 rounded border border-lime-300/20 bg-slate-950 px-3 text-sm text-lime-100 outline-none"
+              aria-label="OSM categories"
+            />
+            <input
+              value={osmLimit}
+              onChange={(event) => setOsmLimit(event.target.value)}
+              className="min-h-10 rounded border border-lime-300/20 bg-slate-950 px-3 text-sm text-lime-100 outline-none"
+              aria-label="OSM limit"
+            />
+            <label className="flex min-h-10 items-center gap-2 rounded border border-lime-300/20 bg-slate-950 px-3 text-xs font-semibold text-lime-100">
+              <input
+                type="checkbox"
+                checked={osmPersist}
+                onChange={(event) => setOsmPersist(event.target.checked)}
+              />
+              Persist
+            </label>
+            <button
+              type="button"
+              onClick={() => runLiveTest("osm-overpass")}
+              disabled={liveStatus === "loading"}
+              className="rounded bg-lime-300 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+            >
+              Test OSM/Overpass
+            </button>
+            <div className="flex flex-wrap items-center gap-1 text-[0.62rem] font-semibold uppercase text-lime-100 lg:col-span-9">
+              <span className="rounded border border-lime-200/20 px-2 py-1">Critical Infrastructure Context</span>
+              <span className="rounded border border-lime-200/20 px-2 py-1">OpenStreetMap</span>
+              <span className="rounded border border-lime-200/20 px-2 py-1">No API key</span>
+              <span className="rounded border border-lime-200/20 px-2 py-1">ODbL attribution required</span>
+              <span className="rounded border border-lime-200/20 px-2 py-1">Not incident source</span>
+              <span className="rounded border border-lime-200/20 px-2 py-1">Not official registry</span>
+              <span className="rounded border border-lime-200/20 px-2 py-1">Cache required</span>
+            </div>
+          </div>
           <div className="grid w-full gap-2 rounded border border-cyan-300/20 bg-cyan-400/10 p-3 lg:grid-cols-[110px_100px_100px_90px_120px_120px_auto_auto]">
             <input
               value={usgsWaterSite}
@@ -676,6 +1002,185 @@ export default function KnowledgeIntakePanel() {
           >
             Probar ReliefWeb
           </button>
+          <div className="grid w-full gap-2 rounded border border-teal-300/20 bg-teal-400/10 p-3 lg:grid-cols-[90px_minmax(260px,1fr)_auto_auto]">
+            <input
+              value={hapiLocationCode}
+              onChange={(event) => setHapiLocationCode(event.target.value.toUpperCase())}
+              className="min-h-10 rounded border border-teal-300/20 bg-slate-950 px-3 text-sm text-teal-100 outline-none"
+              aria-label="HAPI location code"
+              placeholder="ISO3"
+            />
+            <input
+              value={hapiIndicators}
+              onChange={(event) => setHapiIndicators(event.target.value)}
+              className="min-h-10 rounded border border-teal-300/20 bg-slate-950 px-3 text-sm text-teal-100 outline-none"
+              aria-label="HAPI indicators"
+            />
+            <button
+              type="button"
+              onClick={() => runLiveTest("hdx-hapi")}
+              disabled={liveStatus === "loading"}
+              className="rounded bg-teal-300 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+            >
+              Test HDX HAPI
+            </button>
+            <button
+              type="button"
+              onClick={() => runPersistentJob("hdx-hapi")}
+              disabled={jobStatus === "loading"}
+              className="rounded border border-teal-200/40 bg-slate-950 px-4 py-2 text-sm font-semibold text-teal-100 disabled:cursor-wait disabled:opacity-60"
+            >
+              Run HAPI context
+            </button>
+            <div className="flex flex-wrap items-center gap-1 text-[0.62rem] font-semibold uppercase text-teal-100 lg:col-span-4">
+              <span className="rounded border border-teal-200/20 px-2 py-1">Humanitarian Context</span>
+              <span className="rounded border border-teal-200/20 px-2 py-1">Requires app identifier</span>
+              <span className="rounded border border-teal-200/20 px-2 py-1">Dataset-dependent</span>
+              <span className="rounded border border-teal-200/20 px-2 py-1">Not incident source</span>
+              <span className="rounded border border-teal-200/20 px-2 py-1">Reference period required</span>
+              <span className="rounded border border-teal-200/20 px-2 py-1">No sector summation</span>
+            </div>
+          </div>
+          <div className="grid w-full gap-2 rounded border border-rose-300/20 bg-rose-400/10 p-3 lg:grid-cols-[auto_auto_auto_auto]">
+            <button
+              type="button"
+              onClick={() => runLiveTest("who-don")}
+              disabled={liveStatus === "loading"}
+              className="rounded bg-rose-300 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+            >
+              Test WHO DON
+            </button>
+            <button
+              type="button"
+              onClick={() => runPersistentJob("who-don")}
+              disabled={jobStatus === "loading"}
+              className="rounded border border-rose-200/40 bg-slate-950 px-4 py-2 text-sm font-semibold text-rose-100 disabled:cursor-wait disabled:opacity-60"
+            >
+              Run WHO DON ingest
+            </button>
+            <button
+              type="button"
+              onClick={() => runLiveTest("ecdc")}
+              disabled={liveStatus === "loading"}
+              className="rounded bg-orange-300 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+            >
+              Test ECDC RSS
+            </button>
+            <button
+              type="button"
+              onClick={() => runPersistentJob("ecdc")}
+              disabled={jobStatus === "loading"}
+              className="rounded border border-orange-200/40 bg-slate-950 px-4 py-2 text-sm font-semibold text-orange-100 disabled:cursor-wait disabled:opacity-60"
+            >
+              Run ECDC ingest
+            </button>
+            <div className="flex flex-wrap items-center gap-1 text-[0.62rem] font-semibold uppercase text-rose-100 lg:col-span-4">
+              <span className="rounded border border-rose-200/20 px-2 py-1">Official WHO</span>
+              <span className="rounded border border-rose-200/20 px-2 py-1">Official ECDC</span>
+              <span className="rounded border border-rose-200/20 px-2 py-1">Public Health Outbreak Source</span>
+              <span className="rounded border border-rose-200/20 px-2 py-1">CDTR evidence by default</span>
+              <span className="rounded border border-rose-200/20 px-2 py-1">No diagnosis</span>
+              <span className="rounded border border-rose-200/20 px-2 py-1">No automatic citizen alerts</span>
+            </div>
+          </div>
+          <div className="grid w-full gap-2 rounded border border-fuchsia-300/20 bg-fuchsia-400/10 p-3 lg:grid-cols-[minmax(220px,1fr)_120px_auto_auto]">
+            <select
+              value={gdeltTemplateId}
+              onChange={(event) => setGdeltTemplateId(event.target.value)}
+              className="min-h-10 rounded border border-fuchsia-300/20 bg-slate-950 px-3 text-sm text-fuchsia-100 outline-none"
+              aria-label="GDELT template"
+            >
+              {["gdelt-earthquake-tsunami-media", "gdelt-wildfire-smoke-media", "gdelt-flood-disaster-media", "gdelt-protest-unrest-media", "gdelt-explosion-attack-media", "gdelt-public-health-outbreak-media", "gdelt-infrastructure-collapse-media", "gdelt-humanitarian-crisis-media"].map((template) => (
+                <option key={template} value={template}>{template}</option>
+              ))}
+            </select>
+            <input
+              value={gdeltCountry}
+              onChange={(event) => setGdeltCountry(event.target.value)}
+              className="min-h-10 rounded border border-fuchsia-300/20 bg-slate-950 px-3 text-sm text-fuchsia-100 outline-none"
+              aria-label="GDELT country"
+              placeholder="country"
+            />
+            <button
+              type="button"
+              onClick={() => runLiveTest("gdelt")}
+              disabled={liveStatus === "loading"}
+              className="rounded bg-fuchsia-300 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+            >
+              Test GDELT media signal
+            </button>
+            <button
+              type="button"
+              onClick={() => runPersistentJob("gdelt")}
+              disabled={jobStatus === "loading"}
+              className="rounded border border-fuchsia-200/40 bg-slate-950 px-4 py-2 text-sm font-semibold text-fuchsia-100 disabled:cursor-wait disabled:opacity-60"
+            >
+              Run GDELT context
+            </button>
+            <div className="flex flex-wrap items-center gap-1 text-[0.62rem] font-semibold uppercase text-fuchsia-100 lg:col-span-4">
+              <span className="rounded border border-fuchsia-200/20 px-2 py-1">OSINT Media Signal</span>
+              <span className="rounded border border-fuchsia-200/20 px-2 py-1">Not official</span>
+              <span className="rounded border border-fuchsia-200/20 px-2 py-1">No API key</span>
+              <span className="rounded border border-fuchsia-200/20 px-2 py-1">No automatic incident confirmation</span>
+              <span className="rounded border border-fuchsia-200/20 px-2 py-1">Requires review</span>
+            </div>
+          </div>
+          <div className="grid w-full gap-2 rounded border border-blue-300/20 bg-blue-400/10 p-3 lg:grid-cols-[minmax(180px,1fr)_140px_auto_auto_auto_auto]">
+            <input
+              value={copernicusBbox}
+              onChange={(event) => setCopernicusBbox(event.target.value)}
+              className="min-h-10 rounded border border-blue-300/20 bg-slate-950 px-3 text-sm text-blue-100 outline-none"
+              aria-label="Copernicus bbox"
+              placeholder="bbox"
+            />
+            <input
+              value={copernicusAoiId}
+              onChange={(event) => setCopernicusAoiId(event.target.value)}
+              className="min-h-10 rounded border border-blue-300/20 bg-slate-950 px-3 text-sm text-blue-100 outline-none"
+              aria-label="Copernicus AOI"
+              placeholder="GFM AOI"
+            />
+            <button
+              type="button"
+              onClick={() => runLiveTest("copernicus-glofas")}
+              disabled={liveStatus === "loading"}
+              className="rounded bg-blue-300 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+            >
+              Test GloFAS
+            </button>
+            <button
+              type="button"
+              onClick={() => runPersistentJob("copernicus-glofas")}
+              disabled={jobStatus === "loading"}
+              className="rounded border border-blue-200/40 bg-slate-950 px-4 py-2 text-sm font-semibold text-blue-100 disabled:cursor-wait disabled:opacity-60"
+            >
+              Run GloFAS
+            </button>
+            <button
+              type="button"
+              onClick={() => runLiveTest("copernicus-gfm")}
+              disabled={liveStatus === "loading"}
+              className="rounded bg-sky-300 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+            >
+              Test GFM
+            </button>
+            <button
+              type="button"
+              onClick={() => runPersistentJob("copernicus-gfm")}
+              disabled={jobStatus === "loading"}
+              className="rounded border border-sky-200/40 bg-slate-950 px-4 py-2 text-sm font-semibold text-sky-100 disabled:cursor-wait disabled:opacity-60"
+            >
+              Run GFM
+            </button>
+            <div className="flex flex-wrap items-center gap-1 text-[0.62rem] font-semibold uppercase text-blue-100 lg:col-span-6">
+              <span className="rounded border border-blue-200/20 px-2 py-1">Flood Forecast</span>
+              <span className="rounded border border-blue-200/20 px-2 py-1">Satellite Flood Observation</span>
+              <span className="rounded border border-blue-200/20 px-2 py-1">Requires tokens</span>
+              <span className="rounded border border-blue-200/20 px-2 py-1">No global bulk</span>
+              <span className="rounded border border-blue-200/20 px-2 py-1">No evacuation orders</span>
+              <span className="rounded border border-blue-200/20 px-2 py-1">No official route closures</span>
+            </div>
+          </div>
           <span className={`text-sm ${liveStatus === "error" ? "text-rose-100" : liveStatus === "ready" ? "text-emerald-100" : "text-slate-300"}`}>
             {liveMessage}
           </span>
@@ -728,6 +1233,22 @@ export default function KnowledgeIntakePanel() {
             className="rounded bg-teal-300 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
           >
             Run Open-Meteo context enrichment
+          </button>
+          <button
+            type="button"
+            onClick={() => runPersistentJob("openaq")}
+            disabled={jobStatus === "loading"}
+            className="rounded bg-emerald-300 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+          >
+            Run OpenAQ context
+          </button>
+          <button
+            type="button"
+            onClick={() => runPersistentJob("osm-overpass")}
+            disabled={jobStatus === "loading"}
+            className="rounded bg-lime-300 px-4 py-2 text-sm font-bold text-slate-950 disabled:cursor-wait disabled:opacity-60"
+          >
+            Run OSM context
           </button>
           <button
             type="button"
@@ -788,6 +1309,9 @@ export default function KnowledgeIntakePanel() {
         </div>
         <div className="mt-3 rounded-lg border border-teal-300/20 bg-teal-300/10 p-3 text-xs leading-5 text-teal-100">
           Open-Meteo Weather Context: contextual source, global coverage, no API key. Commercial use requires review. It does not create incidents or official alerts.
+        </div>
+        <div className="mt-3 rounded-lg border border-lime-300/20 bg-lime-300/10 p-3 text-xs leading-5 text-lime-100">
+          OpenStreetMap / Overpass Critical Infrastructure: collaborative mapped POIs by bounded radius or bbox only. © OpenStreetMap contributors, ODbL. Not an official registry, routing engine, geocoder, public tile backend, availability source or incident source.
         </div>
         <div className="mt-3 rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-3 text-xs leading-5 text-cyan-100">
           USGS Water Conditions: official USGS hydrological context for United States and USGS monitored locations. Parameters 00060 streamflow and 00065 gage height; not a forecast, incident source, evacuation order or route closure.

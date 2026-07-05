@@ -103,17 +103,31 @@ const initialLayers = {
   missingPersons: true,
   demoReports: false,
   usgsEarthquakes: false,
+  usgsShakeMapIntensity: false,
+  usgsPagerImpactAssessment: false,
   gdacsAlerts: false,
   noaaTsunami: false,
   nasaFirms: false,
   nasaEonet: false,
   nwsWeatherAlerts: false,
   openMeteoWeatherContext: false,
+  openAqAirQualityObservations: false,
   usgsWaterConditions: false,
+  smithsonianGvpVolcanoes: false,
+  smithsonianGvpEruptionHistory: false,
+  smithsonianUsgsVolcanicActivityReports: false,
   noaaCoopsCoastalObservations: false,
+  iocSeaLevelMonitoringStations: false,
   noaaStormEventsHistorical: false,
   noaaNceiHistoricalTsunamis: false,
   openFemaDisasterDeclarations: false,
+  osmCriticalInfrastructure: false,
+  hdxHapiHumanitarianContext: false,
+  whoDiseaseOutbreakNews: false,
+  ecdcPublicHealthThreats: false,
+  gdeltMediaSignals: false,
+  copernicusGlofasFloodForecast: false,
+  copernicusGfmObservedFloodExtent: false,
   reliefWeb: false,
   sos: true,
   alerts: true,
@@ -1064,6 +1078,14 @@ export default function AppPage() {
           : "Contexto global por coordenada, no alertas",
         status: "ready",
       },
+      openAqAirQualityObservations: {
+        count: 0,
+        detail: layerSettings.openAqAirQualityObservations
+          ? "Contexto OpenAQ activo bajo filtro; sin bulk global"
+          : "Requiere OPENAQ_API_KEY; provider/license visible; no incidente",
+        status: "idle",
+        disabledLabel: "Requires API key",
+      },
       usgsWaterConditions: {
         count: 0,
         detail: layerSettings.usgsWaterConditions
@@ -1077,6 +1099,14 @@ export default function AppPage() {
           ? "Contexto costero NOAA CO-OPS bajo demanda; sin bulk global"
           : "Observaciones costeras NOAA CO-OPS; no es capa de incidentes",
         status: "ready",
+      },
+      iocSeaLevelMonitoringStations: {
+        count: 0,
+        detail: layerSettings.iocSeaLevelMonitoringStations
+          ? "Mareografos IOC SLSMF bajo filtro; nivel relativo"
+          : "Requiere IOC_SLSMF_API_KEY; capa contextual apagada",
+        status: "idle",
+        disabledLabel: "Requires API key",
       },
       noaaStormEventsHistorical: {
         count: 0,
@@ -1092,6 +1122,48 @@ export default function AppPage() {
         count: 0,
         detail: "Dataset institucional FEMA; no live, import controlado",
         status: "idle",
+      },
+      osmCriticalInfrastructure: {
+        count: 0,
+        detail: layerSettings.osmCriticalInfrastructure
+          ? "Contexto OSM bajo viewport/incidente; no POIs como incidentes"
+          : "Infraestructura critica OSM; apagada por defecto",
+        status: "idle",
+      },
+      hdxHapiHumanitarianContext: {
+        count: 0,
+        detail: layerSettings.hdxHapiHumanitarianContext
+          ? "HAPI contextual por pais/admin; no genera incidentes"
+          : "HDX HAPI Humanitarian Context; requiere HAPI_APP_IDENTIFIER",
+        status: "idle",
+        disabledLabel: "Requires app identifier",
+      },
+      whoDiseaseOutbreakNews: {
+        count: 0,
+        detail: "WHO DON brotes oficiales; no diagnostico ni alerta ciudadana automatica",
+        status: "idle",
+      },
+      ecdcPublicHealthThreats: {
+        count: 0,
+        detail: "ECDC RSS/data EU/EEA; CDTR evidencia por defecto",
+        status: "idle",
+      },
+      gdeltMediaSignals: {
+        count: 0,
+        detail: "OSINT/media signal; no fuente oficial ni confirmacion",
+        status: "idle",
+      },
+      copernicusGlofasFloodForecast: {
+        count: 0,
+        detail: "GloFAS forecast/modelo; requiere EWDS token",
+        status: "idle",
+        disabledLabel: "Requires token",
+      },
+      copernicusGfmObservedFloodExtent: {
+        count: 0,
+        detail: "GFM flood extent satelital; requiere access token",
+        status: "idle",
+        disabledLabel: "Requires token",
       },
       reliefWeb: {
         count: reliefWebEvents.length,
@@ -1268,10 +1340,14 @@ export default function AppPage() {
       layerSettings.conflictEvents,
       layerSettings.conflictZones,
       layerSettings.demoReports,
+      layerSettings.hdxHapiHumanitarianContext,
       layerSettings.liveCameras,
       layerSettings.medicalPoints,
       layerSettings.openMeteoWeatherContext,
+      layerSettings.openAqAirQualityObservations,
       layerSettings.noaaCoopsCoastalObservations,
+      layerSettings.iocSeaLevelMonitoringStations,
+      layerSettings.osmCriticalInfrastructure,
       layerSettings.usgsWaterConditions,
       quakeSenseClusters.length,
       safetyChecks.length,

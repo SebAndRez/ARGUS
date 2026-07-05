@@ -16,17 +16,31 @@ export interface MapLayerState {
   missingPersons?: boolean;
   demoReports?: boolean;
   usgsEarthquakes?: boolean;
+  usgsShakeMapIntensity?: boolean;
+  usgsPagerImpactAssessment?: boolean;
   gdacsAlerts?: boolean;
   noaaTsunami?: boolean;
   nasaFirms?: boolean;
   nasaEonet?: boolean;
   nwsWeatherAlerts?: boolean;
   openMeteoWeatherContext?: boolean;
+  openAqAirQualityObservations?: boolean;
   usgsWaterConditions?: boolean;
+  smithsonianGvpVolcanoes?: boolean;
+  smithsonianGvpEruptionHistory?: boolean;
+  smithsonianUsgsVolcanicActivityReports?: boolean;
   noaaCoopsCoastalObservations?: boolean;
+  iocSeaLevelMonitoringStations?: boolean;
   noaaStormEventsHistorical?: boolean;
   noaaNceiHistoricalTsunamis?: boolean;
   openFemaDisasterDeclarations?: boolean;
+  osmCriticalInfrastructure?: boolean;
+  hdxHapiHumanitarianContext?: boolean;
+  whoDiseaseOutbreakNews?: boolean;
+  ecdcPublicHealthThreats?: boolean;
+  gdeltMediaSignals?: boolean;
+  copernicusGlofasFloodForecast?: boolean;
+  copernicusGfmObservedFloodExtent?: boolean;
   reliefWeb?: boolean;
   sos: boolean;
   alerts: boolean;
@@ -102,17 +116,31 @@ const layerGroups: Array<{
       "missingPersons",
       "demoReports",
       "usgsEarthquakes",
+      "usgsShakeMapIntensity",
+      "usgsPagerImpactAssessment",
       "gdacsAlerts",
       "noaaTsunami",
       "nasaFirms",
       "nasaEonet",
       "nwsWeatherAlerts",
       "openMeteoWeatherContext",
+      "openAqAirQualityObservations",
       "usgsWaterConditions",
+      "smithsonianGvpVolcanoes",
+      "smithsonianGvpEruptionHistory",
+      "smithsonianUsgsVolcanicActivityReports",
       "noaaCoopsCoastalObservations",
+      "iocSeaLevelMonitoringStations",
       "noaaStormEventsHistorical",
       "noaaNceiHistoricalTsunamis",
       "openFemaDisasterDeclarations",
+      "osmCriticalInfrastructure",
+      "hdxHapiHumanitarianContext",
+      "whoDiseaseOutbreakNews",
+      "ecdcPublicHealthThreats",
+      "gdeltMediaSignals",
+      "copernicusGlofasFloodForecast",
+      "copernicusGfmObservedFloodExtent",
       // ReliefWeb temporarily hidden from UI until ingest reliability is fixed.
       "sos",
       "alerts",
@@ -155,17 +183,31 @@ const labels: Record<keyof MapLayerState, string> = {
   missingPersons: "Desaparecidos",
   demoReports: "Reportes demo",
   usgsEarthquakes: "Sismos USGS",
+  usgsShakeMapIntensity: "USGS ShakeMap Intensity",
+  usgsPagerImpactAssessment: "USGS PAGER Impact Assessment",
   gdacsAlerts: "GDACS Desastres",
   noaaTsunami: "NOAA Tsunami",
   nasaFirms: "NASA FIRMS",
   nasaEonet: "NASA EONET Natural Events",
   nwsWeatherAlerts: "NWS Weather Alerts",
   openMeteoWeatherContext: "Open-Meteo Weather Context",
+  openAqAirQualityObservations: "OpenAQ Air Quality Observations",
   usgsWaterConditions: "USGS Water Conditions",
+  smithsonianGvpVolcanoes: "Smithsonian GVP Volcanoes",
+  smithsonianGvpEruptionHistory: "Smithsonian GVP Eruption History",
+  smithsonianUsgsVolcanicActivityReports: "Smithsonian / USGS Volcanic Activity Reports",
   noaaCoopsCoastalObservations: "NOAA CO-OPS Coastal Observations",
+  iocSeaLevelMonitoringStations: "IOC Sea Level Monitoring Stations",
   noaaStormEventsHistorical: "NOAA Storm Events Historical",
   noaaNceiHistoricalTsunamis: "NOAA NCEI Historical Tsunamis",
   openFemaDisasterDeclarations: "OpenFEMA Disaster Declarations",
+  osmCriticalInfrastructure: "OpenStreetMap Critical Infrastructure",
+  hdxHapiHumanitarianContext: "HDX HAPI Humanitarian Context",
+  whoDiseaseOutbreakNews: "WHO Disease Outbreak News",
+  ecdcPublicHealthThreats: "ECDC Public Health Threats",
+  gdeltMediaSignals: "GDELT Media Signals",
+  copernicusGlofasFloodForecast: "Copernicus GloFAS Flood Forecast",
+  copernicusGfmObservedFloodExtent: "Copernicus GFM Observed Flood Extent",
   reliefWeb: "ReliefWeb Contexto",
   sos: "SOS",
   alerts: "Alertas",
@@ -278,6 +320,16 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
       available: Object.prototype.hasOwnProperty.call(layers, "usgsEarthquakes"),
     },
     {
+      label: "ShakeMap",
+      enabled: Boolean(layers.usgsShakeMapIntensity),
+      available: Object.prototype.hasOwnProperty.call(layers, "usgsShakeMapIntensity"),
+    },
+    {
+      label: "PAGER",
+      enabled: Boolean(layers.usgsPagerImpactAssessment),
+      available: Object.prototype.hasOwnProperty.call(layers, "usgsPagerImpactAssessment"),
+    },
+    {
       label: "GDACS",
       enabled: Boolean(layers.gdacsAlerts),
       available: Object.prototype.hasOwnProperty.call(layers, "gdacsAlerts"),
@@ -308,14 +360,29 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
       available: Object.prototype.hasOwnProperty.call(layers, "openMeteoWeatherContext"),
     },
     {
+      label: "OpenAQ",
+      enabled: Boolean(layers.openAqAirQualityObservations),
+      available: Object.prototype.hasOwnProperty.call(layers, "openAqAirQualityObservations"),
+    },
+    {
       label: "USGS Water",
       enabled: Boolean(layers.usgsWaterConditions),
       available: Object.prototype.hasOwnProperty.call(layers, "usgsWaterConditions"),
     },
     {
+      label: "GVP",
+      enabled: Boolean(layers.smithsonianGvpVolcanoes || layers.smithsonianGvpEruptionHistory || layers.smithsonianUsgsVolcanicActivityReports),
+      available: Object.prototype.hasOwnProperty.call(layers, "smithsonianGvpVolcanoes"),
+    },
+    {
       label: "CO-OPS",
       enabled: Boolean(layers.noaaCoopsCoastalObservations),
       available: Object.prototype.hasOwnProperty.call(layers, "noaaCoopsCoastalObservations"),
+    },
+    {
+      label: "IOC SLSMF",
+      enabled: Boolean(layers.iocSeaLevelMonitoringStations),
+      available: Object.prototype.hasOwnProperty.call(layers, "iocSeaLevelMonitoringStations"),
     },
     {
       label: "NOAA Hist.",

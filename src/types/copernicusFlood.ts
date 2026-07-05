@@ -1,0 +1,64 @@
+export type FloodForecastContext = {
+  sourceId: "copernicus-glofas";
+  sourceName: string;
+  query: Record<string, unknown>;
+  forecastRun?: string;
+  leadTimeDays?: number;
+  validDate?: string;
+  location?: { lat?: number; lon?: number };
+  bbox?: string;
+  riverDischarge?: number;
+  exceedanceProbability?: number;
+  returnPeriod?: string | number;
+  forecastConfidence: number;
+  modelVersion?: string;
+  datasetVersion?: string;
+  limitations: string[];
+  caveats: string[];
+  confidence: number;
+  requiresReview: boolean;
+  evidenceRefs: string[];
+};
+
+export type ObservedFloodExtentContext = {
+  sourceId: "copernicus-gfm";
+  sourceName: string;
+  query: Record<string, unknown>;
+  aoiId?: string;
+  productId?: string;
+  satellite?: string;
+  acquisitionTime?: string;
+  processedTime?: string;
+  observedFloodExtentAreaKm2?: number;
+  observedWaterExtentAreaKm2?: number;
+  maximumFloodExtentAreaKm2?: number;
+  likelihood?: string | number;
+  advisoryFlags: string[];
+  exclusionMask?: unknown;
+  affectedPopulation?: unknown;
+  affectedLandcover?: unknown;
+  geometry?: unknown;
+  rasterUrl?: string;
+  vectorUrl?: string;
+  confidence: number;
+  staleness?: number;
+  limitations: string[];
+  caveats: string[];
+  requiresReview: boolean;
+  evidenceRefs: string[];
+};
+
+export type CopernicusFloodIntelligenceContext = {
+  glofasForecast?: FloodForecastContext;
+  gfmObserved?: ObservedFloodExtentContext;
+  forecastVsObservedDelta?: unknown;
+  affectedInfrastructure?: unknown[];
+  affectedPopulation?: unknown;
+  affectedRoutes?: unknown[];
+  affectedMedicalFacilities?: unknown[];
+  shelterContext?: unknown;
+  riskSummary: string;
+  recommendedReviewActions: string[];
+  authorityCaveats: string[];
+  evidenceRefs: string[];
+};

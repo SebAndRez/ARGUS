@@ -76,12 +76,14 @@ const externalSources: SourceDefinition[] = ARGUS_SOURCE_REGISTRY.map((source) =
       ? "NASA_FIRMS_MAP_KEY"
       : source.id === "reliefweb"
         ? "RELIEFWEB_APP_NAME"
+        : source.id === "ioc-slsmf"
+          ? "IOC_SLSMF_API_KEY"
         : undefined,
   refreshIntervalMinutes: recommendedRefreshMinutes(source.id),
   rateLimitNotes: source.accessType === "paid" ? "Requiere licencia/contrato." : "Respetar terminos y cache local.",
   termsNotes: source.notes,
   argusUse: `ARGUS usa esta fuente como ${source.category}; no reemplaza autoridad local.`,
-  isOfficial: ["usgs_earthquake", "gdacs", "noaa_tsunami", "met_norway", "nasa_firms", "nasa-eonet"].includes(source.id),
+  isOfficial: ["usgs_earthquake", "gdacs", "noaa_tsunami", "ioc-slsmf", "met_norway", "nasa_firms", "nasa-eonet"].includes(source.id),
   isDemo: source.status !== "active" && source.status !== "active_if_configured",
   lastReviewedAt: reviewedAt,
 }));
@@ -191,6 +193,7 @@ export function getSourceDefinition(sourceId: string) {
 function mapRegistryCategory(category: string): SourceCategory {
   if (category.includes("earthquake")) return "EARTHQUAKE";
   if (category.includes("tsunami")) return "TSUNAMI";
+  if (category.includes("sea_level")) return "TSUNAMI";
   if (category.includes("weather") || category.includes("air_quality")) return "WEATHER";
   if (category.includes("thermal") || category.includes("wildfire")) return "FIRE";
   if (category.includes("conflict") || category.includes("geopolitical") || category === "news") return "CONFLICT";
@@ -200,7 +203,7 @@ function mapRegistryCategory(category: string): SourceCategory {
 }
 
 function mapRegistryReliability(sourceId: string, category: string): SourceReliability {
-  if (["usgs_earthquake", "gdacs", "noaa_tsunami", "met_norway", "nasa_firms", "nasa-eonet"].includes(sourceId)) return "OFFICIAL";
+  if (["usgs_earthquake", "gdacs", "noaa_tsunami", "ioc-slsmf", "met_norway", "nasa_firms", "nasa-eonet"].includes(sourceId)) return "OFFICIAL";
   if (sourceId === "open-meteo" || category === "weather_context") return "TECHNICAL";
   if (["reliefweb", "hdx_hapi"].includes(sourceId)) return "HUMANITARIAN";
   if (["gdelt", "ap_reuters_bloomberg"].includes(sourceId)) return "MEDIA";
@@ -214,6 +217,7 @@ function recommendedRefreshMinutes(sourceId: string) {
     usgs_earthquake: 1,
     gdacs: 5,
     noaa_tsunami: 5,
+    "ioc-slsmf": 60,
     nasa_firms: 15,
     "nasa-eonet": 30,
     met_norway: 10,
@@ -230,6 +234,7 @@ function sourcePublicUrl(sourceId: string) {
     usgs_earthquake: "https://earthquake.usgs.gov/",
     gdacs: "https://www.gdacs.org/",
     noaa_tsunami: "https://www.tsunami.gov/",
+    "ioc-slsmf": "https://www.ioc-sealevelmonitoring.org/",
     nasa_firms: "https://firms.modaps.eosdis.nasa.gov/",
     "nasa-eonet": "https://eonet.gsfc.nasa.gov/",
     met_norway: "https://api.met.no/",
