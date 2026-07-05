@@ -32,6 +32,8 @@ interface Props {
 }
 
 const GLOBE_RADIUS = 2.45;
+const EARTH_TEXTURE_PATH = "/textures/earth/earth_atmos_2048.jpg";
+const CLOUD_TEXTURE_PATH = "/textures/earth/earth_clouds_1024.png";
 
 const severityColors: Record<GlobeMarker["severity"], number> = {
   low: 0x34d399,
@@ -100,240 +102,43 @@ const latLngToVector = (latitude: number, longitude: number, radius: number) => 
   );
 };
 
-const createEarthTexture = () => {
-  const canvas = document.createElement("canvas");
-  canvas.width = 1024;
-  canvas.height = 512;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
+const loadTexture = (loader: THREE.TextureLoader, path: string) => {
+  const texture = loader.load(path);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  return texture;
+};
 
-  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  gradient.addColorStop(0, "#061826");
-  gradient.addColorStop(0.45, "#020916");
-  gradient.addColorStop(0.72, "#03101c");
-  gradient.addColorStop(1, "#071827");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  const oceanGlow = ctx.createRadialGradient(520, 210, 80, 520, 210, 520);
-  oceanGlow.addColorStop(0, "rgba(14, 116, 144, 0.22)");
-  oceanGlow.addColorStop(0.55, "rgba(8, 47, 73, 0.12)");
-  oceanGlow.addColorStop(1, "rgba(2, 6, 23, 0.1)");
-  ctx.fillStyle = oceanGlow;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  ctx.fillStyle = "rgba(14, 76, 96, 0.72)";
-  ctx.strokeStyle = "rgba(125, 211, 252, 0.3)";
-  ctx.lineWidth = 1.8;
-
-  const drawLand = (points: Array<[number, number]>) => {
-    ctx.beginPath();
-    points.forEach(([x, y], index) => {
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-  };
-
-  const drawMapLine = (points: Array<[number, number]>) => {
-    ctx.beginPath();
-    points.forEach(([x, y], index) => {
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-  };
-
-  const project = (longitude: number, latitude: number): [number, number] => [
-    ((longitude + 180) / 360) * canvas.width,
-    ((90 - latitude) / 180) * canvas.height,
-  ];
-
-  const drawGeoLand = (points: Array<[number, number]>) => {
-    drawLand(points.map(([longitude, latitude]) => project(longitude, latitude)));
-  };
-
-  ctx.fillStyle = "rgba(4, 20, 36, 0.42)";
-  for (let index = 0; index < 1100; index += 1) {
-    const x = Math.random() * canvas.width;
-    const y = Math.random() * canvas.height;
-    const radius = Math.random() * 1.4 + 0.25;
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  ctx.fillStyle = "rgba(31, 83, 64, 0.96)";
-  ctx.strokeStyle = "rgba(186, 230, 253, 0.34)";
-  ctx.lineWidth = 1.65;
-
-  drawGeoLand([
-    [-168, 71], [-138, 70], [-108, 56], [-96, 48], [-83, 31], [-100, 18],
-    [-116, 25], [-125, 41], [-150, 58],
-  ]);
-  drawGeoLand([
-    [-86, 13], [-74, 10], [-52, -8], [-44, -24], [-55, -44], [-70, -55],
-    [-78, -28], [-82, -4],
-  ]);
-  drawGeoLand([
-    [-11, 36], [18, 37], [33, 31], [43, 12], [35, -24], [20, -35],
-    [7, -32], [-9, 5],
-  ]);
-  drawGeoLand([
-    [-10, 58], [28, 70], [62, 56], [118, 62], [153, 48], [142, 21],
-    [104, 6], [74, 20], [44, 31], [15, 45],
-  ]);
-  drawGeoLand([
-    [69, 8], [88, 23], [103, 8], [111, -7], [94, -10], [78, 4],
-  ]);
-  drawGeoLand([
-    [112, -12], [154, -27], [146, -43], [116, -36],
-  ]);
-  drawGeoLand([
-    [-54, 77], [-22, 74], [-34, 61], [-52, 62],
-  ]);
-  drawGeoLand([
-    [-180, -62], [-120, -68], [-45, -64], [24, -69], [96, -63],
-    [180, -66], [180, -82], [-180, -82],
-  ]);
-
-  // Americas
-  drawLand([
-    [148, 94], [222, 75], [300, 106], [316, 160], [284, 204],
-    [248, 234], [260, 290], [308, 335], [292, 407], [254, 474],
-    [216, 414], [190, 346], [154, 303], [122, 244], [92, 214],
-    [104, 150],
-  ]);
-  drawLand([
-    [276, 230], [334, 254], [360, 318], [344, 390], [306, 454],
-    [270, 480], [284, 410], [300, 340], [248, 288],
-  ]);
-
-  // Europe, Africa and Asia
-  drawLand([
-    [452, 112], [540, 88], [620, 108], [686, 146], [724, 202],
-    [694, 268], [626, 302], [560, 286], [528, 228], [468, 224],
-    [414, 184],
-  ]);
-  drawLand([
-    [522, 224], [584, 244], [636, 324], [618, 416], [570, 468],
-    [520, 408], [490, 310],
-  ]);
-  drawLand([
-    [692, 156], [804, 156], [914, 218], [944, 286], [884, 350],
-    [752, 322], [690, 260],
-  ]);
-
-  // Australia and south-east islands
-  drawLand([
-    [760, 366], [858, 360], [922, 404], [902, 454], [804, 462],
-    [742, 426],
-  ]);
-  drawLand([[946, 348], [984, 362], [992, 398], [956, 392]]);
-  drawLand([[506, 74], [564, 68], [600, 92], [540, 100]]);
-  drawLand([[422, 472], [486, 462], [560, 478], [512, 498], [446, 496]]);
-
-  ctx.globalCompositeOperation = "source-atop";
-  for (let index = 0; index < 900; index += 1) {
-    const x = Math.random() * canvas.width;
-    const y = Math.random() * canvas.height;
-    const alpha = 0.045 + Math.random() * 0.075;
-    ctx.fillStyle = `rgba(163, 230, 53, ${alpha})`;
-    ctx.fillRect(x, y, 1.2, 1.2);
-  }
-  ctx.globalCompositeOperation = "source-over";
-
-  const cityLights: Array<[number, number, number]> = [
-    [-74, 41, 2.2], [-99, 19, 1.8], [-46, -23, 1.9], [-70, -33, 1.35],
-    [-3, 52, 2], [2, 49, 1.8], [13, 52, 1.5], [31, 30, 1.5],
-    [77, 28, 1.7], [116, 40, 1.8], [139, 36, 1.7], [151, -34, 1.5],
-  ];
-  cityLights.forEach(([longitude, latitude, radius]) => {
-    const [x, y] = project(longitude, latitude);
-    const light = ctx.createRadialGradient(x, y, 0, x, y, radius * 5);
-    light.addColorStop(0, "rgba(250, 204, 21, 0.78)");
-    light.addColorStop(0.45, "rgba(250, 204, 21, 0.18)");
-    light.addColorStop(1, "rgba(250, 204, 21, 0)");
-    ctx.fillStyle = light;
-    ctx.beginPath();
-    ctx.arc(x, y, radius * 5, 0, Math.PI * 2);
-    ctx.fill();
+const createTacticalGrid = () => {
+  const grid = new THREE.Group();
+  const material = new THREE.LineBasicMaterial({
+    color: 0x67e8f9,
+    transparent: true,
+    opacity: 0.035,
+    depthWrite: false,
   });
+  const radius = GLOBE_RADIUS + 0.018;
+  const segments = 192;
 
-  ctx.strokeStyle = "rgba(14, 165, 233, 0.18)";
-  ctx.lineWidth = 1;
-  drawMapLine([[120, 216], [184, 226], [236, 242], [302, 286]]);
-  drawMapLine([[460, 184], [530, 204], [612, 224], [700, 222], [808, 238]]);
-  drawMapLine([[560, 300], [604, 350], [598, 420]]);
-  drawMapLine([[752, 250], [820, 288], [884, 302]]);
-
-  ctx.strokeStyle = "rgba(34, 211, 238, 0.045)";
-  ctx.lineWidth = 1;
-  for (let x = 0; x <= canvas.width; x += 64) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, canvas.height);
-    ctx.stroke();
-  }
-  for (let y = 0; y <= canvas.height; y += 64) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(canvas.width, y);
-    ctx.stroke();
+  for (let latitude = -60; latitude <= 60; latitude += 30) {
+    const points: THREE.Vector3[] = [];
+    for (let step = 0; step <= segments; step += 1) {
+      points.push(latLngToVector(latitude, (step / segments) * 360 - 180, radius));
+    }
+    grid.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(points), material));
   }
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.needsUpdate = true;
-  return texture;
-};
-
-const createCloudTexture = () => {
-  const canvas = document.createElement("canvas");
-  canvas.width = 1024;
-  canvas.height = 512;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  for (let index = 0; index < 240; index += 1) {
-    const x = Math.random() * canvas.width;
-    const y = Math.random() * canvas.height;
-    const width = 24 + Math.random() * 110;
-    const height = 4 + Math.random() * 16;
-    const alpha = 0.018 + Math.random() * 0.045;
-    ctx.fillStyle = `rgba(226, 244, 255, ${alpha})`;
-    ctx.beginPath();
-    ctx.ellipse(x, y, width, height, Math.random() * Math.PI, 0, Math.PI * 2);
-    ctx.fill();
+  for (let longitude = -150; longitude <= 180; longitude += 30) {
+    const points: THREE.Vector3[] = [];
+    for (let step = 0; step <= segments; step += 1) {
+      points.push(latLngToVector((step / segments) * 180 - 90, longitude, radius));
+    }
+    grid.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), material));
   }
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.needsUpdate = true;
-  return texture;
-};
-
-const createTerminatorTexture = () => {
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-
-  const gradient = ctx.createRadialGradient(178, 172, 70, 256, 256, 260);
-  gradient.addColorStop(0, "rgba(255,255,255,0.22)");
-  gradient.addColorStop(0.48, "rgba(34,211,238,0.08)");
-  gradient.addColorStop(0.74, "rgba(2,6,23,0.22)");
-  gradient.addColorStop(1, "rgba(2,6,23,0.82)");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  return texture;
+  return grid;
 };
 
 const createMarkerGeometry = (marker: GlobeMarker) => {
@@ -453,17 +258,16 @@ export default function GlobeView({
     root.rotation.set(0.18, -0.72, 0);
     scene.add(root);
 
-    const earthTexture = createEarthTexture();
-    const cloudTexture = createCloudTexture();
-    const terminatorTexture = createTerminatorTexture();
+    const textureLoader = new THREE.TextureLoader();
+    const earthTexture = loadTexture(textureLoader, EARTH_TEXTURE_PATH);
+    const cloudTexture = loadTexture(textureLoader, CLOUD_TEXTURE_PATH);
     const earth = new THREE.Mesh(
       new THREE.SphereGeometry(GLOBE_RADIUS, 96, 64),
-      new THREE.MeshPhongMaterial({
-        color: 0x0b2434,
-        map: earthTexture ?? undefined,
-        emissive: 0x020812,
-        emissiveIntensity: 0.38,
-        shininess: 9,
+      new THREE.MeshStandardMaterial({
+        color: 0xb8c7d8,
+        map: earthTexture,
+        roughness: 0.88,
+        metalness: 0,
       })
     );
     root.add(earth);
@@ -471,43 +275,23 @@ export default function GlobeView({
     const cloudLayer = new THREE.Mesh(
       new THREE.SphereGeometry(GLOBE_RADIUS + 0.026, 96, 64),
       new THREE.MeshBasicMaterial({
-        map: cloudTexture ?? undefined,
+        map: cloudTexture,
         transparent: true,
-        opacity: 0.34,
+        opacity: 0.22,
         depthWrite: false,
       })
     );
     root.add(cloudLayer);
 
-    const terminator = new THREE.Mesh(
-      new THREE.SphereGeometry(GLOBE_RADIUS + 0.032, 96, 64),
-      new THREE.MeshBasicMaterial({
-        map: terminatorTexture ?? undefined,
-        transparent: true,
-        opacity: 0.42,
-        depthWrite: false,
-      })
-    );
-    terminator.rotation.set(0.1, -0.52, 0);
-    root.add(terminator);
-
-    const wire = new THREE.Mesh(
-      new THREE.SphereGeometry(GLOBE_RADIUS + 0.012, 48, 32),
-      new THREE.MeshBasicMaterial({
-        color: 0x67e8f9,
-        transparent: true,
-        opacity: 0.012,
-        wireframe: true,
-      })
-    );
-    root.add(wire);
+    const tacticalGrid = createTacticalGrid();
+    root.add(tacticalGrid);
 
     const atmosphere = new THREE.Mesh(
-      new THREE.SphereGeometry(GLOBE_RADIUS + 0.1, 96, 64),
+      new THREE.SphereGeometry(GLOBE_RADIUS + 0.09, 96, 64),
       new THREE.MeshBasicMaterial({
         color: 0x22d3ee,
         transparent: true,
-        opacity: 0.075,
+        opacity: 0.045,
         side: THREE.BackSide,
       })
     );
@@ -516,12 +300,12 @@ export default function GlobeView({
     const markerGroup = new THREE.Group();
     root.add(markerGroup);
 
-    const ambient = new THREE.AmbientLight(0x7dd3fc, 0.92);
+    const ambient = new THREE.AmbientLight(0x7dd3fc, 0.18);
     scene.add(ambient);
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.45);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 3.1);
     keyLight.position.set(4, 2, 5);
     scene.add(keyLight);
-    const rimLight = new THREE.DirectionalLight(0x22d3ee, 1.35);
+    const rimLight = new THREE.DirectionalLight(0x22d3ee, 0.7);
     rimLight.position.set(-3, -1, -4);
     scene.add(rimLight);
 
@@ -668,7 +452,7 @@ export default function GlobeView({
       if (active && !isDragging) {
         root.rotation.y += 0.0015;
       }
-      wire.rotation.y -= 0.00045;
+      tacticalGrid.rotation.y -= 0.0002;
       cloudLayer.rotation.y += 0.00035;
       renderer.render(scene, camera);
       frameId = window.requestAnimationFrame(render);
@@ -694,17 +478,19 @@ export default function GlobeView({
       renderer.domElement.removeEventListener("pointermove", handlePointerMove);
       renderer.domElement.removeEventListener("pointerup", handlePointerUp);
       renderer.domElement.removeEventListener("pointercancel", handlePointerUp);
-      earthTexture?.dispose();
-      cloudTexture?.dispose();
-      terminatorTexture?.dispose();
+      earthTexture.dispose();
+      cloudTexture.dispose();
       earth.geometry.dispose();
       (earth.material as THREE.Material).dispose();
       cloudLayer.geometry.dispose();
       (cloudLayer.material as THREE.Material).dispose();
-      terminator.geometry.dispose();
-      (terminator.material as THREE.Material).dispose();
-      wire.geometry.dispose();
-      (wire.material as THREE.Material).dispose();
+      tacticalGrid.traverse((child) => {
+        const line = child as THREE.Line;
+        line.geometry?.dispose();
+      });
+      const gridMaterial = (tacticalGrid.children[0] as THREE.Line | undefined)
+        ?.material as THREE.Material | undefined;
+      gridMaterial?.dispose();
       atmosphere.geometry.dispose();
       (atmosphere.material as THREE.Material).dispose();
       starsGeometry.dispose();
