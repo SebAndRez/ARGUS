@@ -19,7 +19,7 @@ export default function NotificationCenterButton({
   const count = criticalCount || unreadCount;
 
   const positionClasses = embedded
-    ? "pointer-events-auto"
+    ? "argus-notification-button pointer-events-auto"
     : "argus-notification-button pointer-events-auto fixed z-[56]";
 
   return (

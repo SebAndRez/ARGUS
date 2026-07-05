@@ -1977,54 +1977,38 @@ export default function AppPage() {
         onViewModeChange={setMapViewMode}
       />
 
-      {mapViewMode === "orbit" ? (
-        <div className="orbit-right-topbar pointer-events-auto fixed z-[57] flex items-stretch gap-2">
-          <button
-            type="button"
-            onClick={() => setMapViewMode("map")}
-            className="inline-flex h-11 min-h-11 shrink-0 items-center border border-cyan-300/25 bg-slate-950/92 px-3 text-xs font-bold uppercase tracking-[0.12em] text-cyan-100 shadow-xl shadow-black/35 backdrop-blur-xl transition hover:border-cyan-200/55 hover:bg-cyan-400/15"
-          >
-            Salir de Orbit
-          </button>
-          <NotificationCenterButton
-            unreadCount={notificationSummary?.unread ?? 0}
-            criticalCount={notificationSummary?.critical ?? 0}
-            open={isNotificationCenterOpen}
-            onClick={() => setIsNotificationCenterOpen((current) => !current)}
-            embedded
-          />
-          <ArgusModuleLauncher
-            location={{ latitude: location.latitude, longitude: location.longitude }}
-            onOpen={collapseSecondaryPanels}
-            onMedicalAidCreated={(request) => {
-              setMedicalAidRequest(request);
-              setLayerSettings((current) => ({ ...current, medicalPoints: true }));
-            }}
-            onQuakeSenseDemoCluster={(cluster) => {
-              setQuakeSenseClusters((current) => [
-                cluster,
-                ...current.filter((item) => item.id !== cluster.id),
-              ]);
-              setLayerSettings((current) => ({ ...current, quakeSense: true }));
-            }}
-            onSafetyCheckCreated={(check) => {
-              setSafetyChecks((current) => [
-                check,
-                ...current.filter((item) => item.id !== check.id),
-              ]);
-              setLayerSettings((current) => ({ ...current, safetyChecks: true }));
-            }}
-            embedded
-          />
-        </div>
-      ) : (
+      <div className="argus-mobile-utility-controls pointer-events-auto fixed z-[57] flex items-stretch justify-end gap-2">
         <NotificationCenterButton
           unreadCount={notificationSummary?.unread ?? 0}
           criticalCount={notificationSummary?.critical ?? 0}
           open={isNotificationCenterOpen}
           onClick={() => setIsNotificationCenterOpen((current) => !current)}
+          embedded
         />
-      )}
+        <ArgusModuleLauncher
+          location={{ latitude: location.latitude, longitude: location.longitude }}
+          onOpen={collapseSecondaryPanels}
+          onMedicalAidCreated={(request) => {
+            setMedicalAidRequest(request);
+            setLayerSettings((current) => ({ ...current, medicalPoints: true }));
+          }}
+          onQuakeSenseDemoCluster={(cluster) => {
+            setQuakeSenseClusters((current) => [
+              cluster,
+              ...current.filter((item) => item.id !== cluster.id),
+            ]);
+            setLayerSettings((current) => ({ ...current, quakeSense: true }));
+          }}
+          onSafetyCheckCreated={(check) => {
+            setSafetyChecks((current) => [
+              check,
+              ...current.filter((item) => item.id !== check.id),
+            ]);
+            setLayerSettings((current) => ({ ...current, safetyChecks: true }));
+          }}
+          embedded
+        />
+      </div>
 
       <NotificationCenterPanel
         open={isNotificationCenterOpen}
@@ -2072,30 +2056,36 @@ export default function AppPage() {
         </button>
         <button
           type="button"
-          onClick={enterOrbitMode}
+          onClick={() => {
+            if (mapViewMode === "orbit") {
+              setMapViewMode("map");
+              return;
+            }
+            enterOrbitMode();
+          }}
           className={`min-h-9 shrink-0 border px-3 text-xs font-semibold ${
             mapViewMode === "orbit"
               ? "border-cyan-300/35 bg-cyan-400/15 text-cyan-100"
               : "border-white/8 bg-white/[0.03] text-slate-300"
           }`}
         >
-          Orbit
+          {mapViewMode === "orbit" ? "Salir Orbit" : "Orbit"}
         </button>
         <a
           href="/updates"
-          className="inline-flex min-h-9 shrink-0 items-center border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200 hover:border-cyan-300/30 hover:text-cyan-100"
+          className="hidden min-h-9 shrink-0 items-center border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200 hover:border-cyan-300/30 hover:text-cyan-100 sm:inline-flex"
         >
           Novedades
         </a>
         <a
           href="/app/como-usar"
-          className="inline-flex min-h-9 shrink-0 items-center border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200 hover:border-cyan-300/30 hover:text-cyan-100"
+          className="hidden min-h-9 shrink-0 items-center border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200 hover:border-cyan-300/30 hover:text-cyan-100 sm:inline-flex"
         >
           Guia
         </a>
         <a
           href="/app/perfil"
-          className="inline-flex min-h-9 shrink-0 items-center border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200 hover:border-cyan-300/30 hover:text-cyan-100"
+          className="hidden min-h-9 shrink-0 items-center border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200 hover:border-cyan-300/30 hover:text-cyan-100 sm:inline-flex"
         >
           Perfil
         </a>
@@ -2124,31 +2114,6 @@ export default function AppPage() {
           </button>
         ))}
       </div>
-      )}
-
-      {mapViewMode !== "orbit" && (
-        <ArgusModuleLauncher
-          location={{ latitude: location.latitude, longitude: location.longitude }}
-          onOpen={collapseSecondaryPanels}
-          onMedicalAidCreated={(request) => {
-            setMedicalAidRequest(request);
-            setLayerSettings((current) => ({ ...current, medicalPoints: true }));
-          }}
-          onQuakeSenseDemoCluster={(cluster) => {
-            setQuakeSenseClusters((current) => [
-              cluster,
-              ...current.filter((item) => item.id !== cluster.id),
-            ]);
-            setLayerSettings((current) => ({ ...current, quakeSense: true }));
-          }}
-          onSafetyCheckCreated={(check) => {
-            setSafetyChecks((current) => [
-              check,
-              ...current.filter((item) => item.id !== check.id),
-            ]);
-            setLayerSettings((current) => ({ ...current, safetyChecks: true }));
-          }}
-        />
       )}
 
       {displayMode === "command" && visibleWidgets.hud && (
