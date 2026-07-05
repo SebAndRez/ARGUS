@@ -99,18 +99,19 @@ html {
 }
 
 .argus-notification-button {
-  right: calc(max(0.75rem, env(safe-area-inset-right)) + 8.25rem);
+  right: calc(max(0.75rem, env(safe-area-inset-right)) + 7.5rem);
   top: max(0.75rem, env(safe-area-inset-top));
 }
 
 .argus-orbit-exit-button {
-  right: calc(max(0.75rem, env(safe-area-inset-right)) + 15.5rem);
+  right: calc(max(0.75rem, env(safe-area-inset-right)) + 14.5rem);
   top: max(0.75rem, env(safe-area-inset-top));
 }
 
 .argus-module-button {
   display: inline-flex;
-  min-height: 2.5rem;
+  min-height: 2.75rem;
+  height: 2.75rem;
   align-items: center;
   gap: 0.5rem;
   border: 1px solid rgb(103 232 249 / 0.25);
@@ -210,8 +211,8 @@ html {
 }
 
 .argus-orbit-info-panel {
-  right: max(1rem, env(safe-area-inset-right));
-  top: calc(12.75rem + env(safe-area-inset-top));
+  right: max(0.75rem, env(safe-area-inset-right));
+  top: calc(3.75rem + env(safe-area-inset-top));
   width: min(20rem, calc(100vw - 2rem));
 }
 
@@ -671,17 +672,19 @@ html {
 
   .argus-orbit-exit-button {
     min-height: 2.35rem;
+    height: 2.35rem;
     padding-left: 0.6rem;
     padding-right: 0.6rem;
-    right: calc(max(0.5rem, env(safe-area-inset-right)) + 10.75rem);
+    right: calc(max(0.5rem, env(safe-area-inset-right)) + 12.5rem);
     top: calc(0.5rem + env(safe-area-inset-top));
   }
 
   .argus-notification-button {
     min-height: 2.35rem;
+    height: 2.35rem;
     padding-left: 0.55rem;
     padding-right: 0.55rem;
-    right: calc(max(0.5rem, env(safe-area-inset-right)) + 4.65rem);
+    right: calc(max(0.5rem, env(safe-area-inset-right)) + 6.25rem);
     top: calc(0.5rem + env(safe-area-inset-top));
   }
 
@@ -692,15 +695,16 @@ html {
 
   .argus-module-button {
     min-height: 2.35rem;
+    height: 2.35rem;
     padding-left: 0.55rem;
     padding-right: 0.55rem;
   }
 
   .argus-orbit-info-panel {
-    left: max(0.75rem, env(safe-area-inset-left));
+    left: auto;
     right: max(0.75rem, env(safe-area-inset-right));
-    top: calc(12.5rem + env(safe-area-inset-top));
-    width: auto;
+    top: calc(3.5rem + env(safe-area-inset-top));
+    width: min(18rem, calc(100vw - 1.5rem));
   }
 
   .argus-orbit-zoom-panel {
@@ -748,7 +752,7 @@ html {
   }
 
   .argus-notification-button {
-    right: calc(max(0.5rem, env(safe-area-inset-right)) + 6.4rem);
+    right: calc(max(0.5rem, env(safe-area-inset-right)) + 6.25rem);
     top: calc(0.5rem + env(safe-area-inset-top));
   }
 

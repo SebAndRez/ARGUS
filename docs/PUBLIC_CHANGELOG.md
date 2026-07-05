@@ -1,5 +1,23 @@
 # ARGUS Public Changelog
 
+## 2026-07-05 - pending-bbb9dd2 - Actualizacion en preparacion
+
+**Archivos modificados:** 3
+
+**Resumen publico:**  
+Se actualizaron 3 archivos relacionados con Mapa operativo.
+
+**Cambios principales:**
+- Se ajustaron vistas y elementos de interfaz.
+
+**Modulos afectados:**
+- Mapa operativo
+
+**En simple:**  
+Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada.
+
+---
+
 ## 2026-07-05 - pending-b5f8140 - Actualizacion en preparacion
 
 **Archivos modificados:** 4

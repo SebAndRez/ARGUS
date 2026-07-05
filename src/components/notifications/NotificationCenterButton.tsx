@@ -19,7 +19,7 @@ export default function NotificationCenterButton({
     <button
       type="button"
       onClick={onClick}
-      className={`argus-notification-button pointer-events-auto fixed z-[56] inline-flex min-h-11 items-center gap-2 border px-3 text-xs font-bold uppercase tracking-[0.12em] shadow-xl shadow-black/35 backdrop-blur-xl transition ${
+      className={`argus-notification-button pointer-events-auto fixed z-[56] inline-flex h-11 min-h-11 shrink-0 items-center gap-2 border px-3 text-xs font-bold uppercase tracking-[0.12em] shadow-xl shadow-black/35 backdrop-blur-xl transition ${
         open
           ? "border-cyan-200/55 bg-cyan-400/15 text-cyan-50"
           : "border-cyan-300/25 bg-slate-950/92 text-cyan-100 hover:border-cyan-200/55"

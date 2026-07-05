@@ -1,5 +1,20 @@
 [
   {
+    "changeId": "bbb9dd2b5033",
+    "date": "2026-07-05",
+    "commit": "pending-bbb9dd2",
+    "title": "Actualizacion en preparacion",
+    "fileCount": 3,
+    "summary": "Se actualizaron 3 archivos relacionados con Mapa operativo.",
+    "changes": [
+      "Se ajustaron vistas y elementos de interfaz."
+    ],
+    "affectedModules": [
+      "Mapa operativo"
+    ],
+    "simpleExplanation": "Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada."
+  },
+  {
     "changeId": "b5f8140523e1",
     "date": "2026-07-05",
     "commit": "pending-b5f8140",

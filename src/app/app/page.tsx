@@ -1978,7 +1978,7 @@ export default function AppPage() {
         <button
           type="button"
           onClick={() => setMapViewMode("map")}
-          className="argus-orbit-exit-button pointer-events-auto fixed z-[56] inline-flex min-h-11 items-center border border-cyan-300/25 bg-slate-950/92 px-3 text-xs font-bold uppercase tracking-[0.12em] text-cyan-100 shadow-xl shadow-black/35 backdrop-blur-xl transition hover:border-cyan-200/55 hover:bg-cyan-400/15"
+          className="argus-orbit-exit-button pointer-events-auto fixed z-[56] inline-flex h-11 min-h-11 shrink-0 items-center border border-cyan-300/25 bg-slate-950/92 px-3 text-xs font-bold uppercase tracking-[0.12em] text-cyan-100 shadow-xl shadow-black/35 backdrop-blur-xl transition hover:border-cyan-200/55 hover:bg-cyan-400/15"
         >
           Salir de Orbit
         </button>
