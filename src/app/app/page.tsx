@@ -1974,6 +1974,16 @@ export default function AppPage() {
         onClick={() => setIsNotificationCenterOpen((current) => !current)}
       />
 
+      {mapViewMode === "orbit" && (
+        <button
+          type="button"
+          onClick={() => setMapViewMode("map")}
+          className="argus-orbit-exit-button pointer-events-auto fixed z-[56] inline-flex min-h-11 items-center border border-cyan-300/25 bg-slate-950/92 px-3 text-xs font-bold uppercase tracking-[0.12em] text-cyan-100 shadow-xl shadow-black/35 backdrop-blur-xl transition hover:border-cyan-200/55 hover:bg-cyan-400/15"
+        >
+          Salir de Orbit
+        </button>
+      )}
+
       <NotificationCenterPanel
         open={isNotificationCenterOpen}
         latitude={location.latitude}
@@ -2029,6 +2039,12 @@ export default function AppPage() {
         >
           Orbit
         </button>
+        <a
+          href="/updates"
+          className="inline-flex min-h-9 shrink-0 items-center border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200 hover:border-cyan-300/30 hover:text-cyan-100"
+        >
+          Novedades
+        </a>
         <a
           href="/app/como-usar"
           className="inline-flex min-h-9 shrink-0 items-center border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200 hover:border-cyan-300/30 hover:text-cyan-100"

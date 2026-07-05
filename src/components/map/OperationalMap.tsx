@@ -1317,17 +1317,6 @@ export default function OperationalMap({
           />
         }
       />
-      {isGlobeMode && (
-        <button
-          type="button"
-          onClick={() => exitGlobeMode()}
-          onMouseDown={() => exitGlobeMode()}
-          onTouchEnd={() => exitGlobeMode()}
-          className="absolute right-4 top-4 z-[70] min-h-10 border border-cyan-300/35 bg-slate-950/90 px-3 py-2 text-xs font-bold uppercase text-cyan-100 shadow-lg shadow-black/30 backdrop-blur-xl transition hover:bg-cyan-300/15"
-        >
-          Salir de Orbit
-        </button>
-      )}
       {mapError && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/95 p-6">
           <div className="max-w-sm border border-amber-300/25 bg-amber-400/10 p-4 text-center">

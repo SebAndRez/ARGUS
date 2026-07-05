@@ -575,7 +575,7 @@ export default function GlobeView({
     <section className={`argus-orbit relative h-full w-full ${className}`}>
       <div ref={hostRef} className="h-full w-full" aria-label="ARGUS Orbit" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.13),transparent_48%)]" />
-      <div className="pointer-events-none absolute left-4 top-4 max-w-[calc(100%-2rem)] border border-cyan-300/20 bg-slate-950/80 px-4 py-3 shadow-xl shadow-black/35 backdrop-blur-xl sm:left-6 sm:top-6">
+      <div className="argus-orbit-info-panel pointer-events-none absolute max-w-[calc(100%-2rem)] border border-cyan-300/20 bg-slate-950/80 px-4 py-3 shadow-xl shadow-black/35 backdrop-blur-xl">
         <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-cyan-200/80">
           ARGUS Orbit
         </p>
@@ -586,8 +586,8 @@ export default function GlobeView({
           {markers.length} eventos georreferenciados · arrastre para girar
         </p>
       </div>
-      <div className="pointer-events-auto absolute bottom-4 left-4 right-4 flex flex-wrap items-center justify-between gap-3 border border-white/10 bg-slate-950/82 px-4 py-3 text-xs text-slate-200 shadow-xl shadow-black/35 backdrop-blur-xl sm:bottom-6 sm:left-6 sm:right-6">
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="argus-orbit-zoom-panel pointer-events-auto absolute flex flex-col gap-2 border border-white/10 bg-slate-950/82 px-3 py-3 text-xs text-slate-200 shadow-xl shadow-black/35 backdrop-blur-xl">
+        <div className="grid gap-1">
           <span className="font-semibold uppercase tracking-[0.18em] text-cyan-100">
             Global zoom
           </span>
@@ -610,7 +610,7 @@ export default function GlobeView({
               zoom: returnZoom,
             });
           }}
-          className="min-h-10 border border-cyan-300/35 bg-cyan-400/12 px-3 py-2 text-xs font-bold uppercase text-cyan-100 transition hover:bg-cyan-300/20"
+          className="min-h-9 border border-cyan-300/35 bg-cyan-400/12 px-3 py-2 text-xs font-bold uppercase text-cyan-100 transition hover:bg-cyan-300/20"
         >
           Volver a mapa 2D
         </button>
