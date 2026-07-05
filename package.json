@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
+    "prepare": "husky",
+    "changelog:public": "node scripts/generate-public-changelog.mjs",
     "release:check": "npm run lint && npm run build && npm run db:validate && npm run db:generate && git diff --check",
     "start": "next start",
     "lint": "eslint",
@@ -37,6 +39,7 @@
     "@types/three": "^0.184.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
+    "husky": "^9.1.7",
     "tailwindcss": "^4",
     "tsx": "^4.22.4",
     "typescript": "^5"

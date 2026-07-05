@@ -44,6 +44,7 @@ export default function Home() {
         <footer className="mt-6 flex flex-wrap gap-4 text-xs text-slate-400">
           <Link href="/legal/terms" className="hover:text-cyan-100">Términos</Link>
           <Link href="/legal/privacy" className="hover:text-cyan-100">Privacidad</Link>
+          <Link href="/updates" className="hover:text-cyan-100">Actualizaciones</Link>
           <Link href="/app/como-usar" className="hover:text-cyan-100">Cómo usar ARGUS</Link>
         </footer>
       </section>

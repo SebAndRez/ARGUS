@@ -123,7 +123,7 @@ interface Props {
 
 const DEFAULT_CENTER: [number, number] = [-33.4489, -70.6693];
 const GLOBE_ZOOM_THRESHOLD = 2;
-const MAP_RETURN_ZOOM = GLOBE_ZOOM_THRESHOLD + 2;
+const RETURN_FROM_GLOBE_ZOOM = GLOBE_ZOOM_THRESHOLD + 1;
 const baseMapSources: Record<
   BaseMapType,
   { url: string; attribution: string; maxZoom?: number }
@@ -329,6 +329,10 @@ export default function OperationalMap({
     center: [number, number];
     zoom: number;
   }>({ center: DEFAULT_CENTER, zoom: 11.2 });
+  const lastGlobeCenterRef = useRef<{ lat: number; lng: number }>({
+    lat: DEFAULT_CENTER[0],
+    lng: DEFAULT_CENTER[1],
+  });
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [isGlobeMode, setIsGlobeMode] = useState(false);
@@ -494,6 +498,13 @@ export default function OperationalMap({
           )
         : [],
     [layerSettings.crisisNews, newsEvidence]
+  );
+  const globeInitialCenter = useMemo(
+    () => ({
+      lat: lastUsefulMapViewRef.current.center[0],
+      lng: lastUsefulMapViewRef.current.center[1],
+    }),
+    [isGlobeMode]
   );
 
   useEffect(() => {
@@ -1179,16 +1190,29 @@ export default function OperationalMap({
     mapRef.current.flyTo([lat, lng], 13, { duration: 0.7 });
   }, [focusTarget, mapReady, onViewModeChange]);
 
-  const exitGlobeMode = useCallback(() => {
+  const exitGlobeMode = useCallback((view?: {
+    center?: { lat: number; lng: number };
+    zoom?: number;
+  }) => {
     suppressGlobeModeRef.current = true;
     setIsGlobeMode(false);
     onViewModeChange?.("map");
     if (!mapRef.current) {
       return;
     }
-    const previousView = lastUsefulMapViewRef.current;
-    const returnZoom = Math.max(previousView.zoom, MAP_RETURN_ZOOM);
-    mapRef.current.setView(previousView.center, returnZoom, {
+    const requestedCenter = view?.center ?? lastGlobeCenterRef.current;
+    const lat = Number(requestedCenter.lat);
+    const lng = Number(requestedCenter.lng);
+    const returnCenter: [number, number] =
+      Number.isFinite(lat) && Number.isFinite(lng)
+        ? [lat, lng]
+        : lastUsefulMapViewRef.current.center;
+    const returnZoom = view?.zoom ?? RETURN_FROM_GLOBE_ZOOM;
+    lastUsefulMapViewRef.current = {
+      center: returnCenter,
+      zoom: returnZoom,
+    };
+    mapRef.current.setView(returnCenter, returnZoom, {
       animate: true,
       duration: 0.35,
     });
@@ -1282,8 +1306,13 @@ export default function OperationalMap({
             events={visibleEvents}
             demoEvents={visibleDemoEvents}
             externalEvents={visibleExternalEvents}
+            initialCenter={globeInitialCenter}
+            returnZoom={RETURN_FROM_GLOBE_ZOOM}
             onSelectEvent={onEventSelect}
             onSelectExternalEvent={onExternalEventSelect}
+            onCenterChange={(center) => {
+              lastGlobeCenterRef.current = center;
+            }}
             onExitGlobe={exitGlobeMode}
           />
         }
@@ -1291,9 +1320,9 @@ export default function OperationalMap({
       {isGlobeMode && (
         <button
           type="button"
-          onClick={exitGlobeMode}
-          onMouseDown={exitGlobeMode}
-          onTouchEnd={exitGlobeMode}
+          onClick={() => exitGlobeMode()}
+          onMouseDown={() => exitGlobeMode()}
+          onTouchEnd={() => exitGlobeMode()}
           className="absolute right-4 top-4 z-[70] min-h-10 border border-cyan-300/35 bg-slate-950/90 px-3 py-2 text-xs font-bold uppercase text-cyan-100 shadow-lg shadow-black/30 backdrop-blur-xl transition hover:bg-cyan-300/15"
         >
           Salir de Orbit

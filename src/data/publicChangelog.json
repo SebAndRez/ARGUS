@@ -1,0 +1,42 @@
+[
+  {
+    "changeId": "ec2b7688e645",
+    "date": "2026-07-05",
+    "commit": "pending-ec2b768",
+    "title": "Actualizacion en preparacion",
+    "fileCount": 9,
+    "summary": "Se actualizaron 9 archivos relacionados con Dependencias internas y Actualizaciones publicas.",
+    "changes": [
+      "Se actualizaron componentes del mapa operativo.",
+      "Se ajusto la vista global ARGUS Orbit.",
+      "Se ajustaron vistas y elementos de interfaz.",
+      "Se actualizaron dependencias o scripts internos."
+    ],
+    "affectedModules": [
+      "Dependencias internas",
+      "Actualizaciones publicas",
+      "Legal y privacidad",
+      "Mapa operativo",
+      "ARGUS Orbit"
+    ],
+    "simpleExplanation": "Esta actualizacion mejora la experiencia del mapa y la vista global para que ARGUS sea mas claro al explorar una situacion."
+  },
+  {
+    "changeId": "b13faa052ae2",
+    "date": "2026-07-05",
+    "commit": "pending-b13faa0",
+    "title": "Actualizacion en preparacion",
+    "fileCount": 7,
+    "summary": "Se actualizaron 7 archivos relacionados con Dependencias internas y Actualizaciones publicas.",
+    "changes": [
+      "Se ajustaron vistas y elementos de interfaz.",
+      "Se actualizaron dependencias o scripts internos."
+    ],
+    "affectedModules": [
+      "Dependencias internas",
+      "Actualizaciones publicas",
+      "Legal y privacidad"
+    ],
+    "simpleExplanation": "Esta actualizacion permite que ARGUS publique un registro claro de cambios para que los usuarios entiendan que se modifico."
+  }
+]

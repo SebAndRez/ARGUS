@@ -3,6 +3,7 @@ const links = [
   ["/legal/privacy", "Privacidad"],
   ["/legal/data-license", "Licencia de datos"],
   ["/legal/institutional-access", "Uso institucional"],
+  ["/updates", "Actualizaciones"],
 ] as const;
 
 export default function ArgusLegalFooter() {

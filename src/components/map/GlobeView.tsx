@@ -20,15 +20,23 @@ interface GlobeMarker {
   payload: GlobeEvent;
 }
 
+interface GlobeCenter {
+  lat: number;
+  lng: number;
+}
+
 interface Props {
   events?: CrisisEvent[];
   demoEvents?: CrisisEvent[];
   externalEvents?: ArgusNormalizedEvent[];
   active?: boolean;
   className?: string;
+  initialCenter?: GlobeCenter;
+  returnZoom?: number;
   onSelectEvent?: (event: CrisisEvent) => void;
   onSelectExternalEvent?: (event: ArgusNormalizedEvent) => void;
-  onExitGlobe?: () => void;
+  onCenterChange?: (center: GlobeCenter) => void;
+  onExitGlobe?: (view: { center: GlobeCenter; zoom?: number }) => void;
 }
 
 const GLOBE_RADIUS = 2.45;
@@ -101,6 +109,29 @@ const latLngToVector = (latitude: number, longitude: number, radius: number) => 
     radius * Math.sin(phi) * Math.sin(theta)
   );
 };
+
+const vectorToLatLng = (vector: THREE.Vector3): GlobeCenter => {
+  const normalized = vector.clone().normalize();
+  const latitude = THREE.MathUtils.radToDeg(Math.asin(normalized.y));
+  const longitude = -THREE.MathUtils.radToDeg(
+    Math.atan2(normalized.z, normalized.x)
+  );
+  const wrappedLongitude = ((((longitude + 180) % 360) + 360) % 360) - 180;
+
+  return {
+    lat: THREE.MathUtils.clamp(latitude, -85, 85),
+    lng: wrappedLongitude,
+  };
+};
+
+const isValidCenter = (center: GlobeCenter | undefined): center is GlobeCenter =>
+  Boolean(
+    center &&
+      Number.isFinite(center.lat) &&
+      Number.isFinite(center.lng) &&
+      center.lat >= -90 &&
+      center.lat <= 90
+  );
 
 const loadTexture = (loader: THREE.TextureLoader, path: string) => {
   const texture = loader.load(path);
@@ -211,8 +242,11 @@ export default function GlobeView({
   externalEvents = [],
   active = true,
   className = "",
+  initialCenter,
+  returnZoom,
   onSelectEvent,
   onSelectExternalEvent,
+  onCenterChange,
   onExitGlobe,
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -223,7 +257,11 @@ export default function GlobeView({
   const markersRef = useRef(markers);
   const selectInternalRef = useRef(onSelectEvent);
   const selectExternalRef = useRef(onSelectExternalEvent);
+  const centerChangeRef = useRef(onCenterChange);
   const exitGlobeRef = useRef(onExitGlobe);
+  const visibleCenterRef = useRef<GlobeCenter>(
+    isValidCenter(initialCenter) ? initialCenter : { lat: 0, lng: 0 }
+  );
 
   useEffect(() => {
     markersRef.current = markers;
@@ -232,8 +270,9 @@ export default function GlobeView({
   useEffect(() => {
     selectInternalRef.current = onSelectEvent;
     selectExternalRef.current = onSelectExternalEvent;
+    centerChangeRef.current = onCenterChange;
     exitGlobeRef.current = onExitGlobe;
-  }, [onExitGlobe, onSelectEvent, onSelectExternalEvent]);
+  }, [onCenterChange, onExitGlobe, onSelectEvent, onSelectExternalEvent]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -255,7 +294,12 @@ export default function GlobeView({
     host.appendChild(renderer.domElement);
 
     const root = new THREE.Group();
-    root.rotation.set(0.18, -0.72, 0);
+    const cameraFacingNormal = camera.position.clone().normalize();
+    const entryCenter = isValidCenter(initialCenter)
+      ? initialCenter
+      : visibleCenterRef.current;
+    const entryVector = latLngToVector(entryCenter.lat, entryCenter.lng, 1).normalize();
+    root.quaternion.setFromUnitVectors(entryVector, cameraFacingNormal);
     scene.add(root);
 
     const textureLoader = new THREE.TextureLoader();
@@ -343,6 +387,24 @@ export default function GlobeView({
     let previousX = 0;
     let previousY = 0;
     let activePointerId: number | null = null;
+    let lastCenterUpdate = 0;
+
+    const updateVisibleCenter = (force = false) => {
+      // The visible map center is the camera-facing globe normal in local coordinates.
+      const localCenter = cameraFacingNormal
+        .clone()
+        .applyQuaternion(root.quaternion.clone().invert());
+      const nextCenter = vectorToLatLng(localCenter);
+      visibleCenterRef.current = nextCenter;
+
+      const now = performance.now();
+      if (force || now - lastCenterUpdate > 120) {
+        centerChangeRef.current?.(nextCenter);
+        lastCenterUpdate = now;
+      }
+
+      return nextCenter;
+    };
 
     const syncMarkers = () => {
       markerGroup.children.forEach((child) => {
@@ -436,6 +498,7 @@ export default function GlobeView({
       root.rotation.y += deltaX * 0.006;
       root.rotation.x += deltaY * 0.004;
       root.rotation.x = THREE.MathUtils.clamp(root.rotation.x, -1.1, 1.1);
+      updateVisibleCenter();
       previousX = event.clientX;
       previousY = event.clientY;
     };
@@ -451,6 +514,7 @@ export default function GlobeView({
     const render = () => {
       if (active && !isDragging) {
         root.rotation.y += 0.0015;
+        updateVisibleCenter();
       }
       tacticalGrid.rotation.y -= 0.0002;
       cloudLayer.rotation.y += 0.00035;
@@ -460,6 +524,7 @@ export default function GlobeView({
 
     syncMarkers();
     resize();
+    updateVisibleCenter(true);
     render();
 
     renderer.domElement.addEventListener("pointerdown", handlePointerDown);
@@ -504,7 +569,7 @@ export default function GlobeView({
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [active]);
+  }, [active, initialCenter, returnZoom]);
 
   return (
     <section className={`argus-orbit relative h-full w-full ${className}`}>
@@ -532,10 +597,18 @@ export default function GlobeView({
         </div>
         <button
           type="button"
-          onClick={() => exitGlobeRef.current?.()}
+          onClick={() =>
+            exitGlobeRef.current?.({
+              center: visibleCenterRef.current,
+              zoom: returnZoom,
+            })
+          }
           onPointerUp={(event) => {
             event.stopPropagation();
-            exitGlobeRef.current?.();
+            exitGlobeRef.current?.({
+              center: visibleCenterRef.current,
+              zoom: returnZoom,
+            });
           }}
           className="min-h-10 border border-cyan-300/35 bg-cyan-400/12 px-3 py-2 text-xs font-bold uppercase text-cyan-100 transition hover:bg-cyan-300/20"
         >
