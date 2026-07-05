@@ -274,6 +274,8 @@ export default function ExternalEventPopup({
             externalId={event.externalId}
             eventKind={event.category}
             title={event.title}
+            event={event}
+            correlations={correlations}
             compact
           />
 

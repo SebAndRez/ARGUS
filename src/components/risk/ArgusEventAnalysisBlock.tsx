@@ -3,6 +3,12 @@
 import { useArgusEventAnalysis } from "@/hooks/useArgusEventAnalysis";
 import ArgusIntelligenceAnalysisCard from "@/components/risk/ArgusIntelligenceAnalysisCard";
 import RiskEvidenceList from "@/components/risk/RiskEvidenceList";
+import type { ArgusCorrelatedIncident } from "@/types/correlation";
+import type { ArgusNormalizedEvent } from "@/types/ingestion";
+import {
+  generateOperationalHypothesis,
+  type ArgusOperationalHypothesis,
+} from "@/lib/argus/operationalHypothesisEngine";
 import {
   calculateArgusConfidenceFromEvidence,
   getConfirmationBadges,
@@ -17,6 +23,8 @@ type ArgusEventAnalysisBlockProps = {
   eventKind?: string;
   title?: string;
   compact?: boolean;
+  event?: ArgusNormalizedEvent | null;
+  correlations?: ArgusCorrelatedIncident[];
 };
 
 const statusLabel: Record<string, string> = {
@@ -79,6 +87,95 @@ function fallbackCopy(input: ArgusEventAnalysisBlockProps) {
   };
 }
 
+function OperationalHypothesisCard({
+  hypothesis,
+  compact,
+}: {
+  hypothesis: ArgusOperationalHypothesis;
+  compact: boolean;
+}) {
+  return (
+    <div className="mt-4 grid gap-3">
+      <div className="flex flex-wrap gap-1.5">
+        <span className="rounded border border-cyan-300/15 bg-cyan-400/8 px-2 py-1 text-[0.55rem] font-bold uppercase text-cyan-100">
+          {hypothesis.label}
+        </span>
+        <span className="rounded border border-emerald-300/20 bg-emerald-400/8 px-2 py-1 text-[0.55rem] font-bold uppercase text-emerald-100">
+          Automatica
+        </span>
+      </div>
+
+      <p className="text-sm leading-6 text-slate-200">
+        <span className="font-semibold text-cyan-100">Hipotesis: </span>
+        {hypothesis.summary}
+      </p>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-md border border-white/10 bg-slate-900/70 p-2">
+          <p className="text-[0.55rem] font-bold uppercase text-slate-500">Nivel</p>
+          <p className="mt-1 text-xs font-semibold text-slate-100">
+            {hypothesis.label}
+          </p>
+        </div>
+        <div className="rounded-md border border-white/10 bg-slate-900/70 p-2">
+          <p className="text-[0.55rem] font-bold uppercase text-slate-500">Confianza</p>
+          <p className="mt-1 font-mono text-xs font-semibold text-cyan-100">
+            {hypothesis.confidence}%
+          </p>
+        </div>
+      </div>
+
+      {hypothesis.evidenceBasis.length > 0 && (
+        <div className="rounded-md border border-cyan-300/15 bg-cyan-400/8 p-3">
+          <p className="text-[0.6rem] font-bold uppercase text-cyan-200">
+            Base de evidencia
+          </p>
+          <ul className="mt-2 grid gap-1.5 text-xs leading-5 text-slate-100">
+            {hypothesis.evidenceBasis.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="rounded-md border border-amber-300/15 bg-amber-400/8 p-3">
+        <p className="text-[0.6rem] font-bold uppercase text-amber-100">
+          Que falta para elevar confianza
+        </p>
+        <ul className="mt-2 grid gap-1.5 text-xs leading-5 text-amber-50/90">
+          {hypothesis.missingEvidence.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </div>
+
+      {hypothesis.recommendedFollowUp.length > 0 && !compact && (
+        <div className="rounded-md border border-white/10 bg-slate-900/60 p-3">
+          <p className="text-[0.6rem] font-bold uppercase text-slate-400">
+            Seguimiento recomendado
+          </p>
+          <ul className="mt-2 grid gap-1.5 text-xs leading-5 text-slate-200">
+            {hypothesis.recommendedFollowUp.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="grid gap-2">
+        {hypothesis.caveats.map((caveat) => (
+          <p
+            key={caveat}
+            className="rounded-md border border-amber-300/15 bg-amber-400/8 px-2.5 py-2 text-[0.62rem] leading-4 text-amber-100/85"
+          >
+            {caveat}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function ArgusEventAnalysisBlock({
   compact = false,
   ...props
@@ -86,8 +183,13 @@ export default function ArgusEventAnalysisBlock({
   const { loading, error, primaryAssessment, predictiveAnalysis, emptyReason } =
     useArgusEventAnalysis(props);
   const fallback = fallbackCopy(props);
+  const automaticHypothesis = props.event
+    ? generateOperationalHypothesis(props.event, {
+        relatedSources: props.correlations ?? [],
+      })
+    : null;
 
-  if (!loading && !error && predictiveAnalysis) {
+  if (!automaticHypothesis && !loading && !error && predictiveAnalysis) {
     return <ArgusIntelligenceAnalysisCard analysis={predictiveAnalysis} compact={compact} />;
   }
 
@@ -107,7 +209,7 @@ export default function ArgusEventAnalysisBlock({
           </p>
         </div>
         <span className="argus-analysis-badge rounded-md border border-cyan-300/20 bg-cyan-400/10 px-2 py-1 text-[0.58rem] font-bold uppercase text-cyan-100">
-          Hipotesis
+          {automaticHypothesis?.label ?? "Hipotesis"}
         </span>
       </div>
 
@@ -123,7 +225,11 @@ export default function ArgusEventAnalysisBlock({
         </div>
       )}
 
-      {!loading && !error && primaryAssessment && (
+      {automaticHypothesis && !error && (
+        <OperationalHypothesisCard hypothesis={automaticHypothesis} compact={compact} />
+      )}
+
+      {!automaticHypothesis && !loading && !error && primaryAssessment && (
         <div className="mt-4 grid gap-3">
           <div className="flex flex-wrap gap-1.5">
             {getConfirmationBadges(primaryAssessment.evidence).map((badge) => (
@@ -230,7 +336,7 @@ export default function ArgusEventAnalysisBlock({
         </div>
       )}
 
-      {!loading && !error && !primaryAssessment && (
+      {!automaticHypothesis && !loading && !error && !primaryAssessment && (
         <div className={`argus-analysis-empty mt-3 rounded-md border p-3 ${fallback.className}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-semibold">{fallback.title}</p>
