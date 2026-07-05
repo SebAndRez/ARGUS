@@ -28,6 +28,7 @@ import {
   type ArgusMapEventKind,
   type ArgusMapSeverity,
 } from "@/lib/mapSymbols/argusMapSymbols";
+import { enforceLayerPolicy } from "@/lib/layers/layerPolicy";
 
 interface MapLayerSettings {
   reports: boolean;
@@ -276,7 +277,7 @@ export default function OperationalMap({
   selectedEventId,
   location,
   locationStatus,
-  layerSettings,
+  layerSettings: incomingLayerSettings,
   onEventSelect,
   selectedExternalEventId,
   onExternalEventSelect,
@@ -336,9 +337,17 @@ export default function OperationalMap({
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [isGlobeMode, setIsGlobeMode] = useState(false);
+  const [globeInitialCenter, setGlobeInitialCenter] = useState({
+    lat: DEFAULT_CENTER[0],
+    lng: DEFAULT_CENTER[1],
+  });
   const [mapInstance, setMapInstance] = useState<import("leaflet").Map | null>(null);
   const [leafletInstance, setLeafletInstance] =
     useState<typeof import("leaflet") | null>(null);
+  const layerSettings = useMemo(
+    () => enforceLayerPolicy(incomingLayerSettings),
+    [incomingLayerSettings]
+  );
 
   useEffect(() => {
     viewModeRef.current = viewMode;
@@ -499,14 +508,6 @@ export default function OperationalMap({
         : [],
     [layerSettings.crisisNews, newsEvidence]
   );
-  const globeInitialCenter = useMemo(
-    () => ({
-      lat: lastUsefulMapViewRef.current.center[0],
-      lng: lastUsefulMapViewRef.current.center[1],
-    }),
-    [isGlobeMode]
-  );
-
   useEffect(() => {
     let isMounted = true;
 
@@ -578,6 +579,10 @@ export default function OperationalMap({
             onViewModeChangeRef.current?.("map");
             return;
           }
+          setGlobeInitialCenter({
+            lat: lastUsefulMapViewRef.current.center[0],
+            lng: lastUsefulMapViewRef.current.center[1],
+          });
           setIsGlobeMode(true);
           onViewModeChangeRef.current?.("orbit");
         };
@@ -1225,6 +1230,10 @@ export default function OperationalMap({
   useEffect(() => {
     if (!viewMode) return;
     if (viewMode === "orbit") {
+      setGlobeInitialCenter({
+        lat: lastUsefulMapViewRef.current.center[0],
+        lng: lastUsefulMapViewRef.current.center[1],
+      });
       setIsGlobeMode(true);
       return;
     }
