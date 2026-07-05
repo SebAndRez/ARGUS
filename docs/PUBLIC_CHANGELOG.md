@@ -1,5 +1,30 @@
 # ARGUS Public Changelog
 
+## 2026-07-05 - pending-b0dc09d - fix: restore realtime layers and harden ARGUS security
+
+**Archivos modificados:** 16
+
+**Resumen publico:**  
+Se actualizaron 16 archivos relacionados con Reportes ciudadanos y Mapa operativo.
+
+**Cambios principales:**
+- Se actualizaron componentes del mapa operativo.
+- Se mejoro la lectura y gestion de reportes.
+- Se ajustaron vistas y elementos de interfaz.
+- Se ajustaron flujos de acceso y sesion.
+- Se actualizaron servicios internos usados por ARGUS.
+
+**Modulos afectados:**
+- Reportes ciudadanos
+- Mapa operativo
+- Capas del mapa
+- Acceso y sesion
+
+**En simple:**  
+Esta actualizacion ayuda a que los reportes sean mas claros, ordenados y faciles de revisar.
+
+---
+
 ## 2026-07-05 - pending-d5e2283 - fix: use commit message in public changelog
 
 **Archivos modificados:** 3

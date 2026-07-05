@@ -1,5 +1,27 @@
 [
   {
+    "changeId": "b0dc09d16441",
+    "date": "2026-07-05",
+    "commit": "pending-b0dc09d",
+    "title": "fix: restore realtime layers and harden ARGUS security",
+    "fileCount": 16,
+    "summary": "Se actualizaron 16 archivos relacionados con Reportes ciudadanos y Mapa operativo.",
+    "changes": [
+      "Se actualizaron componentes del mapa operativo.",
+      "Se mejoro la lectura y gestion de reportes.",
+      "Se ajustaron vistas y elementos de interfaz.",
+      "Se ajustaron flujos de acceso y sesion.",
+      "Se actualizaron servicios internos usados por ARGUS."
+    ],
+    "affectedModules": [
+      "Reportes ciudadanos",
+      "Mapa operativo",
+      "Capas del mapa",
+      "Acceso y sesion"
+    ],
+    "simpleExplanation": "Esta actualizacion ayuda a que los reportes sean mas claros, ordenados y faciles de revisar."
+  },
+  {
     "changeId": "d5e2283d5d52",
     "date": "2026-07-05",
     "commit": "pending-d5e2283",
