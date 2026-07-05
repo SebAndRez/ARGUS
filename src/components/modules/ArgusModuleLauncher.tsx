@@ -25,6 +25,8 @@ interface Props {
   onMedicalAidCreated?: (request: MedicalAidRequest) => void;
   onQuakeSenseDemoCluster?: (cluster: QuakeSenseCluster) => void;
   onSafetyCheckCreated?: (check: SafetyCheck) => void;
+  /** When true, the trigger button renders without fixed positioning (for use inside a positioned container) */
+  embedded?: boolean;
 }
 
 const publicModules: Array<{
@@ -50,6 +52,7 @@ export default function ArgusModuleLauncher({
   onMedicalAidCreated,
   onQuakeSenseDemoCluster,
   onSafetyCheckCreated,
+  embedded = false,
 }: Props) {
   const [state, setState] = useState<ModuleState>("closed");
 
@@ -58,9 +61,16 @@ export default function ArgusModuleLauncher({
     setState(next);
   };
 
+  // When embedded, the launcher wrapper is relative (no fixed) so the button
+  // sits inside the parent orbit-right-topbar container. The dropdown menu and
+  // panels remain fixed so they overlay the full screen correctly.
+  const launcherClass = embedded
+    ? "argus-module-launcher-embedded pointer-events-auto relative"
+    : "argus-module-launcher pointer-events-auto fixed z-[57]";
+
   return (
     <>
-      <div className="argus-module-launcher pointer-events-auto fixed z-[57]">
+      <div className={launcherClass}>
         <button
           type="button"
           onClick={() => openState(state === "menu" ? "closed" : "menu")}

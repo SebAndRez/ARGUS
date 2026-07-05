@@ -1,5 +1,26 @@
 # ARGUS Public Changelog
 
+## 2026-07-05 - pending-21fdb63 - Actualizacion en preparacion
+
+**Archivos modificados:** 5
+
+**Resumen publico:**  
+Se actualizaron 5 archivos relacionados con Mapa operativo y ARGUS Orbit.
+
+**Cambios principales:**
+- Se actualizaron componentes del mapa operativo.
+- Se ajusto la vista global ARGUS Orbit.
+- Se ajustaron vistas y elementos de interfaz.
+
+**Modulos afectados:**
+- Mapa operativo
+- ARGUS Orbit
+
+**En simple:**  
+Esta actualizacion mejora la experiencia del mapa y la vista global para que ARGUS sea mas claro al explorar una situacion.
+
+---
+
 ## 2026-07-05 - pending-bbb9dd2 - Actualizacion en preparacion
 
 **Archivos modificados:** 3

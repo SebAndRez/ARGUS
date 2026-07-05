@@ -1930,7 +1930,11 @@ export default function AppPage() {
   }
 
   return (
-    <main className="argus-app-shell relative overflow-hidden bg-slate-950 text-white">
+    <main
+      className={`argus-app-shell relative overflow-hidden bg-slate-950 text-white ${
+        mapViewMode === "orbit" ? "argus-orbit-mode" : ""
+      }`}
+    >
       <OperationalMap
         events={publicEvents}
         demoEvents={filteredDemoEvents}
@@ -1967,21 +1971,53 @@ export default function AppPage() {
         onViewModeChange={setMapViewMode}
       />
 
-      <NotificationCenterButton
-        unreadCount={notificationSummary?.unread ?? 0}
-        criticalCount={notificationSummary?.critical ?? 0}
-        open={isNotificationCenterOpen}
-        onClick={() => setIsNotificationCenterOpen((current) => !current)}
-      />
-
-      {mapViewMode === "orbit" && (
-        <button
-          type="button"
-          onClick={() => setMapViewMode("map")}
-          className="argus-orbit-exit-button pointer-events-auto fixed z-[56] inline-flex h-11 min-h-11 shrink-0 items-center border border-cyan-300/25 bg-slate-950/92 px-3 text-xs font-bold uppercase tracking-[0.12em] text-cyan-100 shadow-xl shadow-black/35 backdrop-blur-xl transition hover:border-cyan-200/55 hover:bg-cyan-400/15"
-        >
-          Salir de Orbit
-        </button>
+      {mapViewMode === "orbit" ? (
+        <div className="orbit-right-topbar pointer-events-auto fixed z-[57] flex items-stretch gap-2">
+          <button
+            type="button"
+            onClick={() => setMapViewMode("map")}
+            className="inline-flex h-11 min-h-11 shrink-0 items-center border border-cyan-300/25 bg-slate-950/92 px-3 text-xs font-bold uppercase tracking-[0.12em] text-cyan-100 shadow-xl shadow-black/35 backdrop-blur-xl transition hover:border-cyan-200/55 hover:bg-cyan-400/15"
+          >
+            Salir de Orbit
+          </button>
+          <NotificationCenterButton
+            unreadCount={notificationSummary?.unread ?? 0}
+            criticalCount={notificationSummary?.critical ?? 0}
+            open={isNotificationCenterOpen}
+            onClick={() => setIsNotificationCenterOpen((current) => !current)}
+            embedded
+          />
+          <ArgusModuleLauncher
+            location={{ latitude: location.latitude, longitude: location.longitude }}
+            onOpen={collapseSecondaryPanels}
+            onMedicalAidCreated={(request) => {
+              setMedicalAidRequest(request);
+              setLayerSettings((current) => ({ ...current, medicalPoints: true }));
+            }}
+            onQuakeSenseDemoCluster={(cluster) => {
+              setQuakeSenseClusters((current) => [
+                cluster,
+                ...current.filter((item) => item.id !== cluster.id),
+              ]);
+              setLayerSettings((current) => ({ ...current, quakeSense: true }));
+            }}
+            onSafetyCheckCreated={(check) => {
+              setSafetyChecks((current) => [
+                check,
+                ...current.filter((item) => item.id !== check.id),
+              ]);
+              setLayerSettings((current) => ({ ...current, safetyChecks: true }));
+            }}
+            embedded
+          />
+        </div>
+      ) : (
+        <NotificationCenterButton
+          unreadCount={notificationSummary?.unread ?? 0}
+          criticalCount={notificationSummary?.critical ?? 0}
+          open={isNotificationCenterOpen}
+          onClick={() => setIsNotificationCenterOpen((current) => !current)}
+        />
       )}
 
       <NotificationCenterPanel
@@ -1994,11 +2030,11 @@ export default function AppPage() {
       />
 
       <nav
-        className={`argus-top-bar argus-view-toolbar pointer-events-auto fixed z-[55] flex max-w-[calc(100%-1rem)] items-center gap-1 overflow-x-auto border border-cyan-300/20 bg-slate-950/95 p-1.5 shadow-xl shadow-black/40 backdrop-blur-xl ${
+        className={`argus-top-bar argus-view-toolbar pointer-events-auto fixed z-[55] flex max-w-[calc(100%-1rem)] items-center gap-1.5 overflow-x-auto border border-cyan-300/20 bg-slate-950/95 p-1.5 shadow-xl shadow-black/40 backdrop-blur-xl ${
           displayMode === "command"
             ? "argus-view-toolbar-command"
             : "argus-view-toolbar-map"
-        }`}
+        } ${mapViewMode === "orbit" ? "argus-orbit-left-topbar" : ""}`}
         aria-label="Vista operacional"
       >
         {([
@@ -2060,7 +2096,11 @@ export default function AppPage() {
       </nav>
 
       {displayMode === "command" && (
-      <div className="argus-mobile-panel argus-widget-rail pointer-events-auto fixed z-[54] flex max-w-[calc(100%-1rem)] gap-1 overflow-x-auto border border-white/10 bg-slate-950/88 p-1 shadow-xl shadow-black/35 backdrop-blur-xl">
+      <div
+        className={`argus-mobile-panel argus-widget-rail pointer-events-auto fixed z-[54] flex max-w-[calc(100%-1rem)] gap-1 overflow-x-auto border border-white/10 bg-slate-950/88 p-1 shadow-xl shadow-black/35 backdrop-blur-xl ${
+          mapViewMode === "orbit" ? "argus-orbit-left-widget-rail" : ""
+        }`}
+      >
         {([
           ["hud", "HUD"],
           ["layers", "Capas"],
@@ -2084,28 +2124,30 @@ export default function AppPage() {
       </div>
       )}
 
-      <ArgusModuleLauncher
-        location={{ latitude: location.latitude, longitude: location.longitude }}
-        onOpen={collapseSecondaryPanels}
-        onMedicalAidCreated={(request) => {
-          setMedicalAidRequest(request);
-          setLayerSettings((current) => ({ ...current, medicalPoints: true }));
-        }}
-        onQuakeSenseDemoCluster={(cluster) => {
-          setQuakeSenseClusters((current) => [
-            cluster,
-            ...current.filter((item) => item.id !== cluster.id),
-          ]);
-          setLayerSettings((current) => ({ ...current, quakeSense: true }));
-        }}
-        onSafetyCheckCreated={(check) => {
-          setSafetyChecks((current) => [
-            check,
-            ...current.filter((item) => item.id !== check.id),
-          ]);
-          setLayerSettings((current) => ({ ...current, safetyChecks: true }));
-        }}
-      />
+      {mapViewMode !== "orbit" && (
+        <ArgusModuleLauncher
+          location={{ latitude: location.latitude, longitude: location.longitude }}
+          onOpen={collapseSecondaryPanels}
+          onMedicalAidCreated={(request) => {
+            setMedicalAidRequest(request);
+            setLayerSettings((current) => ({ ...current, medicalPoints: true }));
+          }}
+          onQuakeSenseDemoCluster={(cluster) => {
+            setQuakeSenseClusters((current) => [
+              cluster,
+              ...current.filter((item) => item.id !== cluster.id),
+            ]);
+            setLayerSettings((current) => ({ ...current, quakeSense: true }));
+          }}
+          onSafetyCheckCreated={(check) => {
+            setSafetyChecks((current) => [
+              check,
+              ...current.filter((item) => item.id !== check.id),
+            ]);
+            setLayerSettings((current) => ({ ...current, safetyChecks: true }));
+          }}
+        />
+      )}
 
       {displayMode === "command" && visibleWidgets.hud && (
       <div className="argus-top-hud-shell pointer-events-auto fixed z-40 max-w-6xl">

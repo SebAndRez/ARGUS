@@ -219,7 +219,41 @@ html {
 .argus-orbit-zoom-panel {
   bottom: calc(5.25rem + env(safe-area-inset-bottom));
   left: max(1rem, env(safe-area-inset-left));
-  width: min(17rem, calc(100vw - 2rem));
+  width: min(17.5rem, calc(100vw - 2rem));
+}
+
+/* Orbit mode fixed grid: left topbar, secondary rail, right topbar + info card. */
+.argus-view-toolbar.argus-orbit-left-topbar {
+  top: 24px;
+  left: 24px;
+  right: auto;
+}
+
+.argus-orbit-left-topbar button,
+.argus-orbit-left-topbar a {
+  min-height: 44px;
+  height: 44px;
+}
+
+.argus-widget-rail.argus-orbit-left-widget-rail {
+  top: 76px;
+  left: 24px;
+}
+
+.orbit-right-topbar {
+  top: 24px;
+  right: 24px;
+}
+
+.orbit-right-topbar > * {
+  height: 44px;
+  min-height: 44px;
+}
+
+.argus-orbit-info-panel.orbit-info-card {
+  top: 76px;
+  right: 24px;
+  width: min(22rem, calc(100vw - 2rem));
 }
 
 @supports (height: 100svh) {

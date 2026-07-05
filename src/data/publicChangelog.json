@@ -1,5 +1,23 @@
 [
   {
+    "changeId": "21fdb63044a3",
+    "date": "2026-07-05",
+    "commit": "pending-21fdb63",
+    "title": "Actualizacion en preparacion",
+    "fileCount": 5,
+    "summary": "Se actualizaron 5 archivos relacionados con Mapa operativo y ARGUS Orbit.",
+    "changes": [
+      "Se actualizaron componentes del mapa operativo.",
+      "Se ajusto la vista global ARGUS Orbit.",
+      "Se ajustaron vistas y elementos de interfaz."
+    ],
+    "affectedModules": [
+      "Mapa operativo",
+      "ARGUS Orbit"
+    ],
+    "simpleExplanation": "Esta actualizacion mejora la experiencia del mapa y la vista global para que ARGUS sea mas claro al explorar una situacion."
+  },
+  {
     "changeId": "bbb9dd2b5033",
     "date": "2026-07-05",
     "commit": "pending-bbb9dd2",
