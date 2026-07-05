@@ -10,10 +10,6 @@ import type {
   DemoSeverityFilter,
   DemoTypeFilter,
 } from "@/lib/demoEventFilters";
-import {
-  canUserDisableLayer,
-  isAlwaysOnRealtimeLayer,
-} from "@/lib/layers/layerPolicy";
 
 export interface MapLayerState {
   reports: boolean;
@@ -114,10 +110,11 @@ const layerGroups: Array<{
   keys: Array<keyof MapLayerState>;
 }> = [
   {
-    label: "Capas operativas en tiempo real",
+    label: "Alertas y eventos",
     keys: [
       "reports",
       "missingPersons",
+      "demoReports",
       "usgsEarthquakes",
       "usgsShakeMapIntensity",
       "usgsPagerImpactAssessment",
@@ -126,23 +123,6 @@ const layerGroups: Array<{
       "nasaFirms",
       "nasaEonet",
       "nwsWeatherAlerts",
-      "reliefWeb",
-      "sos",
-      "alerts",
-      "critical",
-      "quakeSense",
-      "safetyChecks",
-      "conflictZones",
-      "conflictEvents",
-      "territorialControl",
-      "crisisNews",
-      "confirmedDisasters",
-    ],
-  },
-  {
-    label: "Capas contextuales",
-    keys: [
-      "demoReports",
       "openMeteoWeatherContext",
       "openAqAirQualityObservations",
       "usgsWaterConditions",
@@ -161,17 +141,39 @@ const layerGroups: Array<{
       "gdeltMediaSignals",
       "copernicusGlofasFloodForecast",
       "copernicusGfmObservedFloodExtent",
+      // ReliefWeb temporarily hidden from UI until ingest reliability is fixed.
+      "sos",
+      "alerts",
+      "critical",
       "resolved",
+    ],
+  },
+  {
+    label: "Fuentes y contexto",
+    keys: [
       "visualSources",
       "officialSources",
       "publicCameras",
       "liveCameras",
       "medicalPoints",
+      "quakeSense",
+      "safetyChecks",
       "weatherRisk",
       "user",
-      "terrestrialRoutes",
-      "airRoutes",
-      "maritimeRoutes",
+    ],
+  },
+  {
+    label: "Rutas demo",
+    keys: ["terrestrialRoutes", "airRoutes", "maritimeRoutes"],
+  },
+  {
+    label: "Conflictos y crisis",
+    keys: [
+      "conflictZones",
+      "conflictEvents",
+      "territorialControl",
+      "crisisNews",
+      "confirmedDisasters",
     ],
   },
 ];
@@ -477,12 +479,10 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
             </p>
             <div className="mt-2 grid gap-1.5">
               {availableKeys.map((key) => {
-                const alwaysOn = isAlwaysOnRealtimeLayer(String(key));
-                const enabled = alwaysOn || Boolean(layers[key]);
+                const enabled = Boolean(layers[key]);
                 const meta = layerMeta?.[key as keyof MapLayerState];
                 const emphasized = Boolean(meta?.emphasis && !enabled);
-                const lockedOn = !canUserDisableLayer(String(key));
-                const disabled = lockedOn || Boolean(meta?.disabled);
+                const disabled = Boolean(meta?.disabled);
                 return (
                   <button
                     key={key}
@@ -490,9 +490,7 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
                     disabled={disabled}
                     onClick={() => onToggle(key)}
                     className={`flex min-h-11 items-center justify-between gap-3 border px-3 py-2 text-left text-xs transition ${
-                      lockedOn
-                        ? "cursor-default border-emerald-300/20 bg-emerald-400/8 text-slate-100"
-                        : disabled
+                      disabled
                         ? "cursor-not-allowed border-white/5 bg-white/[0.02] text-slate-600"
                         : enabled
                         ? "border-cyan-400/20 bg-cyan-500/8 text-slate-100"
@@ -515,48 +513,30 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
                           {meta.detail}
                         </span>
                       )}
-                      {alwaysOn && (
-                        <span className="mt-1 block text-[0.58rem] text-emerald-200/80">
-                          Esta capa permanece activa para seguridad y analisis ARGUS.
-                        </span>
-                      )}
                     </span>
-                    <span className="flex shrink-0 flex-col items-end gap-1">
+                    <span className="flex shrink-0 items-center gap-1.5">
                       {typeof meta?.count === "number" && (
                         <span className="rounded-full border border-white/10 bg-slate-950/70 px-2 py-1 font-mono text-[0.58rem] text-slate-300">
                           {meta.count}
                         </span>
                       )}
-                      {alwaysOn && (
-                        <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2 py-0.5 text-[0.5rem] font-bold uppercase text-emerald-200">
-                          Tiempo real
-                        </span>
-                      )}
                       <span
-                        className={`inline-flex min-h-5 min-w-8 items-center justify-center rounded-full border px-1.5 py-0.5 text-[0.55rem] font-bold ${
-                          lockedOn
-                            ? "border-emerald-300/30 bg-emerald-400/15 text-emerald-200"
-                            : disabled
+                        className={`inline-flex h-5 min-w-8 items-center justify-center rounded-full border px-1.5 text-[0.55rem] font-bold ${
+                          disabled
                             ? "border-white/8 bg-slate-950/70 text-slate-600"
                             : enabled
                             ? "border-cyan-300/30 bg-cyan-400/15 text-cyan-200"
                             : "border-white/10 bg-slate-950/70 text-slate-500"
                         }`}
                       >
-                        {lockedOn
-                          ? "Siempre activa"
-                          : disabled
-                            ? meta?.disabledLabel ?? "N/D"
-                            : enabled
-                              ? "ON"
-                              : "OFF"}
+                        {disabled ? meta?.disabledLabel ?? "N/D" : enabled ? "ON" : "OFF"}
                       </span>
                     </span>
                   </button>
                 );
               })}
             </div>
-            {availableKeys.includes("demoReports" as Extract<keyof TLayers, string>) &&
+            {group.label === "Alertas y eventos" &&
               Boolean(layers.demoReports) &&
               demoFilters && <DemoEventFilterControls {...demoFilters} />}
           </section>

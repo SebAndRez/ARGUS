@@ -22,27 +22,19 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  try {
-    const events = await prisma.externalEvent.findMany({
-      where: {
-        ...(sourceId ? { sourceId } : {}),
-        ...(category ? { category } : {}),
-        ...(severity ? { severity } : {}),
-        ...(since ? { occurredAt: { gte: since } } : {}),
-      },
-      orderBy: [{ occurredAt: "desc" }, { updatedAt: "desc" }],
-      take: parseLimit(request.nextUrl.searchParams.get("limit")),
-    });
+  const events = await prisma.externalEvent.findMany({
+    where: {
+      ...(sourceId ? { sourceId } : {}),
+      ...(category ? { category } : {}),
+      ...(severity ? { severity } : {}),
+      ...(since ? { occurredAt: { gte: since } } : {}),
+    },
+    orderBy: [{ occurredAt: "desc" }, { updatedAt: "desc" }],
+    take: parseLimit(request.nextUrl.searchParams.get("limit")),
+  });
 
-    return NextResponse.json({
-      count: events.length,
-      events,
-    });
-  } catch {
-    return NextResponse.json({
-      count: 0,
-      events: [],
-      warning: "Persisted external events unavailable.",
-    });
-  }
+  return NextResponse.json({
+    count: events.length,
+    events,
+  });
 }

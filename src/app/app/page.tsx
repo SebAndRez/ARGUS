@@ -85,13 +85,6 @@ import { correlateExternalEvents } from "@/lib/ingestion/correlateExternalEvents
 import { auditVigiaAction } from "@/modules/vigia/vigiaAccess";
 import { mapSessionUserToArgusRole } from "@/lib/modules/moduleAccess";
 import { getConflictProximityWarnings } from "@/lib/conflict/conflictRiskEngine";
-import {
-  canUserDisableLayer,
-  enforceLayerPolicy,
-  getDefaultLayerState,
-  type ArgusLayerId,
-  type ArgusLayerState,
-} from "@/lib/layers/layerPolicy";
 
 const OperationalMap = dynamic(
   () => import("@/components/map/OperationalMap"),
@@ -105,8 +98,59 @@ const OperationalMap = dynamic(
   }
 );
 
-const LAYER_SETTINGS_STORAGE_KEY = "argus-layer-settings";
-const initialLayers = getDefaultLayerState();
+const initialLayers = {
+  reports: true,
+  missingPersons: true,
+  demoReports: false,
+  usgsEarthquakes: false,
+  usgsShakeMapIntensity: false,
+  usgsPagerImpactAssessment: false,
+  gdacsAlerts: false,
+  noaaTsunami: false,
+  nasaFirms: false,
+  nasaEonet: false,
+  nwsWeatherAlerts: false,
+  openMeteoWeatherContext: false,
+  openAqAirQualityObservations: false,
+  usgsWaterConditions: false,
+  smithsonianGvpVolcanoes: false,
+  smithsonianGvpEruptionHistory: false,
+  smithsonianUsgsVolcanicActivityReports: false,
+  noaaCoopsCoastalObservations: false,
+  iocSeaLevelMonitoringStations: false,
+  noaaStormEventsHistorical: false,
+  noaaNceiHistoricalTsunamis: false,
+  openFemaDisasterDeclarations: false,
+  osmCriticalInfrastructure: false,
+  hdxHapiHumanitarianContext: false,
+  whoDiseaseOutbreakNews: false,
+  ecdcPublicHealthThreats: false,
+  gdeltMediaSignals: false,
+  copernicusGlofasFloodForecast: false,
+  copernicusGfmObservedFloodExtent: false,
+  reliefWeb: false,
+  sos: true,
+  alerts: true,
+  critical: true,
+  resolved: true,
+  user: true,
+  visualSources: true,
+  officialSources: true,
+  publicCameras: true,
+  liveCameras: false,
+  medicalPoints: false,
+  quakeSense: false,
+  safetyChecks: false,
+  weatherRisk: false,
+  terrestrialRoutes: false,
+  airRoutes: false,
+  maritimeRoutes: false,
+  conflictZones: false,
+  conflictEvents: false,
+  territorialControl: false,
+  crisisNews: false,
+  confirmedDisasters: false,
+};
 
 const initialEventState: CrisisEvent[] = [];
 const defaultVisibleWidgets = {
@@ -233,32 +277,6 @@ function persistVisibleWidgets(widgets: typeof defaultVisibleWidgets) {
   }
 }
 
-function readStoredLayerSettings() {
-  if (typeof window === "undefined") return initialLayers;
-  try {
-    const storedLayers = window.localStorage.getItem(LAYER_SETTINGS_STORAGE_KEY);
-    if (!storedLayers) return initialLayers;
-    const parsed = JSON.parse(storedLayers) as Partial<Record<ArgusLayerId, unknown>>;
-    const booleanPreferences = Object.fromEntries(
-      Object.entries(parsed).filter(([, value]) => typeof value === "boolean")
-    ) as Partial<ArgusLayerState>;
-    return getDefaultLayerState(booleanPreferences);
-  } catch {
-    return initialLayers;
-  }
-}
-
-function persistLayerSettings(layers: ArgusLayerState) {
-  try {
-    window.localStorage.setItem(
-      LAYER_SETTINGS_STORAGE_KEY,
-      JSON.stringify(enforceLayerPolicy(layers))
-    );
-  } catch {
-    // Storage can be unavailable in Safari private mode.
-  }
-}
-
 export default function AppPage() {
   const router = useRouter();
   const [displayMode, setDisplayMode] = useState<
@@ -314,9 +332,7 @@ export default function AppPage() {
   const [events, setEvents] = useState<CrisisEvent[]>(initialEventState);
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
   const [demoEvents, setDemoEvents] = useState<CrisisEvent[]>(() => [...demoCrisisEvents]);
-  const [layerSettings, setLayerSettings] = useState<ArgusLayerState>(() =>
-    readStoredLayerSettings()
-  );
+  const [layerSettings, setLayerSettings] = useState(initialLayers);
   const [baseMapType, setBaseMapType] = useState<BaseMapType>("tactical");
   const [demoSeverityFilter, setDemoSeverityFilter] =
     useState<DemoSeverityFilter>("ALL");
@@ -473,11 +489,6 @@ export default function AppPage() {
       return next;
     });
   }, [activeMobilePanel, isMobileViewport]);
-
-  useEffect(() => {
-    const enforced = enforceLayerPolicy(layerSettings);
-    persistLayerSettings(enforced);
-  }, [layerSettings]);
 
   const changeDisplayMode = useCallback(
     (mode: "command" | "map") => {
@@ -636,10 +647,6 @@ export default function AppPage() {
   );
 
   const toggleLayer = (key: keyof typeof initialLayers) => {
-    if (!canUserDisableLayer(String(key))) {
-      setLayerSettings((current) => enforceLayerPolicy(current));
-      return;
-    }
     if (
       key === "usgsEarthquakes" &&
       layerSettings.usgsEarthquakes &&
@@ -684,12 +691,10 @@ export default function AppPage() {
     ) {
       setSelectedConflictZone(null);
     }
-    setLayerSettings((current) =>
-      enforceLayerPolicy({
-        ...current,
-        [key]: !current[key],
-      })
-    );
+    setLayerSettings((current) => ({
+      ...current,
+      [key]: !current[key],
+    }));
   };
 
   const gpsStatus = useMemo<"active" | "inactive" | "unknown">(() => {
