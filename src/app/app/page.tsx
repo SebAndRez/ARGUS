@@ -14,7 +14,6 @@ import VisualSourcePopup from "@/components/map/VisualSourcePopup";
 import WindLayerLegend from "@/components/map/WindLayerLegend";
 import LiveCameraList from "@/components/live-cameras/LiveCameraList";
 import LiveCameraPanel from "@/components/live-cameras/LiveCameraPanel";
-import RiskAssessmentPanel from "@/components/risk/RiskAssessmentPanel";
 import ConflictLegend from "@/components/conflict/ConflictLegend";
 import ConflictZonePanel from "@/components/conflict/ConflictZonePanel";
 import ArgusModuleLauncher from "@/components/modules/ArgusModuleLauncher";
@@ -74,7 +73,6 @@ import type {
   ArgusNormalizedEvent,
 } from "@/types/ingestion";
 import type { ArgusIncidentKnowledge } from "@/types/knowledgeIntake";
-import type { ArgusRiskAssessment } from "@/types/riskAssessment";
 import type { ConflictZone } from "@/types/conflictZone";
 import type { MedicalAidRequest } from "@/types/medical";
 import type { SafetyCheck } from "@/types/mobileSafety";
@@ -158,7 +156,6 @@ const defaultVisibleWidgets = {
   layers: true,
   weather: true,
   nearby: true,
-  risk: false,
 };
 
 function eonetIncidentToExternalEvent(incident: ArgusIncidentKnowledge): ArgusNormalizedEvent {
@@ -222,7 +219,6 @@ const mobileExclusiveWidgets: VisibleWidgetKey[] = [
   "layers",
   "weather",
   "nearby",
-  "risk",
 ];
 const CITIZEN_REPORT_TTL_MS = 2 * 60 * 60 * 1000;
 const CITIZEN_REPORT_ACTIVE_STATUSES = new Set([
@@ -282,15 +278,14 @@ function persistVisibleWidgets(widgets: typeof defaultVisibleWidgets) {
 export default function AppPage() {
   const router = useRouter();
   const [displayMode, setDisplayMode] = useState<
-    "command" | "map" | "layers"
+    "command" | "map"
   >(() => {
     if (typeof window === "undefined") return "map";
     try {
       const storedMode = window.localStorage.getItem("argus-display-mode");
       if (
         storedMode === "command" ||
-        storedMode === "map" ||
-        storedMode === "layers"
+        storedMode === "map"
       ) {
         return storedMode;
       }
@@ -419,12 +414,6 @@ export default function AppPage() {
   const [metErrorMessage, setMetErrorMessage] = useState<string | null>(null);
   const [metCached, setMetCached] = useState(false);
   const [metRetryVersion, setMetRetryVersion] = useState(0);
-  const [riskAssessments, setRiskAssessments] = useState<ArgusRiskAssessment[]>([]);
-  const [riskStatus, setRiskStatus] = useState<
-    "idle" | "loading" | "loaded" | "error"
-  >("idle");
-  const [riskErrorMessage, setRiskErrorMessage] = useState<string | null>(null);
-  const [riskRefreshVersion, setRiskRefreshVersion] = useState(0);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -493,7 +482,6 @@ export default function AppPage() {
         layers: activePanel === "layers",
         weather: activePanel === "weather",
         nearby: activePanel === "nearby",
-        risk: activePanel === "risk",
       };
       persistVisibleWidgets(next);
       return next;
@@ -501,7 +489,7 @@ export default function AppPage() {
   }, [activeMobilePanel, isMobileViewport]);
 
   const changeDisplayMode = useCallback(
-    (mode: "command" | "map" | "layers") => {
+    (mode: "command" | "map") => {
       setDisplayMode(mode);
       if (mode === "map") {
         setMapViewMode("map");
@@ -513,22 +501,6 @@ export default function AppPage() {
             layers: false,
             weather: false,
             nearby: false,
-            risk: false,
-          };
-          persistVisibleWidgets(next);
-          return next;
-        });
-      } else if (mode === "layers" && isMobileViewport) {
-        setMapViewMode("map");
-        setActiveMobilePanel("layers");
-        setVisibleWidgets((current) => {
-          const next = {
-            ...current,
-            hud: false,
-            layers: true,
-            weather: false,
-            nearby: false,
-            risk: false,
           };
           persistVisibleWidgets(next);
           return next;
@@ -577,7 +549,6 @@ export default function AppPage() {
         layers: false,
         weather: false,
         nearby: false,
-        risk: false,
       };
       persistVisibleWidgets(next);
       return next;
@@ -592,7 +563,6 @@ export default function AppPage() {
         layers: false,
         weather: false,
         nearby: false,
-        risk: false,
       };
       persistVisibleWidgets(next);
       return next;
@@ -1838,7 +1808,7 @@ export default function AppPage() {
   ]);
 
   useEffect(() => {
-    if (!layerSettings.weatherRisk) return;
+    if (!layerSettings.weatherRisk && !visibleWidgets.weather) return;
 
     const latitude = Number(location.latitude);
     const longitude = Number(location.longitude);
@@ -1891,55 +1861,13 @@ export default function AppPage() {
     location.latitude,
     location.longitude,
     metRetryVersion,
+    visibleWidgets.weather,
   ]);
 
   const retryMetWeather = () => {
     setMetStatus("idle");
     setMetErrorMessage(null);
     setMetRetryVersion((current) => current + 1);
-  };
-
-  useEffect(() => {
-    if (displayMode !== "command" || !visibleWidgets.risk) return;
-
-    const controller = new AbortController();
-    setRiskStatus("loading");
-    setRiskErrorMessage(null);
-
-    async function loadRiskAssessments() {
-      try {
-        const response = await fetch("/api/risk-assessments?limit=40", {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        const payload = (await response.json()) as {
-          assessments?: ArgusRiskAssessment[];
-          error?: string;
-        };
-        if (!response.ok) {
-          throw new Error(payload.error || "No fue posible calcular prediccion.");
-        }
-        setRiskAssessments(
-          Array.isArray(payload.assessments) ? payload.assessments : []
-        );
-        setRiskStatus("loaded");
-      } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") return;
-        setRiskStatus("error");
-        setRiskErrorMessage(
-          error instanceof Error
-            ? error.message
-            : "No fue posible calcular prediccion."
-        );
-      }
-    }
-
-    loadRiskAssessments();
-    return () => controller.abort();
-  }, [displayMode, riskRefreshVersion, visibleWidgets.risk]);
-
-  const refreshRiskAssessments = () => {
-    setRiskRefreshVersion((current) => current + 1);
   };
 
   async function createReport(payload: {
@@ -2066,7 +1994,6 @@ export default function AppPage() {
         {([
           ["map", "Vista mapa"],
           ["command", "Paneles"],
-          ["layers", "Capas"],
         ] as const).map(([mode, label]) => (
           <button
             key={mode}
@@ -2122,7 +2049,6 @@ export default function AppPage() {
           ["hud", "HUD"],
           ["layers", "Capas"],
           ["weather", "Clima"],
-          ["risk", "Riesgo"],
           ["nearby", "Cercanos"],
         ] as const).map(([key, label]) => (
           <button
@@ -2165,18 +2091,6 @@ export default function AppPage() {
         }}
       />
 
-      {displayMode === "command" && visibleWidgets.risk && (
-      <div className="argus-left-panel argus-risk-panel-shell pointer-events-auto fixed z-[47] w-[330px] max-w-[calc(100%-1rem)]">
-        <RiskAssessmentPanel
-          assessments={riskAssessments}
-          status={riskStatus}
-          errorMessage={riskErrorMessage}
-          onRefresh={refreshRiskAssessments}
-          onToggleCollapsed={() => setWidgetVisibility("risk", false)}
-        />
-      </div>
-      )}
-
       {displayMode === "command" && visibleWidgets.hud && (
       <div className="argus-top-hud-shell pointer-events-auto fixed z-40 max-w-6xl">
         <ArgusOperationalHUD
@@ -2197,7 +2111,7 @@ export default function AppPage() {
       <WindLayerLegend
         observation={activeWeatherObservation}
         selectedProjection={selectedRiskProjection}
-        visible={layerSettings.weatherRisk}
+        visible={visibleWidgets.weather}
         fallbackActive={metStatus !== "loaded"}
         cached={metCached}
         thermalEventCount={
@@ -2208,15 +2122,10 @@ export default function AppPage() {
       </div>
       )}
 
-      {displayMode === "command" && layerSettings.weatherRisk && activeWeatherObservation && (
+      {displayMode === "command" && visibleWidgets.weather && (
         <div
-          className={`argus-left-panel argus-mobile-weather-widget pointer-events-auto fixed z-[48] ${
-            visibleWidgets.weather
-              ? "argus-mobile-weather-card"
-              : "argus-mobile-weather-pill"
-          }`}
+          className="argus-left-panel argus-mobile-weather-widget argus-mobile-weather-card pointer-events-auto fixed z-[48]"
         >
-          {visibleWidgets.weather ? (
             <section className="rounded-lg border border-amber-300/20 bg-slate-950/94 p-3 shadow-2xl shadow-black/35 backdrop-blur-xl">
               <header className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
@@ -2235,32 +2144,40 @@ export default function AppPage() {
                   Ocultar
                 </button>
               </header>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-[0.68rem] text-slate-300">
-                <span className="rounded border border-white/10 bg-slate-900/70 px-2 py-1.5">
-                  {weatherPressureLabel}
-                </span>
-                <span className="rounded border border-white/10 bg-slate-900/70 px-2 py-1.5">
-                  {weatherWindLabel}
-                </span>
-              </div>
-              <p className="mt-2 text-[0.62rem] leading-4 text-slate-500">
-                Zona estimada, no exacta.
-              </p>
+              {activeWeatherObservation ? (
+                <>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-[0.68rem] text-slate-300">
+                    <span className="rounded border border-white/10 bg-slate-900/70 px-2 py-1.5">
+                      {weatherPressureLabel}
+                    </span>
+                    <span className="rounded border border-white/10 bg-slate-900/70 px-2 py-1.5">
+                      {weatherWindLabel}
+                    </span>
+                    <span className="rounded border border-white/10 bg-slate-900/70 px-2 py-1.5">
+                      {typeof activeWeatherObservation.temperatureC === "number"
+                        ? `${activeWeatherObservation.temperatureC.toFixed(1)} C`
+                        : "Temp. N/D"}
+                    </span>
+                    <span className="rounded border border-white/10 bg-slate-900/70 px-2 py-1.5">
+                      {typeof activeWeatherObservation.humidityPct === "number"
+                        ? `${activeWeatherObservation.humidityPct.toFixed(0)}% humedad`
+                        : "Humedad N/D"}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[0.62rem] leading-4 text-slate-500">
+                    Zona estimada, no exacta.
+                  </p>
+                </>
+              ) : (
+                <p className="mt-3 rounded-md border border-white/10 bg-slate-900/70 p-3 text-xs leading-5 text-slate-300">
+                  Sin datos meteorologicos disponibles para esta zona
+                </p>
+              )}
             </section>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setWidgetVisibility("weather", true)}
-              className="rounded-full border border-amber-300/25 bg-slate-950/94 px-3 py-2 text-left text-[0.68rem] font-semibold text-amber-100 shadow-xl shadow-black/35 backdrop-blur-xl"
-              aria-label="Mostrar clima"
-            >
-              Clima: {weatherPressureLabel}
-            </button>
-          )}
         </div>
       )}
 
-      {(displayMode === "command" || displayMode === "layers") && visibleWidgets.layers && (
+      {displayMode === "command" && visibleWidgets.layers && (
       <div className="argus-right-panel argus-layer-panel-shell pointer-events-auto fixed z-[45] w-[310px]">
         <MapLayerControls
           layers={layerSettings}

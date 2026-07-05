@@ -108,14 +108,22 @@ const createEarthTexture = () => {
   if (!ctx) return null;
 
   const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  gradient.addColorStop(0, "#020a15");
-  gradient.addColorStop(0.48, "#01040c");
-  gradient.addColorStop(1, "#03101c");
+  gradient.addColorStop(0, "#061826");
+  gradient.addColorStop(0.45, "#020916");
+  gradient.addColorStop(0.72, "#03101c");
+  gradient.addColorStop(1, "#071827");
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.fillStyle = "rgba(14, 76, 96, 0.86)";
-  ctx.strokeStyle = "rgba(125, 211, 252, 0.34)";
+  const oceanGlow = ctx.createRadialGradient(520, 210, 80, 520, 210, 520);
+  oceanGlow.addColorStop(0, "rgba(14, 116, 144, 0.22)");
+  oceanGlow.addColorStop(0.55, "rgba(8, 47, 73, 0.12)");
+  oceanGlow.addColorStop(1, "rgba(2, 6, 23, 0.1)");
+  ctx.fillStyle = oceanGlow;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "rgba(14, 76, 96, 0.72)";
+  ctx.strokeStyle = "rgba(125, 211, 252, 0.3)";
   ctx.lineWidth = 1.8;
 
   const drawLand = (points: Array<[number, number]>) => {
@@ -147,19 +155,19 @@ const createEarthTexture = () => {
     drawLand(points.map(([longitude, latitude]) => project(longitude, latitude)));
   };
 
-  ctx.fillStyle = "rgba(9, 37, 58, 0.78)";
-  for (let index = 0; index < 1500; index += 1) {
+  ctx.fillStyle = "rgba(4, 20, 36, 0.42)";
+  for (let index = 0; index < 1100; index += 1) {
     const x = Math.random() * canvas.width;
     const y = Math.random() * canvas.height;
-    const radius = Math.random() * 1.8 + 0.35;
+    const radius = Math.random() * 1.4 + 0.25;
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  ctx.fillStyle = "rgba(29, 78, 74, 0.9)";
-  ctx.strokeStyle = "rgba(125, 211, 252, 0.3)";
-  ctx.lineWidth = 1.4;
+  ctx.fillStyle = "rgba(31, 83, 64, 0.96)";
+  ctx.strokeStyle = "rgba(186, 230, 253, 0.34)";
+  ctx.lineWidth = 1.65;
 
   drawGeoLand([
     [-168, 71], [-138, 70], [-108, 56], [-96, 48], [-83, 31], [-100, 18],
@@ -227,14 +235,41 @@ const createEarthTexture = () => {
   drawLand([[506, 74], [564, 68], [600, 92], [540, 100]]);
   drawLand([[422, 472], [486, 462], [560, 478], [512, 498], [446, 496]]);
 
-  ctx.strokeStyle = "rgba(14, 165, 233, 0.22)";
+  ctx.globalCompositeOperation = "source-atop";
+  for (let index = 0; index < 900; index += 1) {
+    const x = Math.random() * canvas.width;
+    const y = Math.random() * canvas.height;
+    const alpha = 0.045 + Math.random() * 0.075;
+    ctx.fillStyle = `rgba(163, 230, 53, ${alpha})`;
+    ctx.fillRect(x, y, 1.2, 1.2);
+  }
+  ctx.globalCompositeOperation = "source-over";
+
+  const cityLights: Array<[number, number, number]> = [
+    [-74, 41, 2.2], [-99, 19, 1.8], [-46, -23, 1.9], [-70, -33, 1.35],
+    [-3, 52, 2], [2, 49, 1.8], [13, 52, 1.5], [31, 30, 1.5],
+    [77, 28, 1.7], [116, 40, 1.8], [139, 36, 1.7], [151, -34, 1.5],
+  ];
+  cityLights.forEach(([longitude, latitude, radius]) => {
+    const [x, y] = project(longitude, latitude);
+    const light = ctx.createRadialGradient(x, y, 0, x, y, radius * 5);
+    light.addColorStop(0, "rgba(250, 204, 21, 0.78)");
+    light.addColorStop(0.45, "rgba(250, 204, 21, 0.18)");
+    light.addColorStop(1, "rgba(250, 204, 21, 0)");
+    ctx.fillStyle = light;
+    ctx.beginPath();
+    ctx.arc(x, y, radius * 5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.strokeStyle = "rgba(14, 165, 233, 0.18)";
   ctx.lineWidth = 1;
   drawMapLine([[120, 216], [184, 226], [236, 242], [302, 286]]);
   drawMapLine([[460, 184], [530, 204], [612, 224], [700, 222], [808, 238]]);
   drawMapLine([[560, 300], [604, 350], [598, 420]]);
   drawMapLine([[752, 250], [820, 288], [884, 302]]);
 
-  ctx.strokeStyle = "rgba(34, 211, 238, 0.1)";
+  ctx.strokeStyle = "rgba(34, 211, 238, 0.045)";
   ctx.lineWidth = 1;
   for (let x = 0; x <= canvas.width; x += 64) {
     ctx.beginPath();
@@ -424,11 +459,11 @@ export default function GlobeView({
     const earth = new THREE.Mesh(
       new THREE.SphereGeometry(GLOBE_RADIUS, 96, 64),
       new THREE.MeshPhongMaterial({
-        color: 0x082032,
+        color: 0x0b2434,
         map: earthTexture ?? undefined,
-        emissive: 0x04111f,
-        emissiveIntensity: 0.55,
-        shininess: 14,
+        emissive: 0x020812,
+        emissiveIntensity: 0.38,
+        shininess: 9,
       })
     );
     root.add(earth);
@@ -438,7 +473,7 @@ export default function GlobeView({
       new THREE.MeshBasicMaterial({
         map: cloudTexture ?? undefined,
         transparent: true,
-        opacity: 0.58,
+        opacity: 0.34,
         depthWrite: false,
       })
     );
@@ -449,7 +484,7 @@ export default function GlobeView({
       new THREE.MeshBasicMaterial({
         map: terminatorTexture ?? undefined,
         transparent: true,
-        opacity: 0.48,
+        opacity: 0.42,
         depthWrite: false,
       })
     );
@@ -461,7 +496,7 @@ export default function GlobeView({
       new THREE.MeshBasicMaterial({
         color: 0x67e8f9,
         transparent: true,
-        opacity: 0.035,
+        opacity: 0.012,
         wireframe: true,
       })
     );
@@ -472,7 +507,7 @@ export default function GlobeView({
       new THREE.MeshBasicMaterial({
         color: 0x22d3ee,
         transparent: true,
-        opacity: 0.06,
+        opacity: 0.075,
         side: THREE.BackSide,
       })
     );
@@ -481,12 +516,12 @@ export default function GlobeView({
     const markerGroup = new THREE.Group();
     root.add(markerGroup);
 
-    const ambient = new THREE.AmbientLight(0x7dd3fc, 1.3);
+    const ambient = new THREE.AmbientLight(0x7dd3fc, 0.92);
     scene.add(ambient);
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.1);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.45);
     keyLight.position.set(4, 2, 5);
     scene.add(keyLight);
-    const rimLight = new THREE.DirectionalLight(0x22d3ee, 1.2);
+    const rimLight = new THREE.DirectionalLight(0x22d3ee, 1.35);
     rimLight.position.set(-3, -1, -4);
     scene.add(rimLight);
 

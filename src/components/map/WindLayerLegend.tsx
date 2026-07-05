@@ -22,7 +22,36 @@ export default function WindLayerLegend({
   thermalEventCount = 0,
   onClose,
 }: Props) {
-  if (!visible || !observation) return null;
+  if (!visible) return null;
+
+  if (!observation) {
+    return (
+      <aside className="argus-weather-panel pointer-events-auto fixed z-40 hidden w-72 border border-amber-300/20 bg-slate-950/90 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl md:block">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[0.62rem] font-semibold uppercase tracking-[0.2em] text-amber-300/90">
+              Clima
+            </p>
+            <p className="mt-1 text-sm font-semibold text-white">
+              Sin datos meteorologicos
+            </p>
+          </div>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="shrink-0 border border-white/10 bg-slate-950/70 px-2 py-1 text-[0.56rem] font-bold uppercase text-slate-400 hover:text-white"
+            >
+              Ocultar
+            </button>
+          )}
+        </div>
+        <p className="mt-4 rounded-md border border-white/10 bg-slate-900/65 p-3 text-sm leading-6 text-slate-300">
+          Sin datos meteorologicos disponibles para esta zona
+        </p>
+      </aside>
+    );
+  }
 
   const isExternalForecast = observation.sourceType === "external_forecast";
   const windFromDeg = isExternalForecast
@@ -49,7 +78,7 @@ export default function WindLayerLegend({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[0.62rem] font-semibold uppercase tracking-[0.2em] text-amber-300/90">
-            Clima y riesgo
+            Clima
           </p>
           <p className="mt-1 text-sm font-semibold text-white">
             {isExternalForecast ? "Viento MET Norway" : "Viento demo"}
