@@ -2,12 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { demoEvents } from "@/data/demoEvents";
 
-const severityMap = {
-  LOW: "LOW",
-  MEDIUM: "MEDIUM",
-  HIGH: "HIGH",
-  CRITICAL: "CRITICAL",
-};
+type HelpRequestSeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
 export async function GET() {
   try {
@@ -52,7 +47,7 @@ export async function GET() {
         latitude: request.latitude,
         longitude: request.longitude,
         locationText: request.locationText,
-        severity: request.priority as keyof typeof severityMap,
+        severity: request.priority as HelpRequestSeverity,
         priority: request.priority,
         type: "SOS",
         status: request.status,

@@ -2082,12 +2082,6 @@ export default function AppPage() {
           Orbit
         </button>
         <a
-          href="/modules"
-          className="inline-flex min-h-9 shrink-0 items-center border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200 hover:border-cyan-300/30 hover:text-cyan-100"
-        >
-          Módulos ARGUS
-        </a>
-        <a
           href="/updates"
           className="inline-flex min-h-9 shrink-0 items-center border border-white/10 bg-white/[0.03] px-3 text-xs font-semibold text-slate-200 hover:border-cyan-300/30 hover:text-cyan-100"
         >
