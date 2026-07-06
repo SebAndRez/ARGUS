@@ -16,9 +16,9 @@ const RECOMMENDED_ACTION =
   "Revise información oficial y manténgase atento a réplicas si está cerca de la zona.";
 
 function getSeverity(magnitude: number): ArgusIngestionSeverity {
-  if (magnitude >= 7) return "critical";
-  if (magnitude >= 5.5) return "high";
-  if (magnitude >= 4.5) return "medium";
+  if (magnitude >= 6.5) return "critical";
+  if (magnitude >= 5.0) return "high";
+  if (magnitude >= 3.5) return "medium";
   return "low";
 }
 

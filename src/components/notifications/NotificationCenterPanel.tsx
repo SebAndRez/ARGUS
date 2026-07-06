@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import NotificationEmptyState from "@/components/notifications/NotificationEmptyState";
 import NotificationFilters, {
   type NotificationFilterState,
@@ -12,6 +12,7 @@ import type {
 } from "@/types/notificationCenter";
 
 const READ_STORAGE_KEY = "argus-notification-read-ids";
+const POLL_INTERVAL_MS = 45_000;
 
 interface NotificationCenterPanelProps {
   open: boolean;
@@ -77,6 +78,9 @@ export default function NotificationCenterPanel({
   const [readIds, setReadIds] = useState<string[]>(() => readStoredIds());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const wasOpenRef = useRef(open);
 
   const fetchNotifications = useCallback(async () => {
     const params = new URLSearchParams({
@@ -96,6 +100,7 @@ export default function NotificationCenterPanel({
       if (!response.ok) throw new Error(data.error || "No se pudieron cargar alertas.");
       const nextNotifications = (data.notifications ?? []) as ArgusNotification[];
       setNotifications(nextNotifications);
+      setLastUpdatedAt(Date.now());
       onSummaryChange?.(summarize(nextNotifications));
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "No se pudieron cargar alertas.");
@@ -104,12 +109,48 @@ export default function NotificationCenterPanel({
     }
   }, [latitude, longitude, onSummaryChange, readIds]);
 
+  // Runs on mount and on every readIds/location change, then keeps polling so
+  // freshly ingested USGS earthquakes (and any other source) show up without
+  // requiring a hard refresh or the panel being reopened.
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       void fetchNotifications();
     }, 0);
-    return () => window.clearTimeout(timeoutId);
+    const intervalId = window.setInterval(() => {
+      void fetchNotifications();
+    }, POLL_INTERVAL_MS);
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+    };
   }, [fetchNotifications]);
+
+  // Extra refetch the moment the user reopens the panel, in case it was
+  // closed longer than the poll interval.
+  useEffect(() => {
+    const shouldRefetch = open && !wasOpenRef.current;
+    wasOpenRef.current = open;
+    if (!shouldRefetch) return;
+    const timeoutId = window.setTimeout(() => {
+      void fetchNotifications();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [open, fetchNotifications]);
+
+  useEffect(() => {
+    if (!open) return;
+    const tickId = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(tickId);
+  }, [open]);
+
+  const lastUpdatedLabel = useMemo(() => {
+    if (!lastUpdatedAt) return null;
+    const seconds = Math.max(0, Math.round((nowTick - lastUpdatedAt) / 1000));
+    if (seconds < 5) return "Última actualización: justo ahora";
+    if (seconds < 60) return `Última actualización: hace ${seconds}s`;
+    const minutes = Math.round(seconds / 60);
+    return `Última actualización: hace ${minutes} min`;
+  }, [lastUpdatedAt, nowTick]);
 
   const filteredNotifications = useMemo(() => {
     return notifications.filter((notification) => {
@@ -198,14 +239,27 @@ export default function NotificationCenterPanel({
           <span>
             {filteredNotifications.length} visibles / {notifications.length} totales
           </span>
-          <button
-            type="button"
-            onClick={markAllAsRead}
-            className="min-h-8 border border-white/10 bg-white/[0.04] px-2 font-bold uppercase text-slate-300 hover:border-white/25"
-          >
-            Marcar todo como leido
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void fetchNotifications()}
+              disabled={loading}
+              className="min-h-8 border border-white/10 bg-white/[0.04] px-2 font-bold uppercase text-slate-300 hover:border-white/25 disabled:opacity-50"
+            >
+              {loading ? "Actualizando..." : "Actualizar"}
+            </button>
+            <button
+              type="button"
+              onClick={markAllAsRead}
+              className="min-h-8 border border-white/10 bg-white/[0.04] px-2 font-bold uppercase text-slate-300 hover:border-white/25"
+            >
+              Marcar todo como leido
+            </button>
+          </div>
         </div>
+        {lastUpdatedLabel && (
+          <p className="mt-1 text-[0.6rem] text-slate-600">{lastUpdatedLabel}</p>
+        )}
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {loading && (

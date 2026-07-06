@@ -4,6 +4,8 @@ import { curatedConflictEvents } from "@/data/conflictZones";
 import { demoRoutes } from "@/data/demoRoutes";
 import { prisma } from "@/lib/prisma";
 import { getPredictiveNotificationPackets } from "@/lib/predictive-core/predictiveFeed";
+import { deduplicateEvents } from "@/lib/ingestion/deduplicateEvents";
+import { getOrFetchUsgsEarthquakes } from "@/lib/ingestion/ingestUsgsEarthquakes";
 import {
   buildArgusNotifications,
   buildNotificationSummary,
@@ -104,7 +106,7 @@ async function getPersistedEvents(): Promise<CrisisEvent[]> {
   }
 }
 
-async function getExternalEvents(): Promise<ArgusNormalizedEvent[]> {
+async function getPersistedExternalEvents(): Promise<ArgusNormalizedEvent[]> {
   try {
     const events = await prisma.externalEvent.findMany({
       orderBy: [{ occurredAt: "desc" }, { updatedAt: "desc" }],
@@ -148,6 +150,28 @@ async function getExternalEvents(): Promise<ArgusNormalizedEvent[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * The USGS earthquake layer on the map fetches straight from
+ * getOrFetchUsgsEarthquakes() (live feed or its 60s cache) and only persists
+ * to ExternalEvent as a side effect. If the Notification Center only reads
+ * ExternalEvent, it can lag behind (or miss) quakes the map already shows -
+ * this is what makes it look "stuck" until a hard refresh happens to land
+ * after that persistence completes. Calling the same helper here guarantees
+ * both surfaces see identical, current USGS data on every request.
+ */
+async function getExternalEvents(): Promise<ArgusNormalizedEvent[]> {
+  const [persistedEvents, usgsResult] = await Promise.all([
+    getPersistedExternalEvents(),
+    getOrFetchUsgsEarthquakes().catch(() => null),
+  ]);
+
+  if (!usgsResult || "error" in usgsResult) {
+    return persistedEvents;
+  }
+
+  return deduplicateEvents([...persistedEvents, ...usgsResult.events]);
 }
 
 async function getSourceHealth() {
