@@ -2,6 +2,7 @@ import type { HermesGeoPoint, HermesRiskZone, HermesRoute } from "@/modules/herm
 import { calculateHermesRoutes } from "@/modules/hermes/hermesRouting";
 import type { RiskProjection } from "@/types/weatherRisk";
 import type { ConflictCoordinates, ConflictZone } from "@/types/conflictZone";
+import type { MedicalPoint } from "@/types/medical";
 
 /**
  * Calculo de distancia/ETA y rutas demo para AURA (SOS Medico rapido y
@@ -61,6 +62,37 @@ export function getEtaByTransportMode(distanceKm: number): Record<AuraTransportM
     vehicle: estimateEtaMinutes(distanceKm, "vehicle"),
     emergency_vehicle: estimateEtaMinutes(distanceKm, "emergency_vehicle"),
   };
+}
+
+/**
+ * Orden del SOS Medico rapido: primero puntos con capacidad de urgencia,
+ * luego menor ETA aproximado (haversine + velocidad promedio en vehiculo),
+ * luego menor distancia, y por ultimo mayor cantidad de capacidades medicas.
+ * Es un orden aproximado para la lista; la ruta real solo se calcula para el
+ * punto que el usuario selecciona.
+ */
+export function rankMedicalPointsForSos(points: MedicalPoint[]): MedicalPoint[] {
+  return [...points].sort((a, b) => {
+    const aUrgent = a.capabilities.includes("Urgencia") ? 1 : 0;
+    const bUrgent = b.capabilities.includes("Urgencia") ? 1 : 0;
+    if (aUrgent !== bUrgent) return bUrgent - aUrgent;
+
+    const aEta = estimateEtaMinutes(a.distanceKm ?? 0, "vehicle");
+    const bEta = estimateEtaMinutes(b.distanceKm ?? 0, "vehicle");
+    if (aEta !== bEta) return aEta - bEta;
+
+    const aDist = a.distanceKm ?? Infinity;
+    const bDist = b.distanceKm ?? Infinity;
+    if (aDist !== bDist) return aDist - bDist;
+
+    return b.capabilities.length - a.capabilities.length;
+  });
+}
+
+/** Primer punto util (no cerrado) del ranking, para marcar "RECOMENDADO". */
+export function pickRecommendedMedicalPointId(rankedPoints: MedicalPoint[]): string | null {
+  const best = rankedPoints.find((point) => point.availabilityStatus !== "closed") ?? rankedPoints[0];
+  return best?.id ?? null;
 }
 
 export type AuraMedicalRouteKind = "direct" | "safe";

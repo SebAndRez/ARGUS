@@ -19,6 +19,7 @@ const transportOrder: AuraTransportMode[] = ["walking", "bike", "vehicle", "emer
 const typeLabels: Record<MedicalPoint["type"], string> = {
   hospital: "Hospital",
   clinic: "Clinica / Atencion primaria",
+  sapu: "SAPU (urgencia primaria)",
   shelter_medical: "Refugio con asistencia medica",
   temporary_medical_point: "Punto medico temporal",
 };

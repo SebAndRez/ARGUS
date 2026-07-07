@@ -11,9 +11,7 @@ import SensorSafetyPanel from "@/components/sensor-safety/SensorSafetyPanel";
 import type { MedicalAidRequest, MedicalPoint } from "@/types/medical";
 import type { SafetyCheck } from "@/types/mobileSafety";
 import type { QuakeSenseCluster } from "@/types/quakesense";
-import type { ConflictZone } from "@/types/conflictZone";
-import type { RiskProjection } from "@/types/weatherRisk";
-import type { AuraMedicalRoute } from "@/lib/medical/auraMedicalRouting";
+import type { RouteResult } from "@/lib/routing/routingService";
 
 type ModuleState =
   | "closed"
@@ -28,10 +26,8 @@ interface Props {
   location: { latitude: number; longitude: number };
   onOpen?: () => void;
   onMedicalAidCreated?: (request: MedicalAidRequest) => void;
-  medicalRiskProjections?: RiskProjection[];
-  medicalConflictZones?: ConflictZone[];
   onMedicalPointSelect?: (point: MedicalPoint | null) => void;
-  onMedicalRouteChange?: (route: AuraMedicalRoute | null) => void;
+  onMedicalRouteChange?: (route: RouteResult | null) => void;
   onQuakeSenseDemoCluster?: (cluster: QuakeSenseCluster) => void;
   onSafetyCheckCreated?: (check: SafetyCheck) => void;
   /** When true, the trigger button renders without fixed positioning (for use inside a positioned container) */
@@ -49,8 +45,6 @@ export default function ArgusModuleLauncher({
   location,
   onOpen,
   onMedicalAidCreated,
-  medicalRiskProjections,
-  medicalConflictZones,
   onMedicalPointSelect,
   onMedicalRouteChange,
   onQuakeSenseDemoCluster,
@@ -175,8 +169,6 @@ export default function ArgusModuleLauncher({
           location={location}
           onClose={() => setState("closed")}
           onMedicalAidCreated={onMedicalAidCreated}
-          riskProjections={medicalRiskProjections}
-          conflictZones={medicalConflictZones}
           onMedicalPointSelect={onMedicalPointSelect}
           onRouteChange={onMedicalRouteChange}
         />

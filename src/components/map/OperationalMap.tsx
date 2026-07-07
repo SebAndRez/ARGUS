@@ -23,7 +23,7 @@ import MapToGlobeTransition from "@/components/map/MapToGlobeTransition";
 import RiskProjectionOverlay from "@/components/map/RiskProjectionOverlay";
 import RouteLayerOverlay from "@/components/map/RouteLayerOverlay";
 import AuraMedicalRouteOverlay from "@/components/map/AuraMedicalRouteOverlay";
-import type { AuraMedicalRoute } from "@/lib/medical/auraMedicalRouting";
+import type { RouteResult } from "@/lib/routing/routingService";
 import {
   createArgusDivIcon,
   type ArgusMapConfidence,
@@ -106,7 +106,7 @@ interface Props {
   medicalPoints?: MedicalPoint[];
   selectedMedicalPointId?: string;
   onMedicalPointSelect?: (point: MedicalPoint) => void;
-  auraMedicalRoute?: AuraMedicalRoute | null;
+  auraMedicalRoute?: RouteResult | null;
   medicalAidRequest?: MedicalAidRequest | null;
   quakeSenseClusters?: QuakeSenseCluster[];
   safetyChecks?: SafetyCheck[];

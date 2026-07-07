@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { getNearbyMedicalPoints } from "@/data/auraMedicalPoints";
 import { createDemoMedicalAidRequest } from "@/lib/medical/medicalAidEngine";
 import { getEmergencyVisibleMedicalProfile } from "@/lib/medical/medicalPrivacy";
@@ -8,20 +9,18 @@ import MedicalDisclaimer from "@/components/medical/MedicalDisclaimer";
 import MedicalEmergencyQR from "@/components/medical/MedicalEmergencyQR";
 import MedicalProfileCard from "@/components/medical/MedicalProfileCard";
 import AuraMedicalPointsList from "@/components/aura/AuraMedicalPointsList";
-import AuraMedicalRoutePanel from "@/components/aura/AuraMedicalRoutePanel";
+import AuraQuickRouteSummary from "@/components/aura/AuraQuickRouteSummary";
+import { useLiveMedicalRoute } from "@/hooks/useLiveMedicalRoute";
+import { pickRecommendedMedicalPointId, rankMedicalPointsForSos } from "@/lib/medical/auraMedicalRouting";
+import type { RouteResult, RoutingMode } from "@/lib/routing/routingService";
 import type { MedicalAidRequest, MedicalAidType, MedicalPoint, MedicalProfile } from "@/types/medical";
-import type { ConflictZone } from "@/types/conflictZone";
-import type { RiskProjection } from "@/types/weatherRisk";
-import type { AuraMedicalRoute } from "@/lib/medical/auraMedicalRouting";
 
 interface Props {
   location: { latitude: number; longitude: number };
   onClose: () => void;
   onMedicalAidCreated?: (request: MedicalAidRequest) => void;
-  riskProjections?: RiskProjection[];
-  conflictZones?: ConflictZone[];
   onMedicalPointSelect?: (point: MedicalPoint | null) => void;
-  onRouteChange?: (route: AuraMedicalRoute | null) => void;
+  onRouteChange?: (route: RouteResult | null) => void;
   /** Preselecciona un punto (por ejemplo, al hacer click en un marcador del mapa antes de abrir el panel). */
   initialSelectedPointId?: string | null;
 }
@@ -50,8 +49,6 @@ export default function AuraMedicalPanel({
   location,
   onClose,
   onMedicalAidCreated,
-  riskProjections = [],
-  conflictZones = [],
   onMedicalPointSelect,
   onRouteChange,
   initialSelectedPointId = null,
@@ -60,6 +57,7 @@ export default function AuraMedicalPanel({
   const [profile, setProfile] = useState<MedicalProfile>(defaultProfile);
   const [request, setRequest] = useState<MedicalAidRequest | null>(null);
   const [selectedPointId, setSelectedPointId] = useState<string | null>(initialSelectedPointId);
+  const [transportMode, setTransportMode] = useState<RoutingMode>("vehicle");
 
   const origin = useMemo(
     () => ({ lat: location.latitude, lng: location.longitude }),
@@ -67,8 +65,29 @@ export default function AuraMedicalPanel({
   );
 
   const nearbyPoints = useMemo(() => getNearbyMedicalPoints(origin), [origin]);
-  const selectedPoint = nearbyPoints.find((point) => point.id === selectedPointId) ?? null;
+  const rankedPoints = useMemo(() => rankMedicalPointsForSos(nearbyPoints), [nearbyPoints]);
+  const recommendedId = useMemo(() => pickRecommendedMedicalPointId(rankedPoints), [rankedPoints]);
+  const selectedPoint = rankedPoints.find((point) => point.id === selectedPointId) ?? null;
   const publicProfile = getEmergencyVisibleMedicalProfile(profile);
+
+  const {
+    origin: liveOrigin,
+    permission: gpsPermission,
+    permissionMessage: gpsPermissionMessage,
+    route,
+    isLoadingRoute,
+    routeError,
+  } = useLiveMedicalRoute({
+    destination: selectedPoint ? { lat: selectedPoint.lat, lng: selectedPoint.lng } : null,
+    mode: transportMode,
+    enabled: true,
+    fallbackOrigin: origin,
+  });
+
+  useEffect(() => {
+    onRouteChange?.(route);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route]);
 
   const selectPoint = (point: MedicalPoint) => {
     const next = point.id === selectedPointId ? null : point;
@@ -82,7 +101,7 @@ export default function AuraMedicalPanel({
       type: aidType,
       latitude: location.latitude,
       longitude: location.longitude,
-      nearestMedicalPoint: selectedPoint ?? nearbyPoints[0],
+      nearestMedicalPoint: selectedPoint ?? rankedPoints[0],
     });
     setRequest(nextRequest);
     onMedicalAidCreated?.(nextRequest);
@@ -97,7 +116,7 @@ export default function AuraMedicalPanel({
           </p>
           <h2 className="mt-1 text-lg font-semibold text-white">SOS Médico</h2>
           <p className="mt-1 text-xs text-slate-400">
-            Alerta, puntos medicos cercanos y ruta estimada.
+            Puntos medicos cercanos y ruta real por calles. Toca uno para navegar de inmediato.
           </p>
         </div>
         <button
@@ -142,19 +161,30 @@ export default function AuraMedicalPanel({
           </div>
         )}
         <AuraMedicalPointsList
-          points={nearbyPoints}
+          points={rankedPoints}
           selectedId={selectedPointId}
+          recommendedId={recommendedId}
           onSelect={selectPoint}
         />
         {selectedPoint && (
-          <AuraMedicalRoutePanel
+          <AuraQuickRouteSummary
             point={selectedPoint}
-            origin={origin}
-            riskProjections={riskProjections}
-            conflictZones={conflictZones}
-            onRouteChange={onRouteChange}
+            origin={liveOrigin}
+            route={route}
+            isLoadingRoute={isLoadingRoute}
+            routeError={routeError}
+            mode={transportMode}
+            onModeChange={setTransportMode}
+            gpsPermission={gpsPermission}
+            gpsPermissionMessage={gpsPermissionMessage}
           />
         )}
+        <Link
+          href="/modules/aura"
+          className="flex min-h-9 items-center justify-center rounded border border-cyan-300/25 bg-cyan-400/8 px-3 text-[0.62rem] font-bold uppercase text-cyan-100"
+        >
+          Abrir AURA completo
+        </Link>
         <MedicalProfileCard profile={profile} onChange={setProfile} />
         <MedicalEmergencyQR profile={publicProfile} />
       </div>

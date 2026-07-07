@@ -75,7 +75,7 @@ import type {
 import type { ArgusIncidentKnowledge } from "@/types/knowledgeIntake";
 import type { ConflictZone } from "@/types/conflictZone";
 import type { MedicalAidRequest, MedicalPoint } from "@/types/medical";
-import type { AuraMedicalRoute } from "@/lib/medical/auraMedicalRouting";
+import type { RouteResult } from "@/lib/routing/routingService";
 import type { SafetyCheck } from "@/types/mobileSafety";
 import type { QuakeSenseCluster } from "@/types/quakesense";
 import type {
@@ -395,7 +395,7 @@ export default function AppPage() {
   const [selectedMedicalPoint, setSelectedMedicalPoint] =
     useState<MedicalPoint | null>(null);
   const [auraMedicalRoute, setAuraMedicalRoute] =
-    useState<AuraMedicalRoute | null>(null);
+    useState<RouteResult | null>(null);
   const [pendingAuraPointId, setPendingAuraPointId] = useState<string | null>(null);
   const [quakeSenseClusters, setQuakeSenseClusters] = useState<
     QuakeSenseCluster[]
@@ -1998,8 +1998,6 @@ export default function AppPage() {
             setMedicalAidRequest(request);
             setLayerSettings((current) => ({ ...current, medicalPoints: true }));
           }}
-          medicalRiskProjections={demoRiskProjections}
-          medicalConflictZones={curatedConflictZones}
           onMedicalPointSelect={setSelectedMedicalPoint}
           onMedicalRouteChange={setAuraMedicalRoute}
           onQuakeSenseDemoCluster={(cluster) => {
@@ -2455,8 +2453,6 @@ export default function AppPage() {
             setMedicalAidRequest(request);
             setLayerSettings((current) => ({ ...current, medicalPoints: true }));
           }}
-          riskProjections={demoRiskProjections}
-          conflictZones={curatedConflictZones}
           initialSelectedPointId={pendingAuraPointId}
           onMedicalPointSelect={setSelectedMedicalPoint}
           onRouteChange={setAuraMedicalRoute}

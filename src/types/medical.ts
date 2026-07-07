@@ -36,6 +36,7 @@ export type MedicalAidType =
 export type MedicalPointType =
   | "hospital"
   | "clinic"
+  | "sapu"
   | "shelter_medical"
   | "temporary_medical_point";
 
