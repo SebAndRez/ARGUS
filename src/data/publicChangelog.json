@@ -1,5 +1,25 @@
 [
   {
+    "changeId": "2231dc63bcb4",
+    "date": "2026-07-07",
+    "commit": "pending-2231dc6",
+    "title": "ARGUS V.1.0.1.6",
+    "fileCount": 9,
+    "summary": "Se actualizaron 9 archivos relacionados con Eventos y fuentes externas y Mapa operativo.",
+    "changes": [
+      "Se actualizaron componentes del mapa operativo.",
+      "Se actualizaron eventos o fuentes externas.",
+      "Se ajustaron vistas y elementos de interfaz.",
+      "Se actualizaron servicios internos usados por ARGUS."
+    ],
+    "affectedModules": [
+      "Eventos y fuentes externas",
+      "Mapa operativo",
+      "Capas del mapa"
+    ],
+    "simpleExplanation": "Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada."
+  },
+  {
     "changeId": "c426a04a4ed0",
     "date": "2026-07-07",
     "commit": "pending-c426a04",

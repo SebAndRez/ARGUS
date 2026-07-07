@@ -1,6 +1,7 @@
 import type { GeoPoint, RoutingMode } from "@/lib/routing/routingService";
 import type { PlaceResult, PlaceType } from "@/lib/geocoding/geocodingService";
 import type { MapEntity, MapEntityType } from "@/types/mapEntity";
+import type { PoiCategory, PoiEntity } from "@/lib/pois/poiTypes";
 
 /**
  * Servicio de navegacion central: construye el link "Abrir en Google/Apple
@@ -48,4 +49,23 @@ export function mapEntityToPlaceResult(entity: MapEntity): PlaceResult {
 export function resolveDefaultTransportMode(entity: MapEntity): RoutingMode {
   if (entity.type === "hospital" || entity.type === "clinic" || entity.type === "sapu") return "emergency_vehicle";
   return "vehicle";
+}
+
+const poiCategoryToPlaceType: Partial<Record<PoiCategory, PlaceType>> = {
+  hospital: "hospital",
+  clinic: "clinic",
+};
+
+/** Puente `PoiEntity -> PlaceResult`, para que "Ruta" en la ficha de un POI use el mismo pipeline de navegacion central que hospitales/refugios. */
+export function poiToPlaceResult(poi: PoiEntity): PlaceResult {
+  return {
+    id: poi.id,
+    label: poi.name,
+    address: poi.address ?? poi.description,
+    lat: poi.lat,
+    lng: poi.lng,
+    type: poiCategoryToPlaceType[poi.category] ?? "custom",
+    provider: `argus_poi_${poi.source}`,
+    confidence: poi.source === "osm" ? 75 : 60,
+  };
 }

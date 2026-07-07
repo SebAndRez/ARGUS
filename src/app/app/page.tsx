@@ -22,6 +22,8 @@ import AuraMedicalPanel from "@/components/medical/AuraMedicalPanel";
 import NavigationSearchBar from "@/components/map/NavigationSearchBar";
 import NavigationHud from "@/components/map/NavigationHud";
 import MapEntityCard from "@/components/map/MapEntityCard";
+import PoiInfoCard from "@/components/map/PoiInfoCard";
+import type { PoiEntity } from "@/lib/pois/poiTypes";
 import RouteAlternativesCards from "@/components/routing/RouteAlternativesCards";
 import TransportModeSelector from "@/components/routing/TransportModeSelector";
 import { useNavigationSession } from "@/hooks/useNavigationSession";
@@ -31,7 +33,7 @@ import ArcaShelterDetailPanel from "@/modules/arca/components/ArcaShelterDetailP
 import type { ArcaShelter } from "@/modules/arca/types";
 import { arcaShelterToMapEntity, simpleMedicalPointToMapEntity } from "@/lib/pois/poiService";
 import { crisisEventToMapEntity, conflictZoneToMapEntity } from "@/lib/incidents/incidentLayerService";
-import { mapEntityToPlaceResult, resolveDefaultTransportMode } from "@/lib/navigation/navigationService";
+import { mapEntityToPlaceResult, poiToPlaceResult, resolveDefaultTransportMode } from "@/lib/navigation/navigationService";
 import type { MapEntity } from "@/types/mapEntity";
 import type { RouteHazardPoint } from "@/lib/routing/routeSafety";
 import FloatingSOSButton from "@/components/app/FloatingSOSButton";
@@ -421,6 +423,7 @@ export default function AppPage() {
   const [navMode, setNavMode] = useState<RoutingMode>("vehicle");
   const [isNavSearchOpen, setIsNavSearchOpen] = useState(false);
   const [selectedMapEntity, setSelectedMapEntity] = useState<MapEntity | null>(null);
+  const [selectedPoi, setSelectedPoi] = useState<PoiEntity | null>(null);
   const [avoidedHazards, setAvoidedHazards] = useState<RouteHazardPoint[]>([]);
   const [selectedShelterDetail, setSelectedShelterDetail] = useState<ArcaShelter | null>(null);
   const location = useUserLocation();
@@ -667,6 +670,29 @@ export default function AppPage() {
     setNavDestination(mapEntityToPlaceResult(entity));
     setNavMode(resolveDefaultTransportMode(entity));
     setSelectedMapEntity(null);
+  }, []);
+
+  // Capa de POIs urbanos (OSM): independiente de MapEntity/incidentes, ver
+  // PoiLayer.tsx. Solo una ficha a la vez, asi que tocar un POI cierra la
+  // ficha de MapEntity si estaba abierta (y viceversa, ver el render mas abajo).
+  const selectPoiFromMap = useCallback((poi: PoiEntity) => {
+    setSelectedMapEntity(null);
+    setSelectedPoi(poi);
+  }, []);
+
+  // Cualquier otro flujo que abra la ficha de MapEntity (SOS, refugios,
+  // incidentes, zonas de riesgo...) debe cerrar la ficha de POI si estaba
+  // abierta, sin tener que tocar cada callback de seleccion por separado.
+  useEffect(() => {
+    if (selectedMapEntity) setSelectedPoi(null);
+  }, [selectedMapEntity]);
+
+  const closePoiCard = useCallback(() => setSelectedPoi(null), []);
+
+  const handlePoiRoute = useCallback((poi: PoiEntity) => {
+    setNavDestination(poiToPlaceResult(poi));
+    setNavMode("vehicle");
+    setSelectedPoi(null);
   }, []);
 
   const handleOpenAuraFromEntity = useCallback(
@@ -2091,6 +2117,8 @@ export default function AppPage() {
         shelters={shelterEntities}
         selectedShelterId={selectedMapEntity?.type === "shelter" ? selectedMapEntity.id : undefined}
         onShelterSelect={selectShelterFromMap}
+        selectedPoiId={selectedPoi?.id}
+        onPoiSelect={selectPoiFromMap}
         auraMedicalRoute={auraMedicalRoute}
         navigation={
           navDestination
@@ -2702,6 +2730,15 @@ export default function AppPage() {
           onAvoidZone={handleAvoidEntity}
           onToggleLayer={handleToggleHazardLayer}
           onSafeRoute={handleAvoidEntity}
+        />
+      )}
+
+      {selectedPoi && !selectedMapEntity && (
+        <PoiInfoCard
+          poi={selectedPoi}
+          userLocation={{ lat: location.latitude, lng: location.longitude }}
+          onClose={closePoiCard}
+          onRoute={handlePoiRoute}
         />
       )}
 

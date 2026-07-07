@@ -60,6 +60,7 @@ export interface MapLayerState {
   liveCameras?: boolean;
   medicalPoints?: boolean;
   shelters?: boolean;
+  urbanPois?: boolean;
   quakeSense?: boolean;
   safetyChecks?: boolean;
   weatherRisk?: boolean;
@@ -177,6 +178,7 @@ const labels: Record<keyof MapLayerState, string> = {
   liveCameras: "Cámaras en vivo",
   medicalPoints: "Puntos médicos",
   shelters: "Refugios",
+  urbanPois: "POIs urbanos (tiendas, paraderos...)",
   quakeSense: "Sacudida ciudadana",
   safetyChecks: "Safety Checks",
   weatherRisk: "Clima y riesgo",

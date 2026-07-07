@@ -25,6 +25,8 @@ import RiskProjectionOverlay from "@/components/map/RiskProjectionOverlay";
 import RouteLayerOverlay from "@/components/map/RouteLayerOverlay";
 import AuraMedicalRouteOverlay from "@/components/map/AuraMedicalRouteOverlay";
 import NavigationRouteOverlay from "@/components/map/NavigationRouteOverlay";
+import PoiLayer from "@/components/map/PoiLayer";
+import type { PoiEntity } from "@/lib/pois/poiTypes";
 import type { GeoPoint, RouteResult } from "@/lib/routing/routingService";
 import {
   createArgusDivIcon,
@@ -74,6 +76,7 @@ interface MapLayerSettings {
   liveCameras?: boolean;
   medicalPoints?: boolean;
   shelters?: boolean;
+  urbanPois?: boolean;
   quakeSense?: boolean;
   safetyChecks?: boolean;
   weatherRisk?: boolean;
@@ -113,6 +116,8 @@ interface Props {
   shelters?: MapEntity[];
   selectedShelterId?: string;
   onShelterSelect?: (entity: MapEntity) => void;
+  selectedPoiId?: string | null;
+  onPoiSelect?: (poi: PoiEntity) => void;
   auraMedicalRoute?: RouteResult | null;
   navigation?: {
     routes: RouteResult[];
@@ -285,6 +290,8 @@ export default function OperationalMap({
   shelters = [],
   selectedShelterId,
   onShelterSelect,
+  selectedPoiId = null,
+  onPoiSelect,
   auraMedicalRoute = null,
   navigation = null,
   medicalAidRequest = null,
@@ -1347,6 +1354,13 @@ export default function OperationalMap({
               projections={riskProjections}
               visible={Boolean(layerSettings.weatherRisk)}
               onProjectionSelect={onRiskProjectionSelect}
+              map={mapReady ? mapInstance : null}
+              leaflet={mapReady ? leafletInstance : null}
+            />
+            <PoiLayer
+              visible={Boolean(layerSettings.urbanPois)}
+              selectedPoiId={selectedPoiId}
+              onPoiSelect={onPoiSelect}
               map={mapReady ? mapInstance : null}
               leaflet={mapReady ? leafletInstance : null}
             />
