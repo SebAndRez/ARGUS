@@ -1,4 +1,15 @@
-import type { MedicalPoint } from "@/types/medical";
+/**
+ * @deprecated Logica legacy, no usada en ningun lado del codigo. Reemplazada
+ * por `getNearbyMedicalPoints` en `@/data/auraMedicalPoints`. Se conserva el
+ * archivo por decision explicita del usuario; el tipo es local para no
+ * acoplarse a `@/types/medical` (que ahora representa la fuente unificada).
+ */
+type LegacyMedicalPoint = {
+  latitude: number;
+  longitude: number;
+  distanceKm?: number;
+  [key: string]: unknown;
+};
 
 export function distanceKm(
   a: { latitude: number; longitude: number },
@@ -15,8 +26,8 @@ export function distanceKm(
   return 2 * radiusKm * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-export function sortMedicalPointsByDistance(
-  points: MedicalPoint[],
+export function sortMedicalPointsByDistance<T extends LegacyMedicalPoint>(
+  points: T[],
   location: { latitude: number; longitude: number }
 ) {
   return points

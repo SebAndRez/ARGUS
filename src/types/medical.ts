@@ -36,19 +36,14 @@ export type MedicalAidType =
 export type MedicalPointType =
   | "hospital"
   | "clinic"
-  | "sapu_sar"
-  | "temporary_medical_point"
-  | "shelter_medical";
+  | "shelter_medical"
+  | "temporary_medical_point";
 
-export type MedicalCapability =
-  | "emergency"
-  | "basic_first_aid"
-  | "pharmacy"
-  | "pediatric"
-  | "trauma"
-  | "mental_health"
-  | "oxygen"
-  | "shelter_support";
+export type MedicalPointAvailability =
+  | "available"
+  | "limited"
+  | "unknown"
+  | "closed";
 
 export type EmergencyContact = {
   name?: string;
@@ -82,19 +77,22 @@ export type PublicMedicalProfile = {
   emergencyContact?: EmergencyContact;
 };
 
+/**
+ * Fuente unica de puntos medicos consumida por AURA (SOS Medico rapido y
+ * dashboard completo) y por el mapa operacional. Se deriva de
+ * `AuraMedicalPoint` (`@/modules/aura/types`) via `@/data/auraMedicalPoints`
+ * — no existe un segundo dataset medico paralelo.
+ */
 export type MedicalPoint = {
   id: string;
   name: string;
   type: MedicalPointType;
-  latitude: number;
-  longitude: number;
-  address?: string;
-  capabilities: MedicalCapability[];
-  status: "operational" | "limited" | "unknown";
-  scheduleLabel?: string;
-  source: "demo" | "official_future";
-  lastUpdatedAt: string;
+  lat: number;
+  lng: number;
+  capabilities: string[];
   distanceKm?: number;
+  availabilityStatus: MedicalPointAvailability;
+  isDemo: boolean;
 };
 
 export type MedicalAidRequest = {

@@ -1,9 +1,21 @@
-import type { MedicalPoint } from "@/types/medical";
+/**
+ * @deprecated Componente legacy, no usado en ningun lado del codigo.
+ * Reemplazado por `@/components/aura/AuraMedicalPointsList` (clickeable,
+ * unificado con AURA). Se conserva por decision explicita del usuario.
+ */
+type LegacyMedicalPoint = {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  capabilities: string[];
+  distanceKm?: number;
+};
 
 export default function MedicalPointsList({
   points,
 }: {
-  points: MedicalPoint[];
+  points: LegacyMedicalPoint[];
 }) {
   return (
     <section className="grid gap-2">

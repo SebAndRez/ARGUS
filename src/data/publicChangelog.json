@@ -1,5 +1,20 @@
 [
   {
+    "changeId": "ac2b7ea69476",
+    "date": "2026-07-07",
+    "commit": "pending-ac2b7ea",
+    "title": "ARGUS V.1.0.1.2",
+    "fileCount": 3,
+    "summary": "Se actualizaron 3 archivos relacionados con Dependencias internas.",
+    "changes": [
+      "Se actualizaron dependencias o scripts internos."
+    ],
+    "affectedModules": [
+      "Dependencias internas"
+    ],
+    "simpleExplanation": "Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada."
+  },
+  {
     "changeId": "2bf37848e7dc",
     "date": "2026-07-07",
     "commit": "pending-2bf3784",

@@ -1,8 +1,27 @@
-import type { MedicalPoint } from "@/types/medical";
+/**
+ * @deprecated Dataset legacy, no usado en ningun lado del codigo. Reemplazado
+ * por la fuente unica en `@/data/auraMedicalPoints` (AURA). Se conserva el
+ * archivo por decision explicita del usuario, pero no debe importarse en
+ * codigo nuevo. El tipo es local para no acoplarse a `@/types/medical`.
+ */
+type LegacyMedicalPoint = {
+  id: string;
+  name: string;
+  type: "hospital" | "clinic" | "sapu_sar" | "temporary_medical_point" | "shelter_medical";
+  latitude: number;
+  longitude: number;
+  address?: string;
+  capabilities: string[];
+  status: "operational" | "limited" | "unknown";
+  scheduleLabel?: string;
+  source: "demo" | "official_future";
+  lastUpdatedAt: string;
+  distanceKm?: number;
+};
 
 const updatedAt = "2026-06-26T00:00:00.000Z";
 
-export const demoMedicalPoints: MedicalPoint[] = [
+export const demoMedicalPoints: LegacyMedicalPoint[] = [
   {
     id: "med-hospital-sotero",
     name: "Hospital Dr. Sotero del Rio",

@@ -1,6 +1,6 @@
 import { demoFenixRoutes, demoFenixShelters } from "@/data/fenixDemo";
 import { demoSettlements } from "@/data/demoSettlements";
-import { demoMedicalPoints } from "@/data/medicalPoints";
+import { getNearbyMedicalPoints } from "@/data/auraMedicalPoints";
 import type { FenixSimulationInput, FenixAffectedZone } from "@/types/fenixSimulation";
 
 export function distanceKm(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) {
@@ -61,8 +61,11 @@ export function findNearbyRoutes(input: FenixSimulationInput) {
   }));
 }
 
-export function findNearbyMedicalPoints() {
-  return demoMedicalPoints.slice(0, 4).map((point) => ({ ...point, isDemo: true }));
+export function findNearbyMedicalPoints(input: FenixSimulationInput) {
+  return getNearbyMedicalPoints({
+    lat: input.initialLocation.latitude,
+    lng: input.initialLocation.longitude,
+  }).slice(0, 4);
 }
 
 export function findNearbyShelters(input: FenixSimulationInput) {
@@ -94,7 +97,7 @@ export function buildGeoContextSummary(input: FenixSimulationInput) {
     terrainContext: classifyTerrainOrUrbanContext(input),
     nearbyRoutes: findNearbyRoutes(input),
     nearbyShelters: findNearbyShelters(input),
-    nearbyMedicalPoints: findNearbyMedicalPoints(),
+    nearbyMedicalPoints: findNearbyMedicalPoints(input),
     nearbyReportsAggregate: findNearbyReports(input),
     summary: `Entorno ${coordinateAnalysis.context}; localidad cercana: ${nearbySettlements[0]?.name ?? "sin referencia demo"}.`,
     confidence: coordinateAnalysis.confidence,

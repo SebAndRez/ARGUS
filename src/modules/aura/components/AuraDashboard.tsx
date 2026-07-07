@@ -1,14 +1,18 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { useSession } from "@/hooks/useSession";
+import { useUserLocation } from "@/hooks/useUserLocation";
 import { auraDemoMedicalPoints, auraDemoProfile, auraDemoStock, auraDemoTriageCases } from "@/modules/aura/data";
+import { getNearbyMedicalPoints } from "@/data/auraMedicalPoints";
 import { canUseAuraFeature, resolveAuraModuleAccess, resolveAuraRole } from "@/modules/aura/auraAccess";
 import { auditAuraAction } from "@/modules/aura/auraAudit";
 import { getAuraAtlasSummary } from "@/modules/aura/auraAtlasBridge";
 import { calculateAuraMedicalCapacityStatus } from "@/modules/aura/auraCapacity";
 import { getAuraProfileCompleteness } from "@/modules/aura/auraMedicalProfile";
 import { sanitizeAuraMedicalProfileForRole } from "@/modules/aura/auraPrivacy";
+import AuraMedicalRoutePanel from "@/components/aura/AuraMedicalRoutePanel";
 
 function Panel({ title, children, tone = "cyan" }: { title: string; children: React.ReactNode; tone?: "cyan" | "rose" | "amber" | "emerald" }) {
   const color = {
@@ -27,10 +31,17 @@ function Panel({ title, children, tone = "cyan" }: { title: string; children: Re
 
 export default function AuraDashboard() {
   const { user, loading } = useSession();
+  const location = useUserLocation();
+  const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
   const role = resolveAuraRole(user);
   const access = resolveAuraModuleAccess(role);
   const profile = useMemo(() => sanitizeAuraMedicalProfileForRole(auraDemoProfile, role), [role]);
   const summary = useMemo(() => getAuraAtlasSummary(auraDemoTriageCases, auraDemoMedicalPoints, auraDemoStock), []);
+  const nearbyMedicalPoints = useMemo(
+    () => getNearbyMedicalPoints({ lat: location.latitude, lng: location.longitude }),
+    [location.latitude, location.longitude]
+  );
+  const selectedMedicalPoint = nearbyMedicalPoints.find((point) => point.id === selectedPointId) ?? null;
   const canSeeProfessional = canUseAuraFeature(role, "view_professional_dashboard");
   const canSeeStock = canUseAuraFeature(role, "view_medical_stock");
   const canSeeSensitive = canUseAuraFeature(role, "view_sensitive_medical_data");
@@ -109,18 +120,43 @@ export default function AuraDashboard() {
 
             <Panel title="Puntos medicos cercanos">
               <div className="grid gap-3 md:grid-cols-3">
-                {auraDemoMedicalPoints.map((point) => (
-                  <article key={point.id} className="border border-white/10 bg-white/[0.035] p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="text-sm font-semibold text-white">{point.name}</h3>
-                      <span className="border border-cyan-300/20 px-2 py-1 text-[0.6rem] uppercase text-cyan-100">{point.status}</span>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-400">{point.publicNotes}</p>
-                    <p className="mt-2 text-xs text-slate-300">Capacidad: {calculateAuraMedicalCapacityStatus(point)}</p>
-                    <p className="mt-1 text-xs text-slate-500">Confianza: {point.confidence}</p>
-                  </article>
-                ))}
+                {auraDemoMedicalPoints.map((point) => {
+                  const isSelected = point.id === selectedPointId;
+                  return (
+                    <button
+                      type="button"
+                      key={point.id}
+                      onClick={() => setSelectedPointId(isSelected ? null : point.id)}
+                      className={`border p-3 text-left ${
+                        isSelected ? "border-cyan-300/40 bg-cyan-400/10" : "border-white/10 bg-white/[0.035]"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="text-sm font-semibold text-white">{point.name}</h3>
+                        <span className="border border-cyan-300/20 px-2 py-1 text-[0.6rem] uppercase text-cyan-100">{point.status}</span>
+                      </div>
+                      <p className="mt-2 text-xs text-slate-400">{point.publicNotes}</p>
+                      <p className="mt-2 text-xs text-slate-300">Capacidad: {calculateAuraMedicalCapacityStatus(point)}</p>
+                      <p className="mt-1 text-xs text-slate-500">Confianza: {point.confidence}</p>
+                    </button>
+                  );
+                })}
               </div>
+
+              {selectedMedicalPoint && (
+                <div className="mt-3">
+                  <AuraMedicalRoutePanel
+                    point={selectedMedicalPoint}
+                    origin={{ lat: location.latitude, lng: location.longitude }}
+                  />
+                  <Link
+                    href={`/app?sosMedicalPointId=${selectedMedicalPoint.id}`}
+                    className="mt-2 inline-flex min-h-9 items-center justify-center border border-cyan-300/25 bg-cyan-400/10 px-3 text-xs font-bold uppercase text-cyan-100"
+                  >
+                    Ver ruta en mapa operacional (SOS Medico)
+                  </Link>
+                </div>
+              )}
             </Panel>
 
             {canSeeProfessional && (

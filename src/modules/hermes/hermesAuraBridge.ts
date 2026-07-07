@@ -16,7 +16,7 @@ export async function prepareHermesRoutesToMedicalPoints(
     medicalPoints.map(async (medicalPoint) => {
       const routes = await calculateHermesRoutes({
         origin,
-        destination: { lat: medicalPoint.latitude, lng: medicalPoint.longitude, label: medicalPoint.name },
+        destination: { lat: medicalPoint.lat, lng: medicalPoint.lng, label: medicalPoint.name },
         mobilityMode: context.needsAmbulance ? "ambulance" : "car",
         purpose: "medical_access",
         blockages: context.blockages,

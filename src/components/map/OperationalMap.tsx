@@ -22,6 +22,8 @@ import GlobeView from "@/components/map/GlobeView";
 import MapToGlobeTransition from "@/components/map/MapToGlobeTransition";
 import RiskProjectionOverlay from "@/components/map/RiskProjectionOverlay";
 import RouteLayerOverlay from "@/components/map/RouteLayerOverlay";
+import AuraMedicalRouteOverlay from "@/components/map/AuraMedicalRouteOverlay";
+import type { AuraMedicalRoute } from "@/lib/medical/auraMedicalRouting";
 import {
   createArgusDivIcon,
   type ArgusMapConfidence,
@@ -102,6 +104,9 @@ interface Props {
   selectedLiveCameraId?: string;
   onLiveCameraSelect?: (camera: ArgusLiveCamera) => void;
   medicalPoints?: MedicalPoint[];
+  selectedMedicalPointId?: string;
+  onMedicalPointSelect?: (point: MedicalPoint) => void;
+  auraMedicalRoute?: AuraMedicalRoute | null;
   medicalAidRequest?: MedicalAidRequest | null;
   quakeSenseClusters?: QuakeSenseCluster[];
   safetyChecks?: SafetyCheck[];
@@ -287,6 +292,9 @@ export default function OperationalMap({
   selectedLiveCameraId,
   onLiveCameraSelect,
   medicalPoints = [],
+  selectedMedicalPointId,
+  onMedicalPointSelect,
+  auraMedicalRoute = null,
   medicalAidRequest = null,
   quakeSenseClusters = [],
   safetyChecks = [],
@@ -403,8 +411,8 @@ export default function OperationalMap({
     if (!layerSettings.medicalPoints) return [];
 
     return medicalPoints.filter((point) => {
-      const lat = Number(point.latitude);
-      const lng = Number(point.longitude);
+      const lat = Number(point.lat);
+      const lng = Number(point.lng);
       return Number.isFinite(lat) && Number.isFinite(lng);
     });
   }, [layerSettings.medicalPoints, medicalPoints]);
@@ -998,15 +1006,17 @@ export default function OperationalMap({
     });
 
     visibleMedicalPoints.forEach((point) => {
+      const isSelected = point.id === selectedMedicalPointId;
       const markerIcon = L.divIcon(createArgusDivIcon({
         kind: "official_source",
-        severity: point.status === "operational" ? "info" : "medium",
-        confidence: point.source === "demo" ? "reported" : "official",
+        severity: point.availabilityStatus === "available" ? "info" : "medium",
+        confidence: point.isDemo ? "reported" : "official",
         label: "MED",
         title: point.name,
-        active: point.status === "operational",
+        active: point.availabilityStatus !== "closed",
+        selected: isSelected,
       }));
-      const marker = L.marker([point.latitude, point.longitude], {
+      const marker = L.marker([point.lat, point.lng], {
         icon: markerIcon,
         title: point.name,
       }).addTo(medicalLayer);
@@ -1015,6 +1025,7 @@ export default function OperationalMap({
         offset: [0, -18],
         opacity: 0.92,
       });
+      marker.on("click", () => onMedicalPointSelect?.(point));
     });
 
     if (medicalAidRequest) {
@@ -1157,6 +1168,8 @@ export default function OperationalMap({
     onVisualSourceSelect,
     onLiveCameraSelect,
     medicalAidRequest,
+    selectedMedicalPointId,
+    onMedicalPointSelect,
     onConflictZoneSelect,
     conflictZones,
     layerSettings,
@@ -1288,6 +1301,11 @@ export default function OperationalMap({
             <RouteLayerOverlay
               routes={routes}
               visibleTypes={visibleRouteTypes}
+              map={mapReady ? mapInstance : null}
+              leaflet={mapReady ? leafletInstance : null}
+            />
+            <AuraMedicalRouteOverlay
+              route={auraMedicalRoute}
               map={mapReady ? mapInstance : null}
               leaflet={mapReady ? leafletInstance : null}
             />

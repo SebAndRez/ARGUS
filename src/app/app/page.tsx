@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import ArgusOperationalHUD from "@/components/map/ArgusOperationalHUD";
 import MapLayerControls, {
   type LayerDisplayMeta,
@@ -37,7 +37,7 @@ import {
   curatedConflictZones,
   curatedNewsEvidence,
 } from "@/data/conflictZones";
-import { demoMedicalPoints } from "@/data/medicalPoints";
+import { getNearbyMedicalPoints } from "@/data/auraMedicalPoints";
 import {
   demoRiskProjections,
   demoWeatherObservations,
@@ -74,7 +74,8 @@ import type {
 } from "@/types/ingestion";
 import type { ArgusIncidentKnowledge } from "@/types/knowledgeIntake";
 import type { ConflictZone } from "@/types/conflictZone";
-import type { MedicalAidRequest } from "@/types/medical";
+import type { MedicalAidRequest, MedicalPoint } from "@/types/medical";
+import type { AuraMedicalRoute } from "@/lib/medical/auraMedicalRouting";
 import type { SafetyCheck } from "@/types/mobileSafety";
 import type { QuakeSenseCluster } from "@/types/quakesense";
 import type {
@@ -232,6 +233,7 @@ function persistVisibleWidgets(widgets: typeof defaultVisibleWidgets) {
 
 export default function AppPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [displayMode, setDisplayMode] = useState<
     "command" | "map"
   >(() => {
@@ -390,6 +392,11 @@ export default function AppPage() {
   } | null>(null);
   const [medicalAidRequest, setMedicalAidRequest] =
     useState<MedicalAidRequest | null>(null);
+  const [selectedMedicalPoint, setSelectedMedicalPoint] =
+    useState<MedicalPoint | null>(null);
+  const [auraMedicalRoute, setAuraMedicalRoute] =
+    useState<AuraMedicalRoute | null>(null);
+  const [pendingAuraPointId, setPendingAuraPointId] = useState<string | null>(null);
   const [quakeSenseClusters, setQuakeSenseClusters] = useState<
     QuakeSenseCluster[]
   >([]);
@@ -397,6 +404,23 @@ export default function AppPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const location = useUserLocation();
   const { user: sessionUser, loading: sessionLoading } = useSession();
+  const medicalPoints = useMemo(
+    () => getNearbyMedicalPoints({ lat: location.latitude, lng: location.longitude }),
+    [location.latitude, location.longitude]
+  );
+
+  // Deep link desde AURA (dashboard completo, /modules/aura) hacia el SOS
+  // Médico rápido del mapa operacional, con el mismo punto medico preseleccionado.
+  useEffect(() => {
+    const requestedPointId = searchParams.get("sosMedicalPointId");
+    if (!requestedPointId) return;
+    const matchedPoint = medicalPoints.find((point) => point.id === requestedPointId);
+    if (!matchedPoint) return;
+    setSelectedMedicalPoint(matchedPoint);
+    setPendingAuraPointId(matchedPoint.id);
+    setIsAuraOpen(true);
+    router.replace("/app");
+  }, [medicalPoints, router, searchParams]);
 
   const canReport = Boolean(sessionUser && !["LIMITED", "SUSPENDED", "BANNED"].includes(sessionUser.accountStatus));
   const canSOS = Boolean(sessionUser);
@@ -575,6 +599,16 @@ export default function AppPage() {
     setSelectedConflictZone(null);
     setSelectedExternalEvent(event);
   }, []);
+
+  const selectMedicalPointFromMap = useCallback(
+    (point: MedicalPoint) => {
+      setSelectedMedicalPoint(point);
+      setPendingAuraPointId(point.id);
+      collapseSecondaryPanels();
+      setIsAuraOpen(true);
+    },
+    [collapseSecondaryPanels]
+  );
 
   const selectConflictZone = useCallback((zone: ConflictZone) => {
     setSelectedEvent(null);
@@ -1222,7 +1256,7 @@ export default function AppPage() {
         emphasis: true,
       },
       medicalPoints: {
-        count: demoMedicalPoints.length,
+        count: medicalPoints.length,
         detail: layerSettings.medicalPoints
           ? "Puntos medicos demo visibles"
           : "AURA Basic bajo demanda",
@@ -1336,6 +1370,7 @@ export default function AppPage() {
       layerSettings.hdxHapiHumanitarianContext,
       layerSettings.liveCameras,
       layerSettings.medicalPoints,
+      medicalPoints.length,
       layerSettings.openMeteoWeatherContext,
       layerSettings.openAqAirQualityObservations,
       layerSettings.noaaCoopsCoastalObservations,
@@ -1926,7 +1961,10 @@ export default function AppPage() {
         liveCameras={liveCameras}
         selectedLiveCameraId={selectedLiveCamera?.id}
         onLiveCameraSelect={selectLiveCamera}
-        medicalPoints={demoMedicalPoints}
+        medicalPoints={medicalPoints}
+        selectedMedicalPointId={selectedMedicalPoint?.id}
+        onMedicalPointSelect={selectMedicalPointFromMap}
+        auraMedicalRoute={auraMedicalRoute}
         medicalAidRequest={medicalAidRequest}
         quakeSenseClusters={quakeSenseClusters}
         safetyChecks={safetyChecks}
@@ -1960,6 +1998,10 @@ export default function AppPage() {
             setMedicalAidRequest(request);
             setLayerSettings((current) => ({ ...current, medicalPoints: true }));
           }}
+          medicalRiskProjections={demoRiskProjections}
+          medicalConflictZones={curatedConflictZones}
+          onMedicalPointSelect={setSelectedMedicalPoint}
+          onMedicalRouteChange={setAuraMedicalRoute}
           onQuakeSenseDemoCluster={(cluster) => {
             setQuakeSenseClusters((current) => [
               cluster,
@@ -2396,6 +2438,7 @@ export default function AppPage() {
       <AuraMedicalButton
         onClick={() => {
           collapseSecondaryPanels();
+          setPendingAuraPointId(null);
           setIsAuraOpen(true);
         }}
       />
@@ -2403,11 +2446,20 @@ export default function AppPage() {
       {isAuraOpen && (
         <AuraMedicalPanel
           location={{ latitude: location.latitude, longitude: location.longitude }}
-          onClose={() => setIsAuraOpen(false)}
+          onClose={() => {
+            setIsAuraOpen(false);
+            setSelectedMedicalPoint(null);
+            setAuraMedicalRoute(null);
+          }}
           onMedicalAidCreated={(request) => {
             setMedicalAidRequest(request);
             setLayerSettings((current) => ({ ...current, medicalPoints: true }));
           }}
+          riskProjections={demoRiskProjections}
+          conflictZones={curatedConflictZones}
+          initialSelectedPointId={pendingAuraPointId}
+          onMedicalPointSelect={setSelectedMedicalPoint}
+          onRouteChange={setAuraMedicalRoute}
         />
       )}
 

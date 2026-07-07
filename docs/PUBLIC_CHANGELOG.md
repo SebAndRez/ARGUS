@@ -1,5 +1,23 @@
 # ARGUS Public Changelog
 
+## 2026-07-07 - pending-ac2b7ea - ARGUS V.1.0.1.2
+
+**Archivos modificados:** 3
+
+**Resumen publico:**  
+Se actualizaron 3 archivos relacionados con Dependencias internas.
+
+**Cambios principales:**
+- Se actualizaron dependencias o scripts internos.
+
+**Modulos afectados:**
+- Dependencias internas
+
+**En simple:**  
+Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada.
+
+---
+
 ## 2026-07-07 - pending-2bf3784 - ARGUS V.1.0.1.1
 
 **Archivos modificados:** 39

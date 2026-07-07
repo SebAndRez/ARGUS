@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { demoMedicalPoints } from "@/data/medicalPoints";
+import { getNearbyMedicalPoints } from "@/data/auraMedicalPoints";
 import { createDemoMedicalAidRequest } from "@/lib/medical/medicalAidEngine";
-import { sortMedicalPointsByDistance } from "@/lib/medical/medicalDistance";
 import type { MedicalAidType } from "@/types/medical";
 
 export const dynamic = "force-dynamic";
@@ -29,10 +28,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Coordenadas invalidas." }, { status: 400 });
     }
 
-    const nearestMedicalPoint = sortMedicalPointsByDistance(demoMedicalPoints, {
-      latitude,
-      longitude,
-    })[0];
+    const nearestMedicalPoint = getNearbyMedicalPoints({ lat: latitude, lng: longitude })[0];
 
     return NextResponse.json({
       request: createDemoMedicalAidRequest({
