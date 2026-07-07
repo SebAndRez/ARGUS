@@ -3,6 +3,7 @@
 import type { MedicalPoint } from "@/types/medical";
 import type { GeoPoint, RouteResult, RoutingMode } from "@/lib/routing/routingService";
 import { AURA_TRANSPORT_LABELS } from "@/lib/medical/auraMedicalRouting";
+import { buildExternalMapsUrl } from "@/lib/navigation/navigationService";
 import type { LiveGpsPermission } from "@/hooks/useLiveMedicalRoute";
 
 /**
@@ -13,13 +14,6 @@ import type { LiveGpsPermission } from "@/hooks/useLiveMedicalRoute";
  */
 
 const modeCycle: RoutingMode[] = ["walking", "bike", "vehicle", "emergency_vehicle"];
-
-const googleMapsTravelMode: Record<RoutingMode, string> = {
-  walking: "walking",
-  bike: "bicycling",
-  vehicle: "driving",
-  emergency_vehicle: "driving",
-};
 
 interface Props {
   point: MedicalPoint;
@@ -50,8 +44,7 @@ export default function AuraQuickRouteSummary({
   };
 
   const openExternalNavigation = () => {
-    const travelmode = googleMapsTravelMode[mode];
-    const url = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${point.lat},${point.lng}&travelmode=${travelmode}`;
+    const url = buildExternalMapsUrl(origin, { lat: point.lat, lng: point.lng }, mode);
     window.open(url, "_blank", "noopener,noreferrer");
   };
 

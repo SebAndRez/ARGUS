@@ -59,6 +59,7 @@ export interface MapLayerState {
   publicCameras?: boolean;
   liveCameras?: boolean;
   medicalPoints?: boolean;
+  shelters?: boolean;
   quakeSense?: boolean;
   safetyChecks?: boolean;
   weatherRisk?: boolean;
@@ -175,6 +176,7 @@ const labels: Record<keyof MapLayerState, string> = {
   publicCameras: "Cámaras públicas",
   liveCameras: "Cámaras en vivo",
   medicalPoints: "Puntos médicos",
+  shelters: "Refugios",
   quakeSense: "Sacudida ciudadana",
   safetyChecks: "Safety Checks",
   weatherRisk: "Clima y riesgo",
@@ -249,6 +251,11 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
       label: "Médico",
       enabled: Boolean(layers.medicalPoints),
       available: Object.prototype.hasOwnProperty.call(layers, "medicalPoints"),
+    },
+    {
+      label: "Refugios",
+      enabled: Boolean(layers.shelters),
+      available: Object.prototype.hasOwnProperty.call(layers, "shelters"),
     },
     {
       label: "QuakeSense",

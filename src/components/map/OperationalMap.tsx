@@ -9,6 +9,7 @@ import type { RiskProjection } from "@/types/weatherRisk";
 import type { ArgusRoute, BaseMapType, RouteType } from "@/types/map";
 import type { ArgusNormalizedEvent } from "@/types/ingestion";
 import type { MedicalAidRequest, MedicalPoint } from "@/types/medical";
+import type { MapEntity } from "@/types/mapEntity";
 import type {
   ConflictCoordinates,
   ConflictEvent,
@@ -23,7 +24,8 @@ import MapToGlobeTransition from "@/components/map/MapToGlobeTransition";
 import RiskProjectionOverlay from "@/components/map/RiskProjectionOverlay";
 import RouteLayerOverlay from "@/components/map/RouteLayerOverlay";
 import AuraMedicalRouteOverlay from "@/components/map/AuraMedicalRouteOverlay";
-import type { RouteResult } from "@/lib/routing/routingService";
+import NavigationRouteOverlay from "@/components/map/NavigationRouteOverlay";
+import type { GeoPoint, RouteResult } from "@/lib/routing/routingService";
 import {
   createArgusDivIcon,
   type ArgusMapConfidence,
@@ -70,6 +72,7 @@ interface MapLayerSettings {
   publicCameras?: boolean;
   liveCameras?: boolean;
   medicalPoints?: boolean;
+  shelters?: boolean;
   quakeSense?: boolean;
   safetyChecks?: boolean;
   weatherRisk?: boolean;
@@ -106,7 +109,16 @@ interface Props {
   medicalPoints?: MedicalPoint[];
   selectedMedicalPointId?: string;
   onMedicalPointSelect?: (point: MedicalPoint) => void;
+  shelters?: MapEntity[];
+  selectedShelterId?: string;
+  onShelterSelect?: (entity: MapEntity) => void;
   auraMedicalRoute?: RouteResult | null;
+  navigation?: {
+    routes: RouteResult[];
+    selectedRouteId: string | null;
+    currentPosition: GeoPoint | null;
+    destination: GeoPoint | null;
+  } | null;
   medicalAidRequest?: MedicalAidRequest | null;
   quakeSenseClusters?: QuakeSenseCluster[];
   safetyChecks?: SafetyCheck[];
@@ -294,7 +306,11 @@ export default function OperationalMap({
   medicalPoints = [],
   selectedMedicalPointId,
   onMedicalPointSelect,
+  shelters = [],
+  selectedShelterId,
+  onShelterSelect,
   auraMedicalRoute = null,
+  navigation = null,
   medicalAidRequest = null,
   quakeSenseClusters = [],
   safetyChecks = [],
@@ -324,6 +340,7 @@ export default function OperationalMap({
   const visualSourceLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
   const liveCameraLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
   const medicalLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
+  const shelterLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
   const quakeSenseLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
   const safetyCheckLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
   const conflictZoneLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
@@ -416,6 +433,11 @@ export default function OperationalMap({
       return Number.isFinite(lat) && Number.isFinite(lng);
     });
   }, [layerSettings.medicalPoints, medicalPoints]);
+  const visibleShelters = useMemo(() => {
+    if (!layerSettings.shelters) return [];
+
+    return shelters.filter((entity) => Number.isFinite(entity.lat) && Number.isFinite(entity.lng));
+  }, [layerSettings.shelters, shelters]);
   const visibleQuakeSenseClusters = useMemo(
     () =>
       layerSettings.quakeSense
@@ -547,6 +569,7 @@ export default function OperationalMap({
         visualSourceLayerRef.current = L.layerGroup().addTo(map);
         liveCameraLayerRef.current = L.layerGroup().addTo(map);
         medicalLayerRef.current = L.layerGroup().addTo(map);
+        shelterLayerRef.current = L.layerGroup().addTo(map);
         quakeSenseLayerRef.current = L.layerGroup().addTo(map);
         safetyCheckLayerRef.current = L.layerGroup().addTo(map);
         conflictZoneLayerRef.current = L.layerGroup().addTo(map);
@@ -630,6 +653,7 @@ export default function OperationalMap({
       visualSourceLayerRef.current = null;
       liveCameraLayerRef.current = null;
       medicalLayerRef.current = null;
+      shelterLayerRef.current = null;
       quakeSenseLayerRef.current = null;
       safetyCheckLayerRef.current = null;
       conflictZoneLayerRef.current = null;
@@ -678,6 +702,7 @@ export default function OperationalMap({
     const visualSourceLayer = visualSourceLayerRef.current;
     const liveCameraLayer = liveCameraLayerRef.current;
     const medicalLayer = medicalLayerRef.current;
+    const shelterLayer = shelterLayerRef.current;
     const quakeSenseLayer = quakeSenseLayerRef.current;
     const safetyCheckLayer = safetyCheckLayerRef.current;
     const conflictZoneLayer = conflictZoneLayerRef.current;
@@ -692,6 +717,7 @@ export default function OperationalMap({
       !visualSourceLayer ||
       !liveCameraLayer ||
       !medicalLayer ||
+      !shelterLayer ||
       !quakeSenseLayer ||
       !safetyCheckLayer ||
       !conflictZoneLayer ||
@@ -708,6 +734,7 @@ export default function OperationalMap({
     visualSourceLayer?.clearLayers();
     liveCameraLayer?.clearLayers();
     medicalLayer?.clearLayers();
+    shelterLayer?.clearLayers();
     quakeSenseLayer?.clearLayers();
     safetyCheckLayer?.clearLayers();
     conflictZoneLayer?.clearLayers();
@@ -1028,6 +1055,29 @@ export default function OperationalMap({
       marker.on("click", () => onMedicalPointSelect?.(point));
     });
 
+    visibleShelters.forEach((entity) => {
+      const isSelected = entity.id === selectedShelterId;
+      const markerIcon = L.divIcon(createArgusDivIcon({
+        kind: "official_source",
+        severity: entity.status === "limited" ? "medium" : "info",
+        confidence: entity.isDemo ? "reported" : "official",
+        label: "REF",
+        title: entity.name,
+        active: entity.status !== "closed",
+        selected: isSelected,
+      }));
+      const marker = L.marker([entity.lat, entity.lng], {
+        icon: markerIcon,
+        title: entity.name,
+      }).addTo(shelterLayer);
+      marker.bindTooltip(entity.name, {
+        direction: "top",
+        offset: [0, -18],
+        opacity: 0.92,
+      });
+      marker.on("click", () => onShelterSelect?.(entity));
+    });
+
     if (medicalAidRequest) {
       const markerIcon = L.divIcon(createArgusDivIcon({
         kind: "force_report",
@@ -1153,6 +1203,9 @@ export default function OperationalMap({
     visibleVisualSources,
     visibleLiveCameras,
     visibleMedicalPoints,
+    visibleShelters,
+    selectedShelterId,
+    onShelterSelect,
     visibleQuakeSenseClusters,
     visibleSafetyChecks,
     visibleConflictZones,
@@ -1309,6 +1362,16 @@ export default function OperationalMap({
               map={mapReady ? mapInstance : null}
               leaflet={mapReady ? leafletInstance : null}
             />
+            {navigation && (
+              <NavigationRouteOverlay
+                routes={navigation.routes}
+                selectedRouteId={navigation.selectedRouteId}
+                currentPosition={navigation.currentPosition}
+                destination={navigation.destination}
+                map={mapReady ? mapInstance : null}
+                leaflet={mapReady ? leafletInstance : null}
+              />
+            )}
             <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-slate-950/90 to-transparent" />
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-950/90 to-transparent" />
             {layerSettings.openMeteoWeatherContext && (

@@ -19,6 +19,21 @@ import ConflictZonePanel from "@/components/conflict/ConflictZonePanel";
 import ArgusModuleLauncher from "@/components/modules/ArgusModuleLauncher";
 import AuraMedicalButton from "@/components/medical/AuraMedicalButton";
 import AuraMedicalPanel from "@/components/medical/AuraMedicalPanel";
+import NavigationSearchBar from "@/components/map/NavigationSearchBar";
+import NavigationHud from "@/components/map/NavigationHud";
+import MapEntityCard from "@/components/map/MapEntityCard";
+import RouteAlternativesCards from "@/components/routing/RouteAlternativesCards";
+import TransportModeSelector from "@/components/routing/TransportModeSelector";
+import { useNavigationSession } from "@/hooks/useNavigationSession";
+import type { PlaceResult } from "@/lib/geocoding/geocodingService";
+import { arcaDemoShelters } from "@/modules/arca/data";
+import ArcaShelterDetailPanel from "@/modules/arca/components/ArcaShelterDetailPanel";
+import type { ArcaShelter } from "@/modules/arca/types";
+import { arcaShelterToMapEntity, simpleMedicalPointToMapEntity } from "@/lib/pois/poiService";
+import { crisisEventToMapEntity, conflictZoneToMapEntity } from "@/lib/incidents/incidentLayerService";
+import { mapEntityToPlaceResult, resolveDefaultTransportMode } from "@/lib/navigation/navigationService";
+import type { MapEntity } from "@/types/mapEntity";
+import type { RouteHazardPoint } from "@/lib/routing/routeSafety";
 import FloatingSOSButton from "@/components/app/FloatingSOSButton";
 import FloatingReportButton from "@/components/app/FloatingReportButton";
 import NotificationCenterButton from "@/components/notifications/NotificationCenterButton";
@@ -75,7 +90,7 @@ import type {
 import type { ArgusIncidentKnowledge } from "@/types/knowledgeIntake";
 import type { ConflictZone } from "@/types/conflictZone";
 import type { MedicalAidRequest, MedicalPoint } from "@/types/medical";
-import type { RouteResult } from "@/lib/routing/routingService";
+import type { RouteResult, RoutingMode } from "@/lib/routing/routingService";
 import type { SafetyCheck } from "@/types/mobileSafety";
 import type { QuakeSenseCluster } from "@/types/quakesense";
 import type {
@@ -402,10 +417,32 @@ export default function AppPage() {
   >([]);
   const [safetyChecks, setSafetyChecks] = useState<SafetyCheck[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [navDestination, setNavDestination] = useState<PlaceResult | null>(null);
+  const [navMode, setNavMode] = useState<RoutingMode>("vehicle");
+  const [isNavSearchOpen, setIsNavSearchOpen] = useState(false);
+  const [selectedMapEntity, setSelectedMapEntity] = useState<MapEntity | null>(null);
+  const [avoidedHazards, setAvoidedHazards] = useState<RouteHazardPoint[]>([]);
+  const [selectedShelterDetail, setSelectedShelterDetail] = useState<ArcaShelter | null>(null);
   const location = useUserLocation();
   const { user: sessionUser, loading: sessionLoading } = useSession();
+
+  const navPreferences = useMemo(() => ({ hazards: avoidedHazards }), [avoidedHazards]);
+
+  const navSession = useNavigationSession({
+    destination: navDestination ? { lat: navDestination.lat, lng: navDestination.lng } : null,
+    mode: navMode,
+    enabled: Boolean(navDestination),
+    fallbackOrigin: { lat: location.latitude, lng: location.longitude },
+    preferences: navPreferences,
+  });
+
   const medicalPoints = useMemo(
     () => getNearbyMedicalPoints({ lat: location.latitude, lng: location.longitude }),
+    [location.latitude, location.longitude]
+  );
+
+  const shelterEntities = useMemo(
+    () => arcaDemoShelters.map((shelter) => arcaShelterToMapEntity(shelter, { lat: location.latitude, lng: location.longitude })),
     [location.latitude, location.longitude]
   );
 
@@ -600,23 +637,102 @@ export default function AppPage() {
     setSelectedExternalEvent(event);
   }, []);
 
-  const selectMedicalPointFromMap = useCallback(
-    (point: MedicalPoint) => {
-      setSelectedMedicalPoint(point);
-      setPendingAuraPointId(point.id);
+  // Tocar un punto del mapa (hospital, refugio, incidente, zona de riesgo)
+  // abre la ficha compacta (`MapEntityCard`), no el panel completo del
+  // modulo dueño. Los paneles completos (AuraMedicalPanel, EventDetailPanel,
+  // ConflictZonePanel) solo se abren si el usuario pide mas detalle desde la
+  // ficha.
+  const selectMedicalPointFromMap = useCallback((point: MedicalPoint) => {
+    setSelectedMapEntity(simpleMedicalPointToMapEntity(point));
+  }, []);
+
+  const selectShelterFromMap = useCallback((entity: MapEntity) => {
+    setSelectedMapEntity(entity);
+  }, []);
+
+  const selectEventFromMap = useCallback((event: CrisisEvent) => {
+    setSelectedMapEntity(
+      crisisEventToMapEntity(event, { lat: location.latitude, lng: location.longitude })
+    );
+  }, [location.latitude, location.longitude]);
+
+  const selectConflictZone = useCallback((zone: ConflictZone) => {
+    const entity = conflictZoneToMapEntity(zone, { lat: location.latitude, lng: location.longitude });
+    if (entity) setSelectedMapEntity(entity);
+  }, [location.latitude, location.longitude]);
+
+  const closeMapEntityCard = useCallback(() => setSelectedMapEntity(null), []);
+
+  const handleEntityRoute = useCallback((entity: MapEntity) => {
+    setNavDestination(mapEntityToPlaceResult(entity));
+    setNavMode(resolveDefaultTransportMode(entity));
+    setSelectedMapEntity(null);
+  }, []);
+
+  const handleOpenAuraFromEntity = useCallback(
+    (entity: MapEntity) => {
+      setPendingAuraPointId(entity.refId ?? null);
+      setSelectedMapEntity(null);
       collapseSecondaryPanels();
       setIsAuraOpen(true);
     },
     [collapseSecondaryPanels]
   );
 
-  const selectConflictZone = useCallback((zone: ConflictZone) => {
-    setSelectedEvent(null);
-    setSelectedVisualSource(null);
-    setSelectedLiveCamera(null);
-    setSelectedRiskProjection(null);
-    setSelectedExternalEvent(null);
+  const handleOpenFenixFromEntity = useCallback(() => {
+    setSelectedMapEntity(null);
+    router.push("/modules/fenix");
+  }, [router]);
+
+  const handleOpenAtlasFromEntity = useCallback(() => {
+    setSelectedMapEntity(null);
+    router.push("/modules/atlas");
+  }, [router]);
+
+  const handleViewShelterCapacity = useCallback((entity: MapEntity) => {
+    const shelter = arcaDemoShelters.find((candidate) => candidate.id === entity.refId) ?? null;
+    setSelectedShelterDetail(shelter);
+    setSelectedMapEntity(null);
+  }, []);
+
+  const handleReportUpdateFromEntity = useCallback(() => {
+    setSelectedMapEntity(null);
+    setIsReportOpen(true);
+  }, []);
+
+  const priorityToHazardSeverity = (priority?: MapEntity["priority"]): RouteHazardPoint["severity"] => {
+    if (priority === "critical") return "critical";
+    if (priority === "high") return "high";
+    if (priority === "medium") return "medium";
+    return "low";
+  };
+
+  const handleAvoidEntity = useCallback((entity: MapEntity) => {
+    setAvoidedHazards((current) => {
+      if (current.some((hazard) => hazard.id === entity.id)) return current;
+      return [
+        ...current,
+        {
+          id: entity.id,
+          label: entity.name,
+          lat: entity.lat,
+          lng: entity.lng,
+          severity: priorityToHazardSeverity(entity.priority),
+        },
+      ];
+    });
+    setSelectedMapEntity(null);
+  }, []);
+
+  const handleToggleHazardLayer = useCallback(() => {
+    setLayerSettings((current) => ({ ...current, conflictZones: !current.conflictZones }));
+    setSelectedMapEntity(null);
+  }, []);
+
+  const handleViewZoneDetail = useCallback((entity: MapEntity) => {
+    const zone = curatedConflictZones.find((candidate) => candidate.id === entity.refId) ?? null;
     setSelectedConflictZone(zone);
+    setSelectedMapEntity(null);
   }, []);
 
   const handleVerifyAction = useCallback(
@@ -721,6 +837,14 @@ export default function AppPage() {
   const visibleDemoEvents = useMemo(
     () => (layerSettings.demoReports ? filteredDemoEvents : []),
     [filteredDemoEvents, layerSettings.demoReports]
+  );
+  const handleViewIncidentDetail = useCallback(
+    (entity: MapEntity) => {
+      const event = [...events, ...filteredDemoEvents].find((candidate) => candidate.id === entity.refId);
+      if (event) setSelectedEvent(event);
+      setSelectedMapEntity(null);
+    },
+    [events, filteredDemoEvents]
   );
   const nearbyEventPool = useMemo(
     () => [...publicEvents, ...visibleDemoEvents],
@@ -1952,7 +2076,7 @@ export default function AppPage() {
         location={{ latitude: location.latitude, longitude: location.longitude }}
         locationStatus={location.status}
         layerSettings={layerSettings}
-        onEventSelect={selectEvent}
+        onEventSelect={selectEventFromMap}
         selectedExternalEventId={selectedExternalEvent?.id}
         onExternalEventSelect={selectExternalEvent}
         visualSources={demoVisualSources}
@@ -1964,7 +2088,20 @@ export default function AppPage() {
         medicalPoints={medicalPoints}
         selectedMedicalPointId={selectedMedicalPoint?.id}
         onMedicalPointSelect={selectMedicalPointFromMap}
+        shelters={shelterEntities}
+        selectedShelterId={selectedMapEntity?.type === "shelter" ? selectedMapEntity.id : undefined}
+        onShelterSelect={selectShelterFromMap}
         auraMedicalRoute={auraMedicalRoute}
+        navigation={
+          navDestination
+            ? {
+                routes: navSession.routes,
+                selectedRouteId: navSession.selectedRoute?.id ?? null,
+                currentPosition: navSession.currentPosition,
+                destination: { lat: navDestination.lat, lng: navDestination.lng },
+              }
+            : null
+        }
         medicalAidRequest={medicalAidRequest}
         quakeSenseClusters={quakeSenseClusters}
         safetyChecks={safetyChecks}
@@ -1983,7 +2120,43 @@ export default function AppPage() {
         onViewModeChange={setMapViewMode}
       />
 
+      {isNavSearchOpen && (
+        <div className="argus-nav-search-wrapper pointer-events-none fixed right-4 top-[4.75rem] z-[58]">
+          <NavigationSearchBar
+            userLocation={{ lat: location.latitude, lng: location.longitude }}
+            selectedLabel={navDestination?.label ?? null}
+            onSelect={(place) => {
+              setNavDestination(place);
+              navSession.stopNavigation();
+              setIsNavSearchOpen(false);
+            }}
+            onClear={() => {
+              setNavDestination(null);
+              navSession.stopNavigation();
+            }}
+          />
+        </div>
+      )}
+
       <div className="argus-mobile-utility-controls pointer-events-auto fixed z-[57] flex items-stretch justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setIsAuraOpen(false);
+            setIsNavSearchOpen((current) => !current);
+          }}
+          aria-pressed={isNavSearchOpen}
+          aria-label="Buscar destino y navegar"
+          title="Buscar destino y navegar"
+          className={`inline-flex h-11 min-h-11 shrink-0 items-center gap-2 border px-3 text-xs font-bold uppercase tracking-[0.12em] shadow-xl shadow-black/35 backdrop-blur-xl transition ${
+            isNavSearchOpen
+              ? "border-cyan-200/55 bg-cyan-400/15 text-cyan-50"
+              : "border-cyan-300/25 bg-slate-950/92 text-cyan-100 hover:border-cyan-200/55 hover:bg-cyan-400/15"
+          }`}
+        >
+          <span aria-hidden>🔍</span>
+          <span className="hidden sm:inline">Buscar</span>
+        </button>
         <NotificationCenterButton
           unreadCount={notificationSummary?.unread ?? 0}
           criticalCount={notificationSummary?.critical ?? 0}
@@ -2438,6 +2611,9 @@ export default function AppPage() {
           collapseSecondaryPanels();
           setPendingAuraPointId(null);
           setIsAuraOpen(true);
+          setIsNavSearchOpen(false);
+          setNavDestination(null);
+          setSelectedMapEntity(null);
         }}
       />
 
@@ -2457,6 +2633,99 @@ export default function AppPage() {
           onMedicalPointSelect={setSelectedMedicalPoint}
           onRouteChange={setAuraMedicalRoute}
         />
+      )}
+
+      {navDestination && !isAuraOpen && (
+        <div className="argus-nav-panel pointer-events-auto fixed right-4 top-[4.75rem] z-[58] grid w-[340px] max-w-[calc(100%-2rem)] gap-2">
+          <TransportModeSelector value={navMode} onChange={setNavMode} />
+          {navSession.isLoadingRoutes && navSession.routes.length === 0 && (
+            <p className="rounded border border-white/10 bg-slate-950/90 p-2 text-[0.65rem] text-slate-300">
+              Calculando rutas...
+            </p>
+          )}
+          {navSession.routesError && navSession.routes.length === 0 && (
+            <p className="rounded border border-rose-300/20 bg-rose-400/8 p-2 text-[0.65rem] text-rose-100">
+              {navSession.routesError}
+            </p>
+          )}
+          <RouteAlternativesCards
+            routes={navSession.routes}
+            selectedRouteId={navSession.selectedRoute?.id ?? null}
+            onSelect={(route) => {
+              if (route.id) navSession.selectRoute(route.id);
+            }}
+          />
+          {navSession.selectedRoute && (
+            <NavigationHud
+              destinationLabel={navDestination.label}
+              origin={navSession.origin}
+              destination={{ lat: navDestination.lat, lng: navDestination.lng }}
+              selectedRoute={navSession.selectedRoute}
+              remainingDistanceKm={navSession.remainingDistanceKm}
+              remainingTimeMin={navSession.remainingTimeMin}
+              nextInstruction={navSession.nextInstruction}
+              gpsStatus={navSession.gpsStatus}
+              gpsMessage={navSession.gpsMessage}
+              offRoute={navSession.offRoute}
+              recalculating={navSession.recalculating}
+              isNavigating={navSession.isNavigating}
+              mode={navMode}
+              onStart={navSession.startNavigation}
+              onStop={navSession.stopNavigation}
+              onClose={() => setNavDestination(null)}
+            />
+          )}
+        </div>
+      )}
+
+      {selectedMapEntity && (
+        <MapEntityCard
+          entity={selectedMapEntity}
+          onClose={closeMapEntityCard}
+          onRoute={handleEntityRoute}
+          onOpenModule={
+            selectedMapEntity.sourceModule === "aura"
+              ? handleOpenAuraFromEntity
+              : selectedMapEntity.sourceModule === "fenix"
+                ? handleOpenFenixFromEntity
+                : selectedMapEntity.sourceModule === "atlas"
+                  ? handleOpenAtlasFromEntity
+                  : undefined
+          }
+          onViewCapacity={selectedMapEntity.type === "shelter" ? handleViewShelterCapacity : undefined}
+          onViewDetail={
+            selectedMapEntity.type === "hazard" || selectedMapEntity.type === "conflict"
+              ? handleViewZoneDetail
+              : handleViewIncidentDetail
+          }
+          onReportUpdate={handleReportUpdateFromEntity}
+          onAvoidZone={handleAvoidEntity}
+          onToggleLayer={handleToggleHazardLayer}
+          onSafeRoute={handleAvoidEntity}
+        />
+      )}
+
+      {selectedShelterDetail && (
+        <div
+          className="argus-mobile-modal fixed inset-0 z-[65] flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-6"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSelectedShelterDetail(null);
+          }}
+        >
+          <div className="w-full max-w-xl" role="dialog" aria-modal="true" aria-label={`Capacidad de ${selectedShelterDetail.name}`}>
+            <div className="flex justify-end pb-2">
+              <button
+                type="button"
+                onClick={() => setSelectedShelterDetail(null)}
+                className="rounded border border-white/10 bg-slate-950/92 px-3 py-1.5 text-[0.6rem] font-bold uppercase text-slate-300"
+              >
+                Cerrar
+              </button>
+            </div>
+            <ArcaShelterDetailPanel shelter={selectedShelterDetail} showDetailedCapacity showInternalNotes={false} />
+          </div>
+        </div>
       )}
 
       {displayMode === "command" && visibleWidgets.nearby && (
