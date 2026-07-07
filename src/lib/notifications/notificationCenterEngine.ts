@@ -17,6 +17,13 @@ import {
   severityOrder,
 } from "@/lib/notifications/notificationVisuals";
 
+type VestaReminderItem = {
+  id: string;
+  title: string;
+  dueAt: Date | string;
+  status: string;
+};
+
 type SourceHealthItem = {
   id?: string;
   sourceId?: string;
@@ -41,6 +48,7 @@ export interface BuildNotificationInput {
   conflictZones?: ConflictZone[];
   routes?: ArgusRoute[];
   sourceHealth?: SourceHealthItem[];
+  reminders?: VestaReminderItem[];
   readIds?: string[];
   userLocation?: { lat: number; lng: number; countryCode?: string | null };
 }
@@ -412,6 +420,48 @@ function routeToNotification(route: ArgusRoute, readIds: Set<string>) {
   );
 }
 
+function reminderToNotification(reminder: VestaReminderItem, readIds: Set<string>) {
+  const dueDate = new Date(reminder.dueAt);
+  const overdueDays = Math.floor((Date.now() - dueDate.getTime()) / (24 * 60 * 60 * 1000));
+  const severity: ArgusNotificationSeverity = overdueDays > 14 ? "P2_MEDIUM" : overdueDays > 0 ? "P3_LOW" : "P4_INFO";
+  const time = toIso(dueDate);
+
+  return finalize(
+    {
+      id: `vesta-reminder-${reminder.id}`,
+      title: `VESTA: ${reminder.title}`,
+      description:
+        overdueDays > 0
+          ? `Recordatorio preventivo vencido hace ${overdueDays} dia(s).`
+          : `Recordatorio preventivo con vencimiento ${dueDate.toLocaleDateString("es-CL")}.`,
+      type: "REMINDER",
+      severity,
+      scope: "GLOBAL",
+      status: reminder.status === "done" ? "RESOLVED" : "NEW",
+      createdAt: time,
+      updatedAt: time,
+      eventTime: time,
+      sourceType: "SYSTEM",
+      sourceName: "ARGUS VESTA",
+      confidence: 100,
+      lat: null,
+      lng: null,
+      countryCode: null,
+      region: null,
+      city: null,
+      distanceKm: null,
+      relatedEventId: null,
+      relatedReportId: null,
+      relatedIncidentId: reminder.id,
+      relatedFenixScenarioId: null,
+      relatedRouteId: null,
+      actionUrl: "/modules/vesta",
+      sourceUrl: null,
+    },
+    readIds
+  );
+}
+
 function sourceToNotification(source: SourceHealthItem, readIds: Set<string>) {
   const sourceId = source.sourceId ?? source.id ?? "unknown";
   const name = source.sourceName ?? source.name ?? sourceId;
@@ -466,6 +516,7 @@ export function buildArgusNotifications(input: BuildNotificationInput) {
     ...(input.conflictEvents ?? []).map((event) => conflictToNotification(event, readIds, input.userLocation)),
     ...(input.routes ?? []).map((route) => routeToNotification(route, readIds)),
     ...(input.sourceHealth ?? []).map((source) => sourceToNotification(source, readIds)),
+    ...(input.reminders ?? []).map((reminder) => reminderToNotification(reminder, readIds)),
   ];
 
   return notifications.sort((a, b) => {

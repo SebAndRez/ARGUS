@@ -1,23 +1,9 @@
 import Link from "next/link";
-import publicChangelog from "@/data/publicChangelog.json";
-
-type PublicChangelogEntry = {
-  changeId?: string;
-  date: string;
-  commit: string;
-  title: string;
-  fileCount?: number;
-  summary: string;
-  changes?: string[];
-  affectedModules: string[];
-  simpleExplanation: string;
-};
-
-const entries = publicChangelog as PublicChangelogEntry[];
+import { argusReleaseLog } from "@/data/argusReleaseLog";
 
 export const metadata = {
-  title: "Actualizaciones de ARGUS",
-  description: "Cambios recientes de ARGUS explicados en simple.",
+  title: "Novedades de ARGUS",
+  description: "Versiones oficiales de ARGUS explicadas en simple.",
 };
 
 export default function UpdatesPage() {
@@ -33,11 +19,9 @@ export default function UpdatesPage() {
           </Link>
           <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h1 className="text-3xl font-semibold text-white sm:text-5xl">
-                Actualizaciones de ARGUS
-              </h1>
+              <h1 className="text-3xl font-semibold text-white sm:text-5xl">Novedades de ARGUS</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
-                Cambios recientes explicados en simple
+                Historial oficial de versiones, explicado en simple.
               </p>
             </div>
             <Link
@@ -49,29 +33,23 @@ export default function UpdatesPage() {
           </div>
         </header>
 
-        {entries.length === 0 ? (
+        {argusReleaseLog.length === 0 ? (
           <div className="rounded-lg border border-white/10 bg-white/[0.03] p-5 text-sm text-slate-300">
-            Aun no hay actualizaciones publicas registradas.
+            Aun no hay versiones oficiales registradas.
           </div>
         ) : (
           <div className="grid gap-4">
-            {entries.map((entry) => (
+            {argusReleaseLog.map((entry) => (
               <article
-                key={entry.changeId ?? `${entry.date}-${entry.commit}-${entry.title}`}
+                key={entry.version}
                 className="rounded-lg border border-white/10 bg-slate-950/82 p-5 shadow-xl shadow-black/25"
               >
                 <div className="flex flex-col gap-2 border-b border-white/10 pb-4 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <p className="text-xs font-semibold uppercase text-cyan-200">
-                      {entry.date} - {entry.commit}
-                    </p>
-                    <h2 className="mt-2 text-xl font-semibold text-white">{entry.title}</h2>
+                    <h2 className="text-2xl font-bold tracking-tight text-cyan-200">{entry.version}</h2>
+                    <p className="mt-1 text-xs font-semibold uppercase text-slate-400">{entry.date}</p>
+                    <p className="mt-2 text-lg font-semibold text-white">{entry.title}</p>
                   </div>
-                  {typeof entry.fileCount === "number" ? (
-                    <span className="w-fit rounded-md border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-slate-300">
-                      {entry.fileCount} archivos
-                    </span>
-                  ) : null}
                 </div>
 
                 <div className="mt-4 grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
@@ -81,7 +59,7 @@ export default function UpdatesPage() {
                       <p className="mt-2 text-sm leading-6 text-slate-300">{entry.summary}</p>
                     </div>
 
-                    {entry.changes && entry.changes.length > 0 ? (
+                    {entry.changes.length > 0 ? (
                       <div>
                         <h3 className="text-sm font-semibold text-slate-100">Cambios principales</h3>
                         <ul className="mt-2 space-y-2 text-sm leading-6 text-slate-300">
@@ -94,9 +72,7 @@ export default function UpdatesPage() {
 
                     <div className="rounded-lg border border-cyan-300/15 bg-cyan-400/10 p-4">
                       <h3 className="text-sm font-semibold text-cyan-100">En simple</h3>
-                      <p className="mt-2 text-sm leading-6 text-cyan-50/90">
-                        {entry.simpleExplanation}
-                      </p>
+                      <p className="mt-2 text-sm leading-6 text-cyan-50/90">{entry.simple}</p>
                     </div>
                   </div>
 

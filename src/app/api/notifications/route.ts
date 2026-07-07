@@ -3,6 +3,7 @@ import { demoEvents } from "@/data/demoEvents";
 import { curatedConflictEvents } from "@/data/conflictZones";
 import { demoRoutes } from "@/data/demoRoutes";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/services/authService";
 import { getPredictiveNotificationPackets } from "@/lib/predictive-core/predictiveFeed";
 import { deduplicateEvents } from "@/lib/ingestion/deduplicateEvents";
 import { getOrFetchUsgsEarthquakes } from "@/lib/ingestion/ingestUsgsEarthquakes";
@@ -214,6 +215,38 @@ async function getSourceHealth() {
   }
 }
 
+/**
+ * Recordatorios preventivos de VESTA vencidos o por vencer en los próximos 3
+ * días para el usuario autenticado. Solo se consultan si hay sesión: son
+ * datos personales, no un feed global.
+ */
+async function getDueVestaReminders() {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return [];
+
+    const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    const reminders = await prisma.preparednessReminder.findMany({
+      where: {
+        status: "pending",
+        dueAt: { lte: soon },
+        profile: { userId: user.id },
+      },
+      orderBy: { dueAt: "asc" },
+      take: 20,
+    });
+
+    return reminders.map((reminder) => ({
+      id: reminder.id,
+      title: reminder.title,
+      dueAt: reminder.dueAt,
+      status: reminder.status,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 function predictiveSeverity(value: string): ArgusNotificationSeverity {
   if (value === "P0_CRITICAL") return "P0_CRITICAL";
   if (value === "P1_HIGH") return "P1_HIGH";
@@ -307,11 +340,12 @@ export async function GET(request: NextRequest) {
       ? { lat, lng, countryCode: request.nextUrl.searchParams.get("countryCode") ?? "CL" }
       : undefined;
 
-  const [persistedEvents, externalEvents, sourceHealth, predictiveNotifications] = await Promise.all([
+  const [persistedEvents, externalEvents, sourceHealth, predictiveNotifications, vestaReminders] = await Promise.all([
     getPersistedEvents(),
     getExternalEvents(),
     getSourceHealth(),
     getPredictiveNotifications(readIds),
+    getDueVestaReminders(),
   ]);
   const events = persistedEvents.length
     ? persistedEvents
@@ -325,6 +359,7 @@ export async function GET(request: NextRequest) {
       conflictEvents: curatedConflictEvents,
       routes: demoRoutes,
       sourceHealth,
+      reminders: vestaReminders,
       readIds,
       userLocation,
     }),

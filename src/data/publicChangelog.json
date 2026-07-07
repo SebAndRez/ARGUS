@@ -1,5 +1,22 @@
 [
   {
+    "changeId": "82a4335430c3",
+    "date": "2026-07-06",
+    "commit": "pending-82a4335",
+    "title": "prueba",
+    "fileCount": 5,
+    "summary": "Se actualizaron 5 archivos relacionados con Eventos y fuentes externas.",
+    "changes": [
+      "Se actualizaron eventos o fuentes externas.",
+      "Se ajustaron vistas y elementos de interfaz.",
+      "Se actualizaron servicios internos usados por ARGUS."
+    ],
+    "affectedModules": [
+      "Eventos y fuentes externas"
+    ],
+    "simpleExplanation": "Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada."
+  },
+  {
     "changeId": "b0dc09d16441",
     "date": "2026-07-05",
     "commit": "pending-b0dc09d",

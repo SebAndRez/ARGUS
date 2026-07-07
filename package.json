@@ -7,6 +7,7 @@
     "build": "prisma generate && next build",
     "prepare": "husky",
     "changelog:public": "node scripts/generate-public-changelog.mjs",
+    "release:prepare": "node scripts/prepare-release.mjs",
     "release:check": "npm run lint && npm run build && npm run db:validate && npm run db:generate && git diff --check",
     "start": "next start",
     "lint": "eslint",

@@ -14,6 +14,7 @@ const colorAccent: Record<string, string> = {
   violet: "text-violet-300",
   sky: "text-sky-300",
   fuchsia: "text-fuchsia-300",
+  green: "text-green-300",
 };
 
 interface Props {

@@ -27,6 +27,7 @@ export type ArgusNotificationType =
   | "SENSOR"
   | "FENIX"
   | "SOURCE_UPDATE"
+  | "REMINDER"
   | "SYSTEM";
 
 export type ArgusNotificationStatus =

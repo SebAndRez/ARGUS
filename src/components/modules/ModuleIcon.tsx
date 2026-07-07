@@ -97,6 +97,14 @@ export default function ModuleIcon({ icon, className = "h-5 w-5" }: Props) {
           <path d="M12 15h.01" />
         </svg>
       );
+    case "backpack":
+      return (
+        <svg {...common}>
+          <path d="M9 4h6a1 1 0 0 1 1 1v1.2c1.8.6 3 2.3 3 4.3v8a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-8c0-2 1.2-3.7 3-4.3V5a1 1 0 0 1 1-1Z" />
+          <path d="M9 4v3h6V4" />
+          <path d="M9 12h6M10 16h4" />
+        </svg>
+      );
     default:
       return (
         <svg {...common}>

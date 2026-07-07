@@ -1,5 +1,25 @@
 # ARGUS Public Changelog
 
+## 2026-07-06 - pending-82a4335 - prueba
+
+**Archivos modificados:** 5
+
+**Resumen publico:**  
+Se actualizaron 5 archivos relacionados con Eventos y fuentes externas.
+
+**Cambios principales:**
+- Se actualizaron eventos o fuentes externas.
+- Se ajustaron vistas y elementos de interfaz.
+- Se actualizaron servicios internos usados por ARGUS.
+
+**Modulos afectados:**
+- Eventos y fuentes externas
+
+**En simple:**  
+Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada.
+
+---
+
 ## 2026-07-05 - pending-b0dc09d - fix: restore realtime layers and harden ARGUS security
 
 **Archivos modificados:** 16

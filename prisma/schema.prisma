@@ -9,77 +9,78 @@ datasource db {
 }
 
 model User {
-  id               String         @id @default(cuid())
-  name             String
-  email            String         @unique
-  phone            String?
-  governmentIdHash String?        @unique
-  passwordHash     String?
-  countryCode      String?
-  city             String?
-  region           String?
-  preferredLanguage String?
-  unitSystem       String?
-  googleSub        String?        @unique
-  avatarUrl        String?
-  emailVerifiedAt  DateTime?
-  termsAcceptedAt  DateTime?
-  privacyAcceptedAt DateTime?
-  profileCompletedAt DateTime?
-  authProvider     String?        @default("local")
-  lastLoginAt      DateTime?
-  publicAlias      String
-  role             String         @default("CITIZEN")
-  accountStatus    String         @default("ACTIVE")
-  trustScore       Int            @default(70)
-  strikes          Int            @default(0)
-  reports          Report[]
-  helpRequests     HelpRequest[]
-  sanctionCreated  Sanction[]     @relation("SanctionCreator")
-  sanctions        Sanction[]     @relation("SanctionTarget")
-  auditLogs        AuditLog[]
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  id                  String               @id @default(cuid())
+  name                String
+  email               String               @unique
+  phone               String?
+  governmentIdHash    String?              @unique
+  passwordHash        String?
+  countryCode         String?
+  city                String?
+  region              String?
+  preferredLanguage   String?
+  unitSystem          String?
+  googleSub           String?              @unique
+  avatarUrl           String?
+  emailVerifiedAt     DateTime?
+  termsAcceptedAt     DateTime?
+  privacyAcceptedAt   DateTime?
+  profileCompletedAt  DateTime?
+  authProvider        String?              @default("local")
+  lastLoginAt         DateTime?
+  publicAlias         String
+  role                String               @default("CITIZEN")
+  accountStatus       String               @default("ACTIVE")
+  trustScore          Int                  @default(70)
+  strikes             Int                  @default(0)
+  reports             Report[]
+  helpRequests        HelpRequest[]
+  sanctionCreated     Sanction[]           @relation("SanctionCreator")
+  sanctions           Sanction[]           @relation("SanctionTarget")
+  auditLogs           AuditLog[]
+  preparednessProfile PreparednessProfile?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 }
 
 model Report {
-  id              String         @id @default(cuid())
-  user            User           @relation(fields: [userId], references: [id])
-  userId          String
-  category        String
-  title           String
-  description     String
-  latitude        Float
-  longitude       Float
-  locationText    String?
-  severity        String         @default("LOW")
-  status          String         @default("NEW")
-  aiSummary       String?
+  id               String   @id @default(cuid())
+  user             User     @relation(fields: [userId], references: [id])
+  userId           String
+  category         String
+  title            String
+  description      String
+  latitude         Float
+  longitude        Float
+  locationText     String?
+  severity         String   @default("LOW")
+  status           String   @default("NEW")
+  aiSummary        String?
   aiRecommendation String?
-  aiConfidence    Int?
-  falseReportRisk Int?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  aiConfidence     Int?
+  falseReportRisk  Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model HelpRequest {
-  id              String         @id @default(cuid())
-  user            User           @relation(fields: [userId], references: [id])
-  userId          String
-  category        String
-  title           String
-  description     String
-  latitude        Float
-  longitude       Float
-  locationText    String?
-  priority        String         @default("LOW")
-  status          String         @default("RECEIVED")
-  restrictedMode  Boolean        @default(false)
-  aiSummary       String?
+  id               String   @id @default(cuid())
+  user             User     @relation(fields: [userId], references: [id])
+  userId           String
+  category         String
+  title            String
+  description      String
+  latitude         Float
+  longitude        Float
+  locationText     String?
+  priority         String   @default("LOW")
+  status           String   @default("RECEIVED")
+  restrictedMode   Boolean  @default(false)
+  aiSummary        String?
   aiRecommendation String?
-  aiConfidence    Int?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  aiConfidence     Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model AuditLog {
@@ -105,7 +106,7 @@ model Sanction {
 }
 
 model ExternalEvent {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   sourceId     String
   externalId   String
   category     String
@@ -124,8 +125,8 @@ model ExternalEvent {
   expiresAt    DateTime?
   raw          Json?
   normalized   Json?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@unique([sourceId, externalId])
   @@index([sourceId])
@@ -165,7 +166,7 @@ model ExternalEventCorrelation {
 }
 
 model RiskAssessment {
-  id                      String   @id @default(cuid())
+  id                      String    @id @default(cuid())
   riskType                String
   status                  String
   probabilityBand         String
@@ -178,8 +179,8 @@ model RiskAssessment {
   timeframe               String?
   relatedExternalEventIds Json
   evidence                Json
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
   nextReviewAt            DateTime?
   metadata                Json?
 
@@ -307,7 +308,7 @@ model KnowledgeIngestionRun {
 }
 
 model KnowledgeIncident {
-  id                          String   @id @default(cuid())
+  id                          String    @id @default(cuid())
   externalId                  String?
   sourceId                    String
   sourceName                  String
@@ -340,9 +341,9 @@ model KnowledgeIncident {
   tagsJson                    Json?
   language                    String?
   rawEvidenceRefsJson         Json?
-  reviewStatus                String   @default("pending_review")
-  createdAt                   DateTime @default(now())
-  updatedAt                   DateTime @updatedAt
+  reviewStatus                String    @default("pending_review")
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
 
   @@unique([sourceId, externalId])
   @@index([sourceId])
@@ -372,21 +373,21 @@ model KnowledgeEvidence {
 }
 
 model KnowledgeLesson {
-  id                                String   @id @default(cuid())
-  incidentId                        String?
-  domain                            String
-  title                             String
-  summary                           String
-  whatFailedJson                    Json?
-  whatWorkedJson                    Json?
-  earlyWarningSignalsJson           Json?
-  recommendedPreventiveActionsJson  Json?
-  recommendedResponseActionsJson    Json?
-  applicableToChile                 Boolean  @default(false)
-  confidenceScore                   Int
-  tagsJson                          Json?
-  createdAt                         DateTime @default(now())
-  updatedAt                         DateTime @updatedAt
+  id                               String   @id @default(cuid())
+  incidentId                       String?
+  domain                           String
+  title                            String
+  summary                          String
+  whatFailedJson                   Json?
+  whatWorkedJson                   Json?
+  earlyWarningSignalsJson          Json?
+  recommendedPreventiveActionsJson Json?
+  recommendedResponseActionsJson   Json?
+  applicableToChile                Boolean  @default(false)
+  confidenceScore                  Int
+  tagsJson                         Json?
+  createdAt                        DateTime @default(now())
+  updatedAt                        DateTime @updatedAt
 
   @@index([incidentId])
   @@index([domain])
@@ -441,6 +442,91 @@ model KnowledgeEmbeddingRecord {
   @@index([documentId])
   @@index([chunkId])
   @@index([incidentId])
+}
+
+// --- ARGUS VESTA: preparacion familiar, mochila de emergencia y resiliencia ---
+// Datos privados por defecto (ver src/modules/vesta/vestaAccess.ts): solo el
+// dueno del perfil puede leer/escribir su propio PreparednessProfile y todo lo
+// que cuelga de el.
+model PreparednessProfile {
+  id               String    @id @default(cuid())
+  user             User      @relation(fields: [userId], references: [id])
+  userId           String    @unique
+  riskContextsJson Json?
+  lastFullReviewAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  familyPlan        FamilyPlan?
+  checklistItems    PreparednessChecklistItem[]
+  reminders         PreparednessReminder[]
+  emergencyContacts EmergencyContact[]
+}
+
+model FamilyPlan {
+  id                    String              @id @default(cuid())
+  profile               PreparednessProfile @relation(fields: [profileId], references: [id])
+  profileId             String              @unique
+  membersJson           Json?
+  primaryMeetingPoint   String?
+  alternateMeetingPoint String?
+  evacuationRouteNotes  String?
+  medicalNeedsNotes     String?
+  petsNotes             String?
+  observations          String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+}
+
+model EmergencyContact {
+  id           String              @id @default(cuid())
+  profile      PreparednessProfile @relation(fields: [profileId], references: [id])
+  profileId    String
+  name         String
+  relationship String?
+  phone        String?
+  email        String?
+  priority     Int                 @default(1)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@index([profileId])
+}
+
+model PreparednessChecklistItem {
+  id        String              @id @default(cuid())
+  profile   PreparednessProfile @relation(fields: [profileId], references: [id])
+  profileId String
+  category  String
+  label     String
+  status    String              @default("pending")
+  isCustom  Boolean             @default(false)
+  notes     String?
+  expiresAt DateTime?
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@index([profileId])
+  @@index([category])
+  @@index([status])
+}
+
+model PreparednessReminder {
+  id              String              @id @default(cuid())
+  profile         PreparednessProfile @relation(fields: [profileId], references: [id])
+  profileId       String
+  type            String
+  title           String
+  dueAt           DateTime
+  frequencyDays   Int?
+  status          String              @default("pending")
+  lastCompletedAt DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([profileId])
+  @@index([dueAt])
+  @@index([status])
 }
 
 model KnowledgeAdminReview {
