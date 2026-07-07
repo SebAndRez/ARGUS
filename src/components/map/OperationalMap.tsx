@@ -32,6 +32,7 @@ import {
   type ArgusMapEventKind,
   type ArgusMapSeverity,
 } from "@/lib/mapSymbols/argusMapSymbols";
+import { getBaseMapStyle } from "@/lib/map/baseMapStyles";
 
 interface MapLayerSettings {
   reports: boolean;
@@ -141,31 +142,6 @@ interface Props {
 const DEFAULT_CENTER: [number, number] = [-33.4489, -70.6693];
 const GLOBE_ZOOM_THRESHOLD = 2;
 const RETURN_FROM_GLOBE_ZOOM = GLOBE_ZOOM_THRESHOLD + 1;
-const baseMapSources: Record<
-  BaseMapType,
-  { url: string; attribution: string; maxZoom?: number }
-> = {
-  tactical: {
-    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    attribution: "© OpenStreetMap © CARTO",
-    maxZoom: 20,
-  },
-  streets: {
-    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-    attribution: "© OpenStreetMap contributors",
-    maxZoom: 19,
-  },
-  satellite: {
-    url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-    attribution: "© OpenStreetMap © CARTO",
-    maxZoom: 20,
-  },
-  light: {
-    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-    attribution: "© OpenStreetMap © CARTO",
-    maxZoom: 20,
-  },
-};
 
 const isEventVisible = (event: CrisisEvent, layers: MapLayerSettings) => {
   if (event.category?.toLowerCase() === "missing_person" && !layers.missingPersons) {
@@ -334,6 +310,7 @@ export default function OperationalMap({
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const initialBaseMapTypeRef = useRef(baseMapType);
   const baseTileLayerRef = useRef<import("leaflet").TileLayer | null>(null);
+  const baseLabelsOverlayRef = useRef<import("leaflet").TileLayer | null>(null);
   const eventLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
   const demoEventLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
   const externalEventLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
@@ -556,11 +533,19 @@ export default function OperationalMap({
           worldCopyJump: true,
         });
 
-        const tileSource = baseMapSources[initialBaseMapTypeRef.current];
-        baseTileLayerRef.current = L.tileLayer(tileSource.url, {
-          attribution: tileSource.attribution,
-          maxZoom: tileSource.maxZoom,
+        const style = getBaseMapStyle(initialBaseMapTypeRef.current);
+        baseTileLayerRef.current = L.tileLayer(style.base.url, {
+          attribution: style.base.attribution,
+          maxZoom: style.base.maxZoom,
         }).addTo(map);
+        if (style.labelsOverlay) {
+          baseLabelsOverlayRef.current = L.tileLayer(style.labelsOverlay.url, {
+            attribution: style.labelsOverlay.attribution,
+            maxZoom: style.labelsOverlay.maxZoom,
+          }).addTo(map);
+        }
+        const tilePane = map.getPane("tilePane");
+        if (tilePane) tilePane.style.filter = style.cssFilter ?? "";
         L.control.zoom({ position: "bottomleft" }).addTo(map);
 
         eventLayerRef.current = L.layerGroup().addTo(map);
@@ -647,6 +632,8 @@ export default function OperationalMap({
       }
       setMapInstance(null);
       setLeafletInstance(null);
+      baseTileLayerRef.current = null;
+      baseLabelsOverlayRef.current = null;
       eventLayerRef.current = null;
       demoEventLayerRef.current = null;
       externalEventLayerRef.current = null;
@@ -1318,13 +1305,25 @@ export default function OperationalMap({
     if (baseTileLayerRef.current) {
       map.removeLayer(baseTileLayerRef.current);
     }
+    if (baseLabelsOverlayRef.current) {
+      map.removeLayer(baseLabelsOverlayRef.current);
+      baseLabelsOverlayRef.current = null;
+    }
 
-    const tileSource = baseMapSources[baseMapType];
-    baseTileLayerRef.current = L.tileLayer(tileSource.url, {
-      attribution: tileSource.attribution,
-      maxZoom: tileSource.maxZoom,
+    const style = getBaseMapStyle(baseMapType);
+    baseTileLayerRef.current = L.tileLayer(style.base.url, {
+      attribution: style.base.attribution,
+      maxZoom: style.base.maxZoom,
     }).addTo(map);
     baseTileLayerRef.current.bringToBack();
+    if (style.labelsOverlay) {
+      baseLabelsOverlayRef.current = L.tileLayer(style.labelsOverlay.url, {
+        attribution: style.labelsOverlay.attribution,
+        maxZoom: style.labelsOverlay.maxZoom,
+      }).addTo(map);
+    }
+    const tilePane = map.getPane("tilePane");
+    if (tilePane) tilePane.style.filter = style.cssFilter ?? "";
   }, [baseMapType, mapReady]);
 
   return (

@@ -406,6 +406,20 @@ html {
   width: 100%;
 }
 
+/*
+ * Leaflet's own stylesheet (leaflet/dist/leaflet.css) sets
+ * `.leaflet-container { background: #ddd; }` and is imported after this file
+ * in layout.tsx, so it wins the cascade on the map container. Any tile not
+ * loaded yet (e.g. right after fitBounds/flyTo jumps to a route's bounds)
+ * renders that light grey/white background instead of ARGUS' dark theme,
+ * which reads as a "white square" behind the route. Two classes beat
+ * Leaflet's one-class selector regardless of import order, so this always
+ * wins without needing !important.
+ */
+.argus-leaflet-map.leaflet-container {
+  background: #0b1220;
+}
+
 .argus-orbit {
   background:
     radial-gradient(circle at 50% 45%, rgba(34, 211, 238, 0.12), transparent 38%),
@@ -428,21 +442,14 @@ html {
     0 28px 80px rgba(0, 0, 0, 0.55);
 }
 
-.argus-map-tactical .argus-leaflet-map .leaflet-tile-pane {
-  filter: brightness(0.82) contrast(1.08) saturate(0.78);
-}
-
-.argus-map-satellite .argus-leaflet-map .leaflet-tile-pane {
-  filter: brightness(0.74) contrast(1.12) saturate(0.82);
-}
-
-.argus-map-streets .argus-leaflet-map .leaflet-tile-pane {
-  filter: brightness(0.88) contrast(1.05) saturate(0.9);
-}
-
-.argus-map-light .argus-leaflet-map .leaflet-tile-pane {
-  filter: grayscale(0.35) brightness(1.08) contrast(0.9) saturate(0.7);
-}
+/*
+ * El tile-pane filter por modo (tactical/streets/light/satellite) ahora se
+ * aplica en JS desde OperationalMap.tsx, leyendo `cssFilter` de
+ * src/lib/map/baseMapStyles.ts. Un unico lugar evita que el filtro y la URL
+ * del tile queden desincronizados (el bug anterior de "satellite" apuntando
+ * a Voyager en vez de imagen satelital real venia de tener estas dos fuentes
+ * de verdad separadas).
+ */
 
 .argus-leaflet-map .leaflet-control-attribution {
   background: rgba(0, 0, 0, 0.55);

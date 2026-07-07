@@ -77,12 +77,32 @@ function parseBoundingBox(value: string | null) {
   return coordinates;
 }
 
+function messageForFirmsStatus(status: number): { message: string; httpStatus: number } {
+  if (status === 401) {
+    return {
+      message: "FIRMS no autorizado: revise NASA_FIRMS_MAP_KEY.",
+      httpStatus: 401,
+    };
+  }
+  if (status === 403 || status === 429) {
+    return { message: "FIRMS bloqueado o límite alcanzado.", httpStatus: 429 };
+  }
+  if (status >= 500) {
+    return { message: "FIRMS temporalmente no disponible.", httpStatus: 502 };
+  }
+  return {
+    message: `NASA FIRMS respondió con estado ${status}.`,
+    httpStatus: 502,
+  };
+}
+
 export async function GET(request: NextRequest) {
   const mapKey = process.env.NASA_FIRMS_MAP_KEY?.trim();
   if (!mapKey) {
     return NextResponse.json(
       {
         disabled: true,
+        error: "FIRMS no configurado.",
         reason: "NASA_FIRMS_MAP_KEY missing",
         sourceId: SOURCE_ID,
         sourceName: getArgusSource(SOURCE_ID)?.name ?? "NASA FIRMS",
@@ -141,13 +161,14 @@ export async function GET(request: NextRequest) {
     });
 
     if (!response.ok) {
+      const { message, httpStatus } = messageForFirmsStatus(response.status);
       return NextResponse.json(
         {
-          error: `NASA FIRMS respondió con estado ${response.status}.`,
+          error: message,
           sourceId: SOURCE_ID,
           cached: false,
         },
-        { status: 502 }
+        { status: httpStatus }
       );
     }
 

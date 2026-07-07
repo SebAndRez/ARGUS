@@ -129,7 +129,12 @@ export async function fetchFirmsActiveFires(params: FirmsFetchParams = {}) {
   const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
     const response = await fetch(url, { cache: "no-store", signal: controller.signal });
-    if (!response.ok) throw new Error(`NASA FIRMS responded ${response.status}`);
+    if (!response.ok) {
+      if (response.status === 401) throw new Error("FIRMS no autorizado: revise NASA_FIRMS_MAP_KEY.");
+      if (response.status === 403 || response.status === 429) throw new Error("FIRMS bloqueado o límite alcanzado.");
+      if (response.status >= 500) throw new Error("FIRMS temporalmente no disponible.");
+      throw new Error(`NASA FIRMS respondió con estado ${response.status}.`);
+    }
     const csv = await response.text();
     const incidents = parseFirmsCsv(csv)
       .map(normalizeFirmsFireRecord)

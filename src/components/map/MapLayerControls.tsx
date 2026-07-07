@@ -198,7 +198,7 @@ const baseMapOptions: Array<{
   { type: "tactical", label: "Táctico" },
   { type: "streets", label: "Calles" },
   { type: "light", label: "Claro" },
-  { type: "satellite", label: "Satélite", disabled: true },
+  { type: "satellite", label: "Satélite híbrido" },
 ];
 
 export default function MapLayerControls<TLayers extends MapLayerState>({
