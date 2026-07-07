@@ -1,5 +1,28 @@
 # ARGUS Public Changelog
 
+## 2026-07-07 - pending-2bf3784 - ARGUS V.1.0.1.1
+
+**Archivos modificados:** 39
+
+**Resumen publico:**  
+Se actualizaron 39 archivos relacionados con Dependencias internas y Base de datos interna.
+
+**Cambios principales:**
+- Se ajustaron vistas y elementos de interfaz.
+- Se actualizaron dependencias o scripts internos.
+- Se actualizaron servicios internos usados por ARGUS.
+
+**Modulos afectados:**
+- Dependencias internas
+- Base de datos interna
+- Perfil de usuario
+- Actualizaciones publicas
+
+**En simple:**  
+Esta actualizacion permite que ARGUS publique un registro claro de cambios para que los usuarios entiendan que se modifico.
+
+---
+
 ## 2026-07-06 - pending-82a4335 - prueba
 
 **Archivos modificados:** 5

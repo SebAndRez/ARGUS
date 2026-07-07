@@ -1,5 +1,25 @@
 [
   {
+    "changeId": "2bf37848e7dc",
+    "date": "2026-07-07",
+    "commit": "pending-2bf3784",
+    "title": "ARGUS V.1.0.1.1",
+    "fileCount": 39,
+    "summary": "Se actualizaron 39 archivos relacionados con Dependencias internas y Base de datos interna.",
+    "changes": [
+      "Se ajustaron vistas y elementos de interfaz.",
+      "Se actualizaron dependencias o scripts internos.",
+      "Se actualizaron servicios internos usados por ARGUS."
+    ],
+    "affectedModules": [
+      "Dependencias internas",
+      "Base de datos interna",
+      "Perfil de usuario",
+      "Actualizaciones publicas"
+    ],
+    "simpleExplanation": "Esta actualizacion permite que ARGUS publique un registro claro de cambios para que los usuarios entiendan que se modifico."
+  },
+  {
     "changeId": "82a4335430c3",
     "date": "2026-07-06",
     "commit": "pending-82a4335",
