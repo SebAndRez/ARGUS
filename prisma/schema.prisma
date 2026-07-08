@@ -542,3 +542,42 @@ model KnowledgeAdminReview {
   @@index([targetType, targetId])
   @@index([status])
 }
+
+/// Infraestructura critica persistente (hospitales, policia, gobierno, transporte
+/// masivo, justicia, refugios, logistica) reutilizable por AURA/FENIX/ARCA/NEXUS/
+/// ATLAS/VIGIA/HERMES/ORACULO. Distinto de ExternalEvent (eventos/incidentes) y de
+/// KnowledgeEvidence (snapshots de contexto ligados a un incidente): esta tabla
+/// guarda un punto por entidad fisica, deduplicado por fuente+id externo, para
+/// poder consultarse por zona sin depender de un incidente activo.
+model CriticalPoi {
+  id                 String    @id @default(cuid())
+  externalId         String?
+  source             String    @default("osm")
+  name               String
+  category           String
+  priority           String
+  latitude           Float
+  longitude          Float
+  countryCode        String?
+  adminLevel1        String?
+  adminLevel2        String?
+  city               String?
+  address            String?
+  status             String    @default("active")
+  confidence         Int       @default(70)
+  lastSeenAt         DateTime?
+  lastVerifiedAt     DateTime?
+  tagsJson           Json?
+  sourceUrl          String?
+  isPersistent       Boolean   @default(true)
+  isVisibleByDefault Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([source, externalId])
+  @@index([category])
+  @@index([priority])
+  @@index([latitude, longitude])
+  @@index([countryCode])
+  @@index([status])
+}

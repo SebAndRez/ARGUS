@@ -16,6 +16,9 @@ import LiveCameraList from "@/components/live-cameras/LiveCameraList";
 import LiveCameraPanel from "@/components/live-cameras/LiveCameraPanel";
 import ConflictLegend from "@/components/conflict/ConflictLegend";
 import ConflictZonePanel from "@/components/conflict/ConflictZonePanel";
+import ArgusEventDetailPanel from "@/components/map/ArgusEventDetailPanel";
+import type { ArgusEvent } from "@/types/argusEvent";
+import { demoArgusEvents } from "@/data/demoArgusEvents";
 import ArgusModuleLauncher from "@/components/modules/ArgusModuleLauncher";
 import AuraMedicalButton from "@/components/medical/AuraMedicalButton";
 import AuraMedicalPanel from "@/components/medical/AuraMedicalPanel";
@@ -24,6 +27,9 @@ import NavigationHud from "@/components/map/NavigationHud";
 import MapEntityCard from "@/components/map/MapEntityCard";
 import PoiInfoCard from "@/components/map/PoiInfoCard";
 import type { PoiEntity } from "@/lib/pois/poiTypes";
+import CriticalPoiInfoCard from "@/components/map/CriticalPoiInfoCard";
+import type { CriticalPoi } from "@/lib/criticalPoi/criticalPoiTypes";
+import { getCriticalPoiCategory } from "@/lib/criticalPoi/criticalPoiCategoryRegistry";
 import RouteAlternativesCards from "@/components/routing/RouteAlternativesCards";
 import TransportModeSelector from "@/components/routing/TransportModeSelector";
 import { useNavigationSession } from "@/hooks/useNavigationSession";
@@ -33,7 +39,13 @@ import ArcaShelterDetailPanel from "@/modules/arca/components/ArcaShelterDetailP
 import type { ArcaShelter } from "@/modules/arca/types";
 import { arcaShelterToMapEntity, simpleMedicalPointToMapEntity } from "@/lib/pois/poiService";
 import { crisisEventToMapEntity, conflictZoneToMapEntity } from "@/lib/incidents/incidentLayerService";
-import { mapEntityToPlaceResult, poiToPlaceResult, resolveDefaultTransportMode } from "@/lib/navigation/navigationService";
+import {
+  criticalPoiToPlaceResult,
+  mapEntityToPlaceResult,
+  poiToPlaceResult,
+  resolveCriticalPoiTransportMode,
+  resolveDefaultTransportMode,
+} from "@/lib/navigation/navigationService";
 import type { MapEntity } from "@/types/mapEntity";
 import type { RouteHazardPoint } from "@/lib/routing/routeSafety";
 import FloatingSOSButton from "@/components/app/FloatingSOSButton";
@@ -301,6 +313,7 @@ export default function AppPage() {
     useState<ArgusNormalizedEvent | null>(null);
   const [selectedConflictZone, setSelectedConflictZone] =
     useState<ConflictZone | null>(null);
+  const [selectedArgusEvent, setSelectedArgusEvent] = useState<ArgusEvent | null>(null);
   const [events, setEvents] = useState<CrisisEvent[]>(initialEventState);
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
   const [demoEvents, setDemoEvents] = useState<CrisisEvent[]>(() => [...demoCrisisEvents]);
@@ -424,6 +437,7 @@ export default function AppPage() {
   const [isNavSearchOpen, setIsNavSearchOpen] = useState(false);
   const [selectedMapEntity, setSelectedMapEntity] = useState<MapEntity | null>(null);
   const [selectedPoi, setSelectedPoi] = useState<PoiEntity | null>(null);
+  const [selectedCriticalPoi, setSelectedCriticalPoi] = useState<CriticalPoi | null>(null);
   const [avoidedHazards, setAvoidedHazards] = useState<RouteHazardPoint[]>([]);
   const [selectedShelterDetail, setSelectedShelterDetail] = useState<ArcaShelter | null>(null);
   const location = useUserLocation();
@@ -601,6 +615,7 @@ export default function AppPage() {
     setSelectedRiskProjection(null);
     setSelectedExternalEvent(null);
     setSelectedConflictZone(null);
+    setSelectedArgusEvent(null);
     setSelectedEvent(event);
   }, []);
 
@@ -610,6 +625,7 @@ export default function AppPage() {
     setSelectedRiskProjection(null);
     setSelectedExternalEvent(null);
     setSelectedConflictZone(null);
+    setSelectedArgusEvent(null);
     setSelectedVisualSource(source);
   }, []);
 
@@ -619,6 +635,7 @@ export default function AppPage() {
     setSelectedRiskProjection(null);
     setSelectedExternalEvent(null);
     setSelectedConflictZone(null);
+    setSelectedArgusEvent(null);
     setSelectedLiveCamera(camera);
   }, []);
 
@@ -628,6 +645,7 @@ export default function AppPage() {
     setSelectedLiveCamera(null);
     setSelectedExternalEvent(null);
     setSelectedConflictZone(null);
+    setSelectedArgusEvent(null);
     setSelectedRiskProjection(projection);
   }, []);
 
@@ -637,7 +655,18 @@ export default function AppPage() {
     setSelectedLiveCamera(null);
     setSelectedRiskProjection(null);
     setSelectedConflictZone(null);
+    setSelectedArgusEvent(null);
     setSelectedExternalEvent(event);
+  }, []);
+
+  const selectArgusEvent = useCallback((event: ArgusEvent) => {
+    setSelectedEvent(null);
+    setSelectedVisualSource(null);
+    setSelectedLiveCamera(null);
+    setSelectedRiskProjection(null);
+    setSelectedExternalEvent(null);
+    setSelectedConflictZone(null);
+    setSelectedArgusEvent(event);
   }, []);
 
   // Tocar un punto del mapa (hospital, refugio, incidente, zona de riesgo)
@@ -677,6 +706,7 @@ export default function AppPage() {
   // ficha de MapEntity si estaba abierta (y viceversa, ver el render mas abajo).
   const selectPoiFromMap = useCallback((poi: PoiEntity) => {
     setSelectedMapEntity(null);
+    setSelectedCriticalPoi(null);
     setSelectedPoi(poi);
   }, []);
 
@@ -684,7 +714,10 @@ export default function AppPage() {
   // incidentes, zonas de riesgo...) debe cerrar la ficha de POI si estaba
   // abierta, sin tener que tocar cada callback de seleccion por separado.
   useEffect(() => {
-    if (selectedMapEntity) setSelectedPoi(null);
+    if (selectedMapEntity) {
+      setSelectedPoi(null);
+      setSelectedCriticalPoi(null);
+    }
   }, [selectedMapEntity]);
 
   const closePoiCard = useCallback(() => setSelectedPoi(null), []);
@@ -694,6 +727,46 @@ export default function AppPage() {
     setNavMode("vehicle");
     setSelectedPoi(null);
   }, []);
+
+  // Capa de infraestructura critica persistente (P0-P3): ver CriticalPoiLayer.tsx.
+  // Misma regla de "una ficha a la vez" que la capa de POIs urbanos.
+  const selectCriticalPoiFromMap = useCallback((poi: CriticalPoi) => {
+    setSelectedMapEntity(null);
+    setSelectedPoi(null);
+    setSelectedCriticalPoi(poi);
+  }, []);
+
+  const closeCriticalPoiCard = useCallback(() => setSelectedCriticalPoi(null), []);
+
+  const handleCriticalPoiRoute = useCallback((poi: CriticalPoi) => {
+    setNavDestination(criticalPoiToPlaceResult(poi));
+    setNavMode(resolveCriticalPoiTransportMode(poi));
+    setSelectedCriticalPoi(null);
+  }, []);
+
+  const handleCriticalPoiViewDetail = useCallback((poi: CriticalPoi) => {
+    if (poi.sourceUrl) window.open(poi.sourceUrl, "_blank", "noopener,noreferrer");
+  }, []);
+
+  const handleCriticalPoiReportUpdate = useCallback(() => {
+    setSelectedCriticalPoi(null);
+    setIsReportOpen(true);
+  }, []);
+
+  const handleUseCriticalPoiInModule = useCallback(
+    (poi: CriticalPoi) => {
+      const primaryModule = getCriticalPoiCategory(poi.category)?.moduleUse[0];
+      setSelectedCriticalPoi(null);
+      if (!primaryModule) return;
+      if (primaryModule === "AURA") {
+        collapseSecondaryPanels();
+        setIsAuraOpen(true);
+        return;
+      }
+      router.push(`/modules/${primaryModule.toLowerCase()}`);
+    },
+    [collapseSecondaryPanels, router]
+  );
 
   const handleOpenAuraFromEntity = useCallback(
     (entity: MapEntity) => {
@@ -2119,6 +2192,8 @@ export default function AppPage() {
         onShelterSelect={selectShelterFromMap}
         selectedPoiId={selectedPoi?.id}
         onPoiSelect={selectPoiFromMap}
+        selectedCriticalPoiId={selectedCriticalPoi?.id}
+        onCriticalPoiSelect={selectCriticalPoiFromMap}
         auraMedicalRoute={auraMedicalRoute}
         navigation={
           navDestination
@@ -2141,6 +2216,9 @@ export default function AppPage() {
         newsEvidence={curatedNewsEvidence}
         selectedConflictZoneId={selectedConflictZone?.id}
         onConflictZoneSelect={selectConflictZone}
+        argusEvents={demoArgusEvents}
+        selectedArgusEventId={selectedArgusEvent?.id}
+        onArgusEventSelect={selectArgusEvent}
         baseMapType={baseMapType}
         centerRequestKey={centerRequestKey}
         focusTarget={notificationFocusTarget}
@@ -2733,12 +2811,24 @@ export default function AppPage() {
         />
       )}
 
-      {selectedPoi && !selectedMapEntity && (
+      {selectedPoi && !selectedMapEntity && !selectedCriticalPoi && (
         <PoiInfoCard
           poi={selectedPoi}
           userLocation={{ lat: location.latitude, lng: location.longitude }}
           onClose={closePoiCard}
           onRoute={handlePoiRoute}
+        />
+      )}
+
+      {selectedCriticalPoi && !selectedMapEntity && (
+        <CriticalPoiInfoCard
+          poi={selectedCriticalPoi}
+          userLocation={{ lat: location.latitude, lng: location.longitude }}
+          onClose={closeCriticalPoiCard}
+          onRoute={handleCriticalPoiRoute}
+          onViewDetail={handleCriticalPoiViewDetail}
+          onReportUpdate={handleCriticalPoiReportUpdate}
+          onUseInModule={handleUseCriticalPoiInModule}
         />
       )}
 
@@ -2821,6 +2911,11 @@ export default function AppPage() {
         events={curatedConflictEvents}
         newsEvidence={curatedNewsEvidence}
         onClose={() => setSelectedConflictZone(null)}
+      />
+
+      <ArgusEventDetailPanel
+        event={selectedArgusEvent}
+        onClose={() => setSelectedArgusEvent(null)}
       />
 
       <ReportModal

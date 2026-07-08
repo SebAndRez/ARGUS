@@ -2,6 +2,7 @@ import type { GeoPoint, RoutingMode } from "@/lib/routing/routingService";
 import type { PlaceResult, PlaceType } from "@/lib/geocoding/geocodingService";
 import type { MapEntity, MapEntityType } from "@/types/mapEntity";
 import type { PoiCategory, PoiEntity } from "@/lib/pois/poiTypes";
+import type { CriticalPoi, CriticalPoiCategory } from "@/lib/criticalPoi/criticalPoiTypes";
 
 /**
  * Servicio de navegacion central: construye el link "Abrir en Google/Apple
@@ -68,4 +69,29 @@ export function poiToPlaceResult(poi: PoiEntity): PlaceResult {
     provider: `argus_poi_${poi.source}`,
     confidence: poi.source === "osm" ? 75 : 60,
   };
+}
+
+const criticalPoiCategoryToPlaceType: Partial<Record<CriticalPoiCategory, PlaceType>> = {
+  hospital: "hospital",
+  clinic: "clinic",
+  emergency_care: "clinic",
+  shelter: "shelter",
+};
+
+/** Puente `CriticalPoi -> PlaceResult`, mismo pipeline de navegacion central. Prioridad P0/P1 -> vehiculo de emergencia por defecto. */
+export function criticalPoiToPlaceResult(poi: CriticalPoi): PlaceResult {
+  return {
+    id: poi.id,
+    label: poi.name,
+    address: poi.address,
+    lat: poi.lat,
+    lng: poi.lng,
+    type: criticalPoiCategoryToPlaceType[poi.category] ?? "custom",
+    provider: `argus_critical_poi_${poi.source}`,
+    confidence: poi.confidence,
+  };
+}
+
+export function resolveCriticalPoiTransportMode(poi: CriticalPoi): RoutingMode {
+  return poi.priority === "P0" || poi.priority === "P1" ? "emergency_vehicle" : "vehicle";
 }

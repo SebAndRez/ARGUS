@@ -21,6 +21,11 @@ export const ALWAYS_ON_REALTIME_LAYERS = [
   "conflictEvents",
   "crisisNews", // news evidence
   "confirmedDisasters",
+  "argusOfficialAlerts", // ArgusEvent: OFFICIAL_ALERT / RISK_ZONE from direct official/technical sources
+  "argusSevereWeather", // ArgusEvent: SEVERE_WEATHER / HEAVY_RAIN / FLOOD
+  "argusLandslideFlood", // ArgusEvent: LANDSLIDE / FLOOD risk & incidents
+  "argusRoadDisruption", // ArgusEvent: ROAD_CLOSURE
+  "argusNewsEvidence", // ArgusEvent: NEWS_REPORTED_INCIDENT / news-attributed events
 ] as const;
 
 /**
@@ -70,6 +75,7 @@ export const OPTIONAL_CONTEXT_LAYERS = [
   "medicalPoints",
   "shelters",
   "urbanPois",
+  "criticalPois",
   "weatherRisk",
   "terrestrialRoutes",
   "airRoutes",
@@ -129,6 +135,11 @@ export const DEFAULT_VISIBLE_LAYERS: Record<ArgusLayerId, boolean> = {
   conflictEvents: true,
   crisisNews: true,
   confirmedDisasters: true,
+  argusOfficialAlerts: true,
+  argusSevereWeather: true,
+  argusLandslideFlood: true,
+  argusRoadDisruption: true,
+  argusNewsEvidence: true,
   // Sensor layers — off until the user grants permission.
   quakeSense: false,
   safetyChecks: false,
@@ -165,6 +176,7 @@ export const DEFAULT_VISIBLE_LAYERS: Record<ArgusLayerId, boolean> = {
   medicalPoints: false,
   shelters: false,
   urbanPois: true,
+  criticalPois: true,
   weatherRisk: false,
   terrestrialRoutes: false,
   airRoutes: false,

@@ -61,6 +61,7 @@ export interface MapLayerState {
   medicalPoints?: boolean;
   shelters?: boolean;
   urbanPois?: boolean;
+  criticalPois?: boolean;
   quakeSense?: boolean;
   safetyChecks?: boolean;
   weatherRisk?: boolean;
@@ -72,6 +73,11 @@ export interface MapLayerState {
   territorialControl?: boolean;
   crisisNews?: boolean;
   confirmedDisasters?: boolean;
+  argusOfficialAlerts?: boolean;
+  argusSevereWeather?: boolean;
+  argusLandslideFlood?: boolean;
+  argusRoadDisruption?: boolean;
+  argusNewsEvidence?: boolean;
 }
 
 export type LayerDisplayStatus = "idle" | "loading" | "ready" | "error";
@@ -179,6 +185,7 @@ const labels: Record<keyof MapLayerState, string> = {
   medicalPoints: "Puntos médicos",
   shelters: "Refugios",
   urbanPois: "POIs urbanos (tiendas, paraderos...)",
+  criticalPois: "Infraestructura crítica (hospitales, policía, gobierno...)",
   quakeSense: "Sacudida ciudadana",
   safetyChecks: "Safety Checks",
   weatherRisk: "Clima y riesgo",
@@ -190,6 +197,11 @@ const labels: Record<keyof MapLayerState, string> = {
   territorialControl: "CONTROL",
   crisisNews: "NOTICIAS",
   confirmedDisasters: "DESASTRES CONFIRMADOS",
+  argusOfficialAlerts: "Alertas oficiales",
+  argusSevereWeather: "Riesgo meteorológico",
+  argusLandslideFlood: "Remoción / inundación",
+  argusRoadDisruption: "Cortes de ruta",
+  argusNewsEvidence: "Noticias OSINT",
 };
 
 const baseMapOptions: Array<{

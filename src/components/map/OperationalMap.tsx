@@ -8,6 +8,7 @@ import type { ArgusLiveCamera } from "@/types/liveCamera";
 import type { RiskProjection } from "@/types/weatherRisk";
 import type { ArgusRoute, BaseMapType, RouteType } from "@/types/map";
 import type { ArgusNormalizedEvent } from "@/types/ingestion";
+import type { ArgusEvent } from "@/types/argusEvent";
 import type { MedicalAidRequest, MedicalPoint } from "@/types/medical";
 import type { MapEntity } from "@/types/mapEntity";
 import type {
@@ -22,11 +23,14 @@ import { clusterEventsByGrid } from "@/lib/simpleEventClustering";
 import GlobeView from "@/components/map/GlobeView";
 import MapToGlobeTransition from "@/components/map/MapToGlobeTransition";
 import RiskProjectionOverlay from "@/components/map/RiskProjectionOverlay";
+import ArgusEventLayer from "@/components/map/ArgusEventLayer";
 import RouteLayerOverlay from "@/components/map/RouteLayerOverlay";
 import AuraMedicalRouteOverlay from "@/components/map/AuraMedicalRouteOverlay";
 import NavigationRouteOverlay from "@/components/map/NavigationRouteOverlay";
 import PoiLayer from "@/components/map/PoiLayer";
 import type { PoiEntity } from "@/lib/pois/poiTypes";
+import CriticalPoiLayer from "@/components/map/CriticalPoiLayer";
+import type { CriticalPoi } from "@/lib/criticalPoi/criticalPoiTypes";
 import type { GeoPoint, RouteResult } from "@/lib/routing/routingService";
 import {
   createArgusDivIcon,
@@ -77,6 +81,7 @@ interface MapLayerSettings {
   medicalPoints?: boolean;
   shelters?: boolean;
   urbanPois?: boolean;
+  criticalPois?: boolean;
   quakeSense?: boolean;
   safetyChecks?: boolean;
   weatherRisk?: boolean;
@@ -88,6 +93,11 @@ interface MapLayerSettings {
   territorialControl?: boolean;
   crisisNews?: boolean;
   confirmedDisasters?: boolean;
+  argusOfficialAlerts?: boolean;
+  argusSevereWeather?: boolean;
+  argusLandslideFlood?: boolean;
+  argusRoadDisruption?: boolean;
+  argusNewsEvidence?: boolean;
 }
 
 interface Props {
@@ -118,6 +128,8 @@ interface Props {
   onShelterSelect?: (entity: MapEntity) => void;
   selectedPoiId?: string | null;
   onPoiSelect?: (poi: PoiEntity) => void;
+  selectedCriticalPoiId?: string | null;
+  onCriticalPoiSelect?: (poi: CriticalPoi) => void;
   auraMedicalRoute?: RouteResult | null;
   navigation?: {
     routes: RouteResult[];
@@ -136,6 +148,9 @@ interface Props {
   newsEvidence?: NewsEvidence[];
   selectedConflictZoneId?: string;
   onConflictZoneSelect?: (zone: ConflictZone) => void;
+  argusEvents?: ArgusEvent[];
+  selectedArgusEventId?: string | null;
+  onArgusEventSelect?: (event: ArgusEvent) => void;
   baseMapType?: BaseMapType;
   centerOnSelected?: boolean;
   centerRequestKey?: number;
@@ -292,6 +307,8 @@ export default function OperationalMap({
   onShelterSelect,
   selectedPoiId = null,
   onPoiSelect,
+  selectedCriticalPoiId = null,
+  onCriticalPoiSelect,
   auraMedicalRoute = null,
   navigation = null,
   medicalAidRequest = null,
@@ -305,6 +322,9 @@ export default function OperationalMap({
   newsEvidence = [],
   selectedConflictZoneId,
   onConflictZoneSelect,
+  argusEvents = [],
+  selectedArgusEventId = null,
+  onArgusEventSelect,
   baseMapType = "tactical",
   centerOnSelected = true,
   centerRequestKey = 0,
@@ -1357,10 +1377,31 @@ export default function OperationalMap({
               map={mapReady ? mapInstance : null}
               leaflet={mapReady ? leafletInstance : null}
             />
+            <ArgusEventLayer
+              events={argusEvents}
+              visibility={{
+                argusOfficialAlerts: Boolean(layerSettings.argusOfficialAlerts),
+                argusSevereWeather: Boolean(layerSettings.argusSevereWeather),
+                argusLandslideFlood: Boolean(layerSettings.argusLandslideFlood),
+                argusRoadDisruption: Boolean(layerSettings.argusRoadDisruption),
+                argusNewsEvidence: Boolean(layerSettings.argusNewsEvidence),
+              }}
+              selectedEventId={selectedArgusEventId}
+              onEventSelect={onArgusEventSelect}
+              map={mapReady ? mapInstance : null}
+              leaflet={mapReady ? leafletInstance : null}
+            />
             <PoiLayer
               visible={Boolean(layerSettings.urbanPois)}
               selectedPoiId={selectedPoiId}
               onPoiSelect={onPoiSelect}
+              map={mapReady ? mapInstance : null}
+              leaflet={mapReady ? leafletInstance : null}
+            />
+            <CriticalPoiLayer
+              visible={layerSettings.criticalPois !== false}
+              selectedPoiId={selectedCriticalPoiId}
+              onPoiSelect={onCriticalPoiSelect}
               map={mapReady ? mapInstance : null}
               leaflet={mapReady ? leafletInstance : null}
             />
