@@ -209,10 +209,10 @@ const baseMapOptions: Array<{
   label: string;
   disabled?: boolean;
 }> = [
-  { type: "tactical", label: "Táctico" },
   { type: "streets", label: "Calles" },
-  { type: "light", label: "Claro" },
+  { type: "tactical", label: "Táctico" },
   { type: "satellite", label: "Satélite híbrido" },
+  { type: "terrain", label: "Terreno" },
 ];
 
 export default function MapLayerControls<TLayers extends MapLayerState>({

@@ -5,12 +5,13 @@ import type { BaseMapType } from "@/types/map";
  * mapProvider.ts). Reemplaza al objeto `baseMapSources` que vivia inline en
  * OperationalMap.tsx. El objetivo es que, al hacer zoom urbano, el mapa
  * muestre calles, tiendas, paraderos, colegios y demas POIs reales -tal como
- * pide el modo "streets"/"tactical"-, y que el modo satelite sea imagen real
- * + etiquetas (hibrido), no el mismo tile que "claro" con otro nombre (bug
- * anterior: "satellite" apuntaba a CARTO Voyager, no a una imagen satelital).
+ * pide el modo "streets"-, y que el modo satelite sea imagen real + etiquetas
+ * (hibrido), no el mismo tile que "claro" con otro nombre (bug anterior:
+ * "satellite" apuntaba a CARTO Voyager, no a una imagen satelital).
  *
- * El tema oscuro ("tactical") es un tinte CSS aplicado sobre un basemap con
- * POIs (Voyager), no un basemap oscuro que borre la informacion urbana.
+ * "tactical" es un basemap oscuro real (CARTO Dark Matter), no un tinte CSS
+ * sobre un basemap claro: el objetivo es un mapa negro operacional, no un
+ * filtro cosmetico.
  */
 
 export interface BaseMapTileSource {
@@ -34,6 +35,8 @@ export interface BaseMapStyleDefinition {
 const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
 const CARTO_ATTRIBUTION = "© OpenStreetMap © CARTO";
 const ESRI_ATTRIBUTION = "© Esri, Maxar, Earthstar Geographics";
+const OPENTOPOMAP_ATTRIBUTION =
+  "© OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap (CC-BY-SA)";
 
 export const baseMapStyles: Record<BaseMapType, BaseMapStyleDefinition> = {
   streets: {
@@ -51,21 +54,9 @@ export const baseMapStyles: Record<BaseMapType, BaseMapStyleDefinition> = {
     id: "tactical",
     label: "Táctico",
     description:
-      "Vista operacional ARGUS: mismo basemap rico en POIs (CARTO Voyager) que 'Calles', con un tinte oscuro sutil para uso nocturno/HUD. El tinte no reemplaza el basemap ni oculta calles, comercios o etiquetas.",
+      "Mapa operacional negro real (CARTO Dark Matter) para uso nocturno/HUD: no es un filtro sobre un basemap claro, es un basemap oscuro con calles y POIs renderizados en tonos oscuros.",
     base: {
-      url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-      attribution: CARTO_ATTRIBUTION,
-      maxZoom: 20,
-    },
-    cssFilter: "brightness(0.94) contrast(1.05) saturate(0.92)",
-  },
-  light: {
-    id: "light",
-    label: "Claro",
-    description:
-      "Fondo claro minimalista (CARTO Positron) para priorizar overlays de datos ARGUS por sobre el detalle urbano.",
-    base: {
-      url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+      url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
       attribution: CARTO_ATTRIBUTION,
       maxZoom: 20,
     },
@@ -84,6 +75,17 @@ export const baseMapStyles: Record<BaseMapType, BaseMapStyleDefinition> = {
       url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png",
       attribution: CARTO_ATTRIBUTION,
       maxZoom: 20,
+    },
+  },
+  terrain: {
+    id: "terrain",
+    label: "Terreno",
+    description:
+      "Relieve y geografia fisica (OpenTopoMap) con curvas de nivel, caminos y contexto territorial. Util para evacuaciones, rutas rurales/montaña e incidentes de incendio o inundacion.",
+    base: {
+      url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+      attribution: OPENTOPOMAP_ATTRIBUTION,
+      maxZoom: 17,
     },
   },
 };

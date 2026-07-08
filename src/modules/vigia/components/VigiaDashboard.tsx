@@ -38,7 +38,7 @@ const integrationTargets = [
 export default function VigiaDashboard() {
   const { user: sessionUser, loading: sessionLoading } = useSession();
   const location = useUserLocation();
-  const [baseMapType] = useState<BaseMapType>("tactical");
+  const [baseMapType] = useState<BaseMapType>("streets");
 
   const [apiReports, setApiReports] = useState<VigiaReport[]>([]);
   const [apiLoaded, setApiLoaded] = useState(false);

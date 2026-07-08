@@ -325,7 +325,7 @@ export default function AppPage() {
   useEffect(() => {
     persistLayerState(layerSettings);
   }, [layerSettings]);
-  const [baseMapType, setBaseMapType] = useState<BaseMapType>("tactical");
+  const [baseMapType, setBaseMapType] = useState<BaseMapType>("streets");
   const [demoSeverityFilter, setDemoSeverityFilter] =
     useState<DemoSeverityFilter>("ALL");
   const [demoTypeFilter, setDemoTypeFilter] = useState<DemoTypeFilter>("ALL");

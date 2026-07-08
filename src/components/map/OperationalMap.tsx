@@ -333,7 +333,7 @@ export default function OperationalMap({
   argusEvents = [],
   selectedArgusEventId = null,
   onArgusEventSelect,
-  baseMapType = "tactical",
+  baseMapType = "streets",
   centerOnSelected = true,
   centerRequestKey = 0,
   focusTarget = null,

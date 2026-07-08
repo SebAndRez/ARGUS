@@ -1,5 +1,28 @@
 # ARGUS Public Changelog
 
+## 2026-07-08 - pending-9dad468 - ARGUS V.1.0.1
+
+**Archivos modificados:** 9
+
+**Resumen publico:**  
+Se actualizaron 9 archivos relacionados con Eventos y fuentes externas y Mapa operativo.
+
+**Cambios principales:**
+- Se actualizaron componentes del mapa operativo.
+- Se actualizaron eventos o fuentes externas.
+- Se ajustaron vistas y elementos de interfaz.
+- Se actualizaron servicios internos usados por ARGUS.
+
+**Modulos afectados:**
+- Eventos y fuentes externas
+- Mapa operativo
+- Capas del mapa
+
+**En simple:**  
+Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada.
+
+---
+
 ## 2026-07-08 - pending-3023c37 - ARGUS V.1.0.1.9
 
 **Archivos modificados:** 10

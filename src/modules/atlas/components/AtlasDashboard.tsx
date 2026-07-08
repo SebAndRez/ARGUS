@@ -116,7 +116,7 @@ export default function AtlasDashboard() {
   const [selectedEvent, setSelectedEvent] = useState<CrisisEvent | null>(null);
   const [selectedVisualSource, setSelectedVisualSource] = useState<VisualSource | null>(null);
   const [layerSettings, setLayerSettings] = useState(initialLayers);
-  const [baseMapType, setBaseMapType] = useState<BaseMapType>("tactical");
+  const [baseMapType, setBaseMapType] = useState<BaseMapType>("streets");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [sanctionTarget, setSanctionTarget] = useState<string>("");
   const [sanctionType, setSanctionType] = useState<(typeof SANCTION_TYPES)[number]>("WARNING");

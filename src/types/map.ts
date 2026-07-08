@@ -1,4 +1,4 @@
-export type BaseMapType = "tactical" | "streets" | "satellite" | "light";
+export type BaseMapType = "streets" | "tactical" | "satellite" | "terrain";
 export type RouteType = "terrestrial" | "air" | "maritime";
 
 export interface ArgusRoute {
