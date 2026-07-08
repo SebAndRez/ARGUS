@@ -20,6 +20,7 @@ import type { NewsEvidence } from "@/types/newsEvidence";
 import type { SafetyCheck } from "@/types/mobileSafety";
 import type { QuakeSenseCluster } from "@/types/quakesense";
 import { clusterEventsByGrid } from "@/lib/simpleEventClustering";
+import { isVisibleAtZoom, resolveClusterCellSizeDeg } from "@/lib/map/argusZoomVisibility";
 import GlobeView from "@/components/map/GlobeView";
 import MapToGlobeTransition from "@/components/map/MapToGlobeTransition";
 import RiskProjectionOverlay from "@/components/map/RiskProjectionOverlay";
@@ -192,6 +193,13 @@ const getInternalEventKind = (event: CrisisEvent): ArgusMapEventKind => {
   if (event.category?.toLowerCase().includes("fire")) return "fire";
   if (event.category?.toLowerCase().includes("weather")) return "weather";
   return "risk_assessment";
+};
+
+const getEventMarkerLabel = (event: CrisisEvent): string => {
+  if (event.category?.toLowerCase() === "missing_person") return "MP";
+  if (event.type === "SOS") return "SOS";
+  if (event.type === "ALERT") return "A";
+  return "R";
 };
 
 const getExternalEventKind = (event: ArgusNormalizedEvent): ArgusMapEventKind => {
@@ -372,6 +380,8 @@ export default function OperationalMap({
   const [mapInstance, setMapInstance] = useState<import("leaflet").Map | null>(null);
   const [leafletInstance, setLeafletInstance] =
     useState<typeof import("leaflet") | null>(null);
+  /** Drives progressive disclosure/LOD — see `@/lib/map/argusZoomVisibility`. */
+  const [zoom, setZoom] = useState(11.2);
 
   const activateGlobeMode = useCallback(() => {
     const [lat, lng] = lastUsefulMapViewRef.current.center;
@@ -392,9 +402,19 @@ export default function OperationalMap({
     () => (layerSettings.demoReports ? demoEvents : []),
     [demoEvents, layerSettings.demoReports]
   );
+  /**
+   * Priority 1 ("incidentes y alertas activas") stays visible at every zoom
+   * — it's density-clustered instead of hidden, and the grid cell shrinks as
+   * the user zooms in so clusters break apart into individual reports
+   * naturally (see `resolveClusterCellSizeDeg`).
+   */
+  const eventClusters = useMemo(
+    () => clusterEventsByGrid(visibleEvents, resolveClusterCellSizeDeg(zoom)),
+    [visibleEvents, zoom]
+  );
   const demoEventClusters = useMemo(
-    () => clusterEventsByGrid(visibleDemoEvents),
-    [visibleDemoEvents]
+    () => clusterEventsByGrid(visibleDemoEvents, resolveClusterCellSizeDeg(zoom)),
+    [visibleDemoEvents, zoom]
   );
   const visibleVisualSources = useMemo(() => {
     if (!layerSettings.visualSources) return [];
@@ -530,18 +550,25 @@ export default function OperationalMap({
       layerSettings.territorialControl,
     ]
   );
+  // Conflict/risk polygons (`visibleConflictZones`) stay visible at every
+  // zoom — the individual attack-point and news markers below are secondary
+  // detail on top of that zone, gated to zoom >= 10 (`incident_point` /
+  // `news_evidence`) so a war-zone view isn't a wall of pins from far away.
   const visibleConflictEvents = useMemo(
-    () => (layerSettings.conflictEvents ? conflictEvents : []),
-    [conflictEvents, layerSettings.conflictEvents]
+    () =>
+      layerSettings.conflictEvents && isVisibleAtZoom("incident_point", zoom)
+        ? conflictEvents
+        : [],
+    [conflictEvents, layerSettings.conflictEvents, zoom]
   );
   const visibleNewsEvidence = useMemo(
     () =>
-      layerSettings.crisisNews
+      layerSettings.crisisNews && isVisibleAtZoom("news_evidence", zoom)
         ? newsEvidence.filter(
             (item) => typeof item.lat === "number" && typeof item.lng === "number"
           )
         : [],
-    [layerSettings.crisisNews, newsEvidence]
+    [layerSettings.crisisNews, newsEvidence, zoom]
   );
   useEffect(() => {
     let isMounted = true;
@@ -633,6 +660,10 @@ export default function OperationalMap({
         map.on("zoomstart", rememberUsefulView);
         map.on("movestart", rememberUsefulView);
         map.on("zoomend", handleZoomEnd);
+
+        const handleZoomLevelChange = () => setZoom(map.getZoom());
+        handleZoomLevelChange();
+        map.on("zoomend", handleZoomLevelChange);
 
         window.requestAnimationFrame(() => {
           if (isMounted && mapRef.current) mapRef.current.invalidateSize(false);
@@ -868,31 +899,53 @@ export default function OperationalMap({
       });
     });
 
-    visibleEvents.forEach((event) => {
-      const iconDefinition = createArgusDivIcon({
-        kind: getInternalEventKind(event),
-        severity: toMapSeverity(event.severity),
-        confidence: event.type === "REPORT" ? "reported" : "verified",
-        label:
-          event.category?.toLowerCase() === "missing_person"
-            ? "MP"
-            : event.type === "SOS"
-              ? "SOS"
-              : event.type === "ALERT"
-                ? "A"
-                : "R",
-        title: event.title,
-        active: event.status !== "RESOLVED",
-        selected: event.id === selectedEventId,
-      });
-      const markerIcon = L.divIcon(iconDefinition);
+    // Priority 1 ("incidentes y alertas activas") never disappears — grid
+    // clustering (zoom-aware cell size) keeps it clean far away and
+    // naturally breaks apart into individual reports up close instead of a
+    // hard zoom cutoff. See `eventClusters` / `resolveClusterCellSizeDeg`.
+    eventClusters.forEach((cluster) => {
+      const primaryEvent = cluster.events[0];
+      if (!primaryEvent) return;
 
-      const marker = L.marker([event.latitude, event.longitude], {
-        icon: markerIcon,
+      if (cluster.count === 1) {
+        const iconDefinition = createArgusDivIcon({
+          kind: getInternalEventKind(primaryEvent),
+          severity: toMapSeverity(primaryEvent.severity),
+          confidence: primaryEvent.type === "REPORT" ? "reported" : "verified",
+          label: getEventMarkerLabel(primaryEvent),
+          title: primaryEvent.title,
+          active: primaryEvent.status !== "RESOLVED",
+          selected: primaryEvent.id === selectedEventId,
+        });
+        const marker = L.marker([primaryEvent.latitude, primaryEvent.longitude], {
+          icon: L.divIcon(iconDefinition),
+        }).addTo(eventLayer);
+
+        marker.on("click", () => {
+          onEventSelect?.(primaryEvent);
+        });
+        return;
+      }
+
+      const clusterIcon = L.divIcon(createArgusDivIcon({
+        kind: getInternalEventKind(primaryEvent),
+        severity: toMapSeverity(cluster.highestSeverity),
+        confidence: "reported",
+        label: String(cluster.count),
+        title: `${cluster.count} reportes`,
+        active: cluster.highestSeverity === "CRITICAL" || cluster.highestSeverity === "HIGH",
+        selected: cluster.events.some((event) => event.id === selectedEventId),
+      }));
+      const marker = L.marker([cluster.latitude, cluster.longitude], {
+        icon: clusterIcon,
+        title: `${cluster.count} reportes`,
       }).addTo(eventLayer);
-
+      marker.bindTooltip(
+        `${cluster.count} reportes · prioridad ${cluster.priorityScore} · ${cluster.highestSeverity}`,
+        { direction: "top", offset: [0, -18], opacity: 0.95 }
+      );
       marker.on("click", () => {
-        onEventSelect?.(event);
+        onEventSelect?.(primaryEvent);
       });
     });
 
@@ -1210,6 +1263,7 @@ export default function OperationalMap({
   }, [
     mapReady,
     visibleEvents,
+    eventClusters,
     visibleDemoEvents,
     demoEventClusters,
     externalEvents,
@@ -1388,6 +1442,7 @@ export default function OperationalMap({
               }}
               selectedEventId={selectedArgusEventId}
               onEventSelect={onArgusEventSelect}
+              zoom={zoom}
               map={mapReady ? mapInstance : null}
               leaflet={mapReady ? leafletInstance : null}
             />

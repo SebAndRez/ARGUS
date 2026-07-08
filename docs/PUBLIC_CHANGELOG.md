@@ -1,5 +1,29 @@
 # ARGUS Public Changelog
 
+## 2026-07-08 - pending-0246109 - ARGUS V.1.0.1.8
+
+**Archivos modificados:** 34
+
+**Resumen publico:**  
+Se actualizaron 34 archivos relacionados con Base de datos interna y Eventos y fuentes externas.
+
+**Cambios principales:**
+- Se actualizaron componentes del mapa operativo.
+- Se actualizaron eventos o fuentes externas.
+- Se ajustaron vistas y elementos de interfaz.
+- Se actualizaron servicios internos usados por ARGUS.
+
+**Modulos afectados:**
+- Base de datos interna
+- Eventos y fuentes externas
+- Mapa operativo
+- Capas del mapa
+
+**En simple:**  
+Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada.
+
+---
+
 ## 2026-07-07 - pending-b1a6ccd - ARGUS V.1.0.1.7
 
 **Archivos modificados:** 13

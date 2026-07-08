@@ -7,6 +7,7 @@ import {
   type ArgusMapConfidence,
   type ArgusMapEventKind,
 } from "@/lib/mapSymbols/argusMapSymbols";
+import { isVisibleAtZoom, type ArgusMapVisibilityCategory } from "@/lib/map/argusZoomVisibility";
 
 export type ArgusEventLayerId =
   | "argusOfficialAlerts"
@@ -20,8 +21,29 @@ interface Props {
   visibility: Partial<Record<ArgusEventLayerId, boolean>>;
   selectedEventId?: string | null;
   onEventSelect?: (event: ArgusEvent) => void;
+  /** Current map zoom — drives progressive disclosure, see `resolveVisibilityCategory`. */
+  zoom: number;
   map: import("leaflet").Map | null;
   leaflet: typeof import("leaflet") | null;
+}
+
+/**
+ * Polygons/region references (risk zones) and `OFFICIAL_ALERT` markers are
+ * priority-1 ("alertas oficiales") — always visible. A specific incident
+ * point (landslide, road closure, ...) or a news/OSINT marker is secondary
+ * detail on top of that zone, gated to zoom >= 10 so it doesn't clutter a
+ * far-away view — same ladder as the rest of the map, see
+ * `@/lib/map/argusZoomVisibility`.
+ */
+function resolveVisibilityCategory(event: ArgusEvent): ArgusMapVisibilityCategory {
+  if (event.geometry.type === "polygon" || event.geometry.type === "region_reference") {
+    return "risk_zone";
+  }
+  if (event.eventType === "OFFICIAL_ALERT") return "critical_alert";
+  if (event.eventType === "NEWS_REPORTED_INCIDENT" || event.eventType === "CITIZEN_REPORT") {
+    return "news_evidence";
+  }
+  return "incident_point";
 }
 
 /**
@@ -116,6 +138,7 @@ export default function ArgusEventLayer({
   visibility,
   selectedEventId,
   onEventSelect,
+  zoom,
   map,
   leaflet,
 }: Props) {
@@ -127,6 +150,7 @@ export default function ArgusEventLayer({
     events.forEach((event) => {
       const layerId = resolveLayerId(event.eventType);
       if (!visibility[layerId]) return;
+      if (!isVisibleAtZoom(resolveVisibilityCategory(event), zoom)) return;
 
       const color = resolveZoneColor(event);
       const isSelected = event.id === selectedEventId;
@@ -186,7 +210,7 @@ export default function ArgusEventLayer({
     return () => {
       map.removeLayer(layer);
     };
-  }, [events, visibility, selectedEventId, onEventSelect, map, leaflet]);
+  }, [events, visibility, selectedEventId, onEventSelect, zoom, map, leaflet]);
 
   return null;
 }

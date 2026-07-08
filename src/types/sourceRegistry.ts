@@ -41,4 +41,13 @@ export interface ArgusSourceRegistryEntry {
   region?: string;
   url?: string;
   notes?: string;
+  /** 1 = primary/authoritative official source for its domain, 2/3 = secondary or supplementary. */
+  tier?: 1 | 2 | 3;
+  trustLevel?: "high" | "medium" | "low";
+  /** The institution ARGUS attributes this source to when consumed directly (Caso A). */
+  authority?: string;
+  /** Expected feed refresh cadence, in minutes. */
+  updateFrequencyMinutes?: number;
+  /** Free-text description of what this source is good for, e.g. "alertas vigentes, eventos activos". */
+  useCase?: string;
 }

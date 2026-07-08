@@ -12,15 +12,20 @@ import type { ArgusSourceRegistryEntry } from "@/types/sourceRegistry";
 export const chileSources: ArgusSourceRegistryEntry[] = [
   // --- Oficiales / técnicas -------------------------------------------------
   {
-    id: "cl_senapred",
+    id: "senapred_eventos",
     name: "SENAPRED (Servicio Nacional de Prevención y Respuesta ante Desastres)",
     country: "CL",
     sourceType: "official",
     coverageDomain: "emergency_management",
-    status: "requires_parser",
+    status: "active",
     reliabilityScore: 95,
-    url: "https://senapred.cl",
+    url: "https://www.senapred.cl/eventos/",
     notes: "Autoridad nacional de emergencias. Alertas tempranas, amarillas y rojas.",
+    tier: 1,
+    trustLevel: "high",
+    authority: "SENAPRED",
+    updateFrequencyMinutes: 10,
+    useCase: "Alertas vigentes, eventos activos, estados regionales, monitoreos oficiales.",
   },
   {
     id: "cl_dmc_meteochile",

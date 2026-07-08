@@ -1,5 +1,26 @@
 [
   {
+    "changeId": "0246109a91e4",
+    "date": "2026-07-08",
+    "commit": "pending-0246109",
+    "title": "ARGUS V.1.0.1.8",
+    "fileCount": 34,
+    "summary": "Se actualizaron 34 archivos relacionados con Base de datos interna y Eventos y fuentes externas.",
+    "changes": [
+      "Se actualizaron componentes del mapa operativo.",
+      "Se actualizaron eventos o fuentes externas.",
+      "Se ajustaron vistas y elementos de interfaz.",
+      "Se actualizaron servicios internos usados por ARGUS."
+    ],
+    "affectedModules": [
+      "Base de datos interna",
+      "Eventos y fuentes externas",
+      "Mapa operativo",
+      "Capas del mapa"
+    ],
+    "simpleExplanation": "Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada."
+  },
+  {
     "changeId": "b1a6ccdbe4e4",
     "date": "2026-07-07",
     "commit": "pending-b1a6ccd",
