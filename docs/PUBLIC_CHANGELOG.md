@@ -1,5 +1,27 @@
 # ARGUS Public Changelog
 
+## 2026-07-08 - pending-3023c37 - ARGUS V.1.0.1.9
+
+**Archivos modificados:** 10
+
+**Resumen publico:**  
+Se actualizaron 10 archivos relacionados con Mapa operativo y Capas del mapa.
+
+**Cambios principales:**
+- Se actualizaron componentes del mapa operativo.
+- Se actualizaron eventos o fuentes externas.
+- Se ajustaron vistas y elementos de interfaz.
+- Se actualizaron servicios internos usados por ARGUS.
+
+**Modulos afectados:**
+- Mapa operativo
+- Capas del mapa
+
+**En simple:**  
+Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada.
+
+---
+
 ## 2026-07-08 - pending-0246109 - ARGUS V.1.0.1.8
 
 **Archivos modificados:** 34

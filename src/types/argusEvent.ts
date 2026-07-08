@@ -34,7 +34,8 @@ export type ArgusEventType =
   | "INFRASTRUCTURE_FAILURE"
   | "NEWS_REPORTED_INCIDENT"
   | "CITIZEN_REPORT"
-  | "RISK_ZONE";
+  | "RISK_ZONE"
+  | "COASTAL_HAZARD";
 
 export type ArgusSeverity = "info" | "low" | "medium" | "high" | "critical";
 
@@ -76,13 +77,22 @@ export type ArgusSourceType =
 export type ArgusGeometryPrecision =
   | "exact_point"
   | "approximate_point"
+  | "administrative_country"
   | "administrative_region"
+  | "administrative_province"
   | "administrative_commune"
   | "route_segment"
   | "river_basin"
+  | "coastal_segment"
   | "polygon_official"
+  | "polygon_administrative"
   | "polygon_estimated"
   | "buffer_estimated";
+
+/** A GeoJSON geometry restricted to the two types alert polygons can use — never a bbox/rectangle. */
+export type ArgusGeoJsonPolygon =
+  | { type: "Polygon"; coordinates: number[][][] }
+  | { type: "MultiPolygon"; coordinates: number[][][][] };
 
 export type ArgusGeometry =
   | { type: "point"; coordinates: [latitude: number, longitude: number] }
@@ -94,12 +104,28 @@ export type ArgusGeometry =
        * official polygon boundary to draw. `anchor` is a representative point
        * for camera-centering. `polygonEstimate`, if present, is a
        * hand-drawn/estimated buffer around those regions for visualization —
-       * never an official boundary (see `geometryPrecision`).
+       * never an official boundary (see `geometryPrecision`). Prefer
+       * `administrative_area` below whenever a real boundary is resolvable
+       * (see `@/lib/geometry/argusGeometryResolver`) — this variant is the
+       * last-resort fallback, not the default.
        */
       type: "region_reference";
       anchor: [latitude: number, longitude: number];
       regionNames: string[];
       polygonEstimate?: Array<[latitude: number, longitude: number]>;
+    }
+  | {
+      /**
+       * Real administrative boundary geometry (region/province/commune),
+       * resolved via `@/lib/geometry/argusGeometryResolver` from a licensed
+       * boundary dataset (e.g. `src/data/geometries/chileRegions.geojson`) —
+       * never hand-estimated. `anchor` is a representative point for
+       * camera-centering only, not the render shape.
+       */
+      type: "administrative_area";
+      geojson: ArgusGeoJsonPolygon;
+      regionNames: string[];
+      anchor: [latitude: number, longitude: number];
     };
 
 export interface ArgusSourceReference {

@@ -1,5 +1,24 @@
 [
   {
+    "changeId": "3023c379ca63",
+    "date": "2026-07-08",
+    "commit": "pending-3023c37",
+    "title": "ARGUS V.1.0.1.9",
+    "fileCount": 10,
+    "summary": "Se actualizaron 10 archivos relacionados con Mapa operativo y Capas del mapa.",
+    "changes": [
+      "Se actualizaron componentes del mapa operativo.",
+      "Se actualizaron eventos o fuentes externas.",
+      "Se ajustaron vistas y elementos de interfaz.",
+      "Se actualizaron servicios internos usados por ARGUS."
+    ],
+    "affectedModules": [
+      "Mapa operativo",
+      "Capas del mapa"
+    ],
+    "simpleExplanation": "Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada."
+  },
+  {
     "changeId": "0246109a91e4",
     "date": "2026-07-08",
     "commit": "pending-0246109",

@@ -799,22 +799,28 @@ export default function OperationalMap({
       let layer: import("leaflet").Layer | null = null;
 
       if (zone.geometryType === "bbox" && isBboxCoordinates(zone.coordinates)) {
-        layer = L.rectangle(
-          [
-            [zone.coordinates.south, zone.coordinates.west],
-            [zone.coordinates.north, zone.coordinates.east],
-          ],
-          {
-            color,
-            weight: zone.id === selectedConflictZoneId ? 3 : 1.5,
-            fillColor: color,
-            fillOpacity: zone.zoneType === "disputed_control" ? 0.08 : 0.12,
-            dashArray:
-              zone.controlStatus === "contested" || zone.controlStatus === "disputed"
-                ? "6 6"
-                : undefined,
-          }
-        ).addTo(conflictZoneLayer);
+        // A bbox is only ever an approximate area of interest, never a real
+        // administrative/front-line boundary — rendering it as a filled
+        // rectangle would imply false precision. Show it as a marker at the
+        // bbox center instead (bbox is still available for fitBounds/framing
+        // elsewhere); same treatment as the `point` branch below.
+        const center: [number, number] = [
+          (zone.coordinates.south + zone.coordinates.north) / 2,
+          (zone.coordinates.west + zone.coordinates.east) / 2,
+        ];
+        const markerIcon = L.divIcon(createArgusDivIcon({
+          kind: "risk_assessment",
+          severity: toMapSeverity(zone.riskLevel),
+          confidence: zone.confidence === "high" ? "verified" : zone.confidence === "medium" ? "reported" : "raw",
+          label: "CZ",
+          title: zone.name,
+          active: true,
+          selected: zone.id === selectedConflictZoneId,
+        }));
+        layer = L.marker(center, {
+          icon: markerIcon,
+          title: zone.name,
+        }).addTo(conflictZoneLayer);
       } else if (zone.geometryType === "polygon" && isCoordinatePolygon(zone.coordinates)) {
         layer = L.polygon(zone.coordinates, {
           color,

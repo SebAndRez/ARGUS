@@ -36,7 +36,11 @@ interface Props {
  * `@/lib/map/argusZoomVisibility`.
  */
 function resolveVisibilityCategory(event: ArgusEvent): ArgusMapVisibilityCategory {
-  if (event.geometry.type === "polygon" || event.geometry.type === "region_reference") {
+  if (
+    event.geometry.type === "polygon" ||
+    event.geometry.type === "region_reference" ||
+    event.geometry.type === "administrative_area"
+  ) {
     return "risk_zone";
   }
   if (event.eventType === "OFFICIAL_ALERT") return "critical_alert";
@@ -175,6 +179,32 @@ export default function ArgusEventLayer({
             dashArray: "6 6",
           })
           .addTo(layer);
+      } else if (event.geometry.type === "administrative_area") {
+        // Real administrative boundary (see `@/lib/geometry/argusGeometryResolver`).
+        // Converted from GeoJSON [lon, lat] to Leaflet [lat, lon]. Each disjoint
+        // polygon part (e.g. mainland + individual islands) is rendered as its own
+        // L.polygon inside a shared feature group — Leaflet's single-Path multi-part
+        // support doesn't reliably draw a MultiPolygon with this many disjoint parts
+        // (200+ islands), so one Path per part is the robust approach. Fill follows
+        // the actual coastline/border instead of a bbox/rectangle or hand-drawn
+        // shape; color/weight are always explicit, so this never falls back to
+        // Leaflet's default black stroke.
+        const geojson = event.geometry.geojson;
+        const polygonParts: number[][][][] = geojson.type === "MultiPolygon" ? geojson.coordinates : [geojson.coordinates];
+        const group = leaflet.featureGroup();
+        for (const polygonRings of polygonParts) {
+          const exteriorRing = polygonRings[0].map(([lon, lat]) => [lat, lon] as [number, number]);
+          leaflet
+            .polygon(exteriorRing, {
+              color,
+              weight: isSelected ? 2.5 : 1.2,
+              fillColor: color,
+              fillOpacity: 0.22,
+              opacity: 0.85,
+            })
+            .addTo(group);
+        }
+        mapLayer = group.addTo(layer);
       } else if (event.geometry.type === "route") {
         mapLayer = leaflet
           .polyline(event.geometry.coordinates, {

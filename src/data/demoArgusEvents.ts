@@ -18,6 +18,7 @@ import type { ArgusEvent } from "@/types/argusEvent";
 import { correlateSignals } from "@/lib/correlation/argusCorrelationEngine";
 import type { ArgusSignal } from "@/lib/normalizers/argusEventNormalizer";
 import { chileSources } from "@/data/countrySourcePacks/chile";
+import { resolveAdministrativeRegionGeometry } from "@/lib/geometry/argusGeometryResolver";
 
 function requireSource(id: string) {
   const source = chileSources.find((entry) => entry.id === id);
@@ -38,19 +39,20 @@ const VALID_FROM = "2026-07-06T13:34:00-04:00";
 const PUBLISHED_AT = "2026-07-07T16:31:00-04:00";
 
 /**
- * Approximate corridor covering La Araucanía / Los Ríos / Los Lagos — there
- * is no official polygon behind this shape, it is a hand-estimated buffer
- * around the affected regions (`geometryPrecision: "polygon_estimated"`),
- * not a claim of administrative-boundary precision.
+ * Real administrative boundaries for La Araucanía / Los Ríos / Los Lagos,
+ * merged from `src/data/geometries/chileRegions.json` (geoBoundaries CHL
+ * ADM1, sourced from BCN / OCHA ROLAC) — never a hand-drawn or bbox shape.
+ * The anchor is kept near Valdivia for camera-centering only; it does not
+ * affect the rendered polygon.
  */
-const southernChileCorridor: Array<[number, number]> = [
-  [-37.85, -73.3],
-  [-37.85, -71.4],
-  [-40.9, -71.6],
-  [-41.6, -72.6],
-  [-41.6, -73.9],
-  [-39.0, -74.0],
-];
+const southernChileRegionGeometry = resolveAdministrativeRegionGeometry(
+  "CL",
+  ["La Araucanía", "Los Ríos", "Los Lagos"],
+  { anchorOverride: [-39.8142, -73.2459] }
+);
+if (!southernChileRegionGeometry) {
+  throw new Error("Failed to resolve real geometry for La Araucanía / Los Ríos / Los Lagos");
+}
 
 const signals: ArgusSignal[] = [
   {
@@ -63,13 +65,8 @@ const signals: ArgusSignal[] = [
     title: "Alerta Amarilla SENAPRED por evento meteorológico en La Araucanía, Los Ríos y Los Lagos",
     operationalSummary:
       "SENAPRED mantiene Alerta Amarilla Regional por evento meteorológico para La Araucanía, Los Ríos y Los Lagos, declarada el 06-07-2026 y monitoreada hasta el 07-07-2026, en base a los alertamientos de la Dirección Meteorológica de Chile (DMC): precipitaciones intensas con isoterma 0°C alta, viento normal a moderado con ráfagas y probables tormentas eléctricas entre el 07 y 08 de julio. Para Los Ríos, SERNAGEOMIN indica mediante Minuta Técnica que la posibilidad de aluviones (flujos de detritos) y derrumbes (deslizamientos, caída de rocas) es alta en toda la región. Se mantienen recursos alistados escalonadamente para intervenir según evolución del evento.",
-    geometry: {
-      type: "region_reference",
-      anchor: [-39.8142, -73.2459],
-      regionNames: ["La Araucanía", "Los Ríos", "Los Lagos"],
-      polygonEstimate: southernChileCorridor,
-    },
-    geometryPrecision: "polygon_estimated",
+    geometry: { type: "administrative_area", ...southernChileRegionGeometry },
+    geometryPrecision: "polygon_administrative",
     publishedAt: PUBLISHED_AT,
     validFrom: VALID_FROM,
     validUntil: "2026-07-08T23:59:00-04:00",

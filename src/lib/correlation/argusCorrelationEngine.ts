@@ -10,7 +10,9 @@ function regionsOverlap(a: ArgusEvent, b: ArgusEvent): boolean {
 }
 
 function extractRegionNames(event: ArgusEvent): string[] {
-  if (event.geometry.type === "region_reference") return event.geometry.regionNames;
+  if (event.geometry.type === "region_reference" || event.geometry.type === "administrative_area") {
+    return event.geometry.regionNames;
+  }
   if (event.region) return [event.region];
   return [];
 }

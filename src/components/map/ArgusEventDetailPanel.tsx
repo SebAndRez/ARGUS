@@ -37,6 +37,22 @@ const statusLabel: Record<ArgusEvent["status"], string> = {
   archived: "archivado",
 };
 
+const geometryPrecisionLabel: Record<ArgusEvent["geometryPrecision"], string> = {
+  exact_point: "punto exacto",
+  approximate_point: "punto aproximado",
+  administrative_country: "límite administrativo (país)",
+  administrative_region: "límite administrativo (región)",
+  administrative_province: "límite administrativo (provincia)",
+  administrative_commune: "límite administrativo (comuna)",
+  route_segment: "tramo de ruta",
+  river_basin: "cuenca hidrográfica",
+  coastal_segment: "tramo costero",
+  polygon_official: "polígono oficial de la fuente",
+  polygon_administrative: "polígono administrativo real",
+  polygon_estimated: "polígono estimado (no oficial)",
+  buffer_estimated: "área de referencia estimada",
+};
+
 export default function ArgusEventDetailPanel({ event, onClose }: Props) {
   if (!event) return null;
 
@@ -86,6 +102,7 @@ export default function ArgusEventDetailPanel({ event, onClose }: Props) {
         <Info label="Atribución" value={event.attribution} />
         <Info label="Tipo de fuente" value={sourceTypeLabel[event.sourceType]} />
         <Info label="Región/zona" value={location || "—"} />
+        <Info label="Precisión geográfica" value={geometryPrecisionLabel[event.geometryPrecision]} />
         <Info label="Última actualización" value={event.lastUpdated.slice(0, 16).replace("T", " ")} />
       </dl>
 

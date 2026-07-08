@@ -13,7 +13,9 @@ export const dynamic = "force-dynamic";
 
 function eventLat(event: ArgusEvent): number | null {
   if (event.geometry.type === "point") return event.geometry.coordinates[0];
-  if (event.geometry.type === "region_reference") return event.geometry.anchor[0];
+  if (event.geometry.type === "region_reference" || event.geometry.type === "administrative_area") {
+    return event.geometry.anchor[0];
+  }
   if (event.geometry.type === "polygon" || event.geometry.type === "route") {
     const coords = event.geometry.coordinates;
     return coords.length ? coords[0][0] : null;
@@ -23,7 +25,9 @@ function eventLat(event: ArgusEvent): number | null {
 
 function eventLng(event: ArgusEvent): number | null {
   if (event.geometry.type === "point") return event.geometry.coordinates[1];
-  if (event.geometry.type === "region_reference") return event.geometry.anchor[1];
+  if (event.geometry.type === "region_reference" || event.geometry.type === "administrative_area") {
+    return event.geometry.anchor[1];
+  }
   if (event.geometry.type === "polygon" || event.geometry.type === "route") {
     const coords = event.geometry.coordinates;
     return coords.length ? coords[0][1] : null;
