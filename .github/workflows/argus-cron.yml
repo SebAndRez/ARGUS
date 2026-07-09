@@ -1,0 +1,29 @@
+name: ARGUS External Cron
+
+# Runs the Chile official-alerts ingestion job on a schedule external to
+# Vercel Cron, since Vercel Hobby only allows a cron to run once per day
+# and this job needs to run every ~15 minutes. See
+# src/app/api/jobs/run-chile-alerts/route.ts for the endpoint this calls.
+on:
+  schedule:
+    # Every 15 minutes, offset from :00/:15/:30/:45 to avoid the top-of-hour
+    # traffic spike shared by everyone else's "on the dot" cron jobs.
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run-chile-alerts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger /api/jobs/run-chile-alerts
+        run: |
+          curl -fsS -X POST \
+            "${ARGUS_PROD_URL}/api/jobs/run-chile-alerts" \
+            -H "Authorization: Bearer ${ARGUS_CRON_SECRET}" \
+            -H "User-Agent: argus-github-actions-cron" \
+            --retry 2 \
+            --retry-delay 10
+        env:
+          ARGUS_PROD_URL: ${{ secrets.ARGUS_PROD_URL }}
+          ARGUS_CRON_SECRET: ${{ secrets.ARGUS_CRON_SECRET }}
