@@ -1,5 +1,31 @@
 # ARGUS Public Changelog
 
+## 2026-07-09 - pending-06f8452 - ARGUS V1.0.2.0 — Estabilización operacional, alertas vivas y seguridad crítica
+
+**Archivos modificados:** 41
+
+**Resumen publico:**  
+Se actualizaron 41 archivos relacionados con Eventos y fuentes externas y Mapa operativo.
+
+**Cambios principales:**
+- Se actualizaron componentes del mapa operativo.
+- Se ajusto la vista global ARGUS Orbit.
+- Se mejoro la lectura y gestion de reportes.
+- Se actualizaron eventos o fuentes externas.
+- Se ajustaron vistas y elementos de interfaz.
+
+**Modulos afectados:**
+- Eventos y fuentes externas
+- Mapa operativo
+- Capas del mapa
+- ARGUS Orbit
+- Reportes ciudadanos
+
+**En simple:**  
+Esta actualizacion mejora la experiencia del mapa y la vista global para que ARGUS sea mas claro al explorar una situacion.
+
+---
+
 ## 2026-07-08 - pending-fd5d13d - ARGUS V.1.0.2.0
 
 **Archivos modificados:** 7
