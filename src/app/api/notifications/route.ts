@@ -11,6 +11,7 @@ import {
   buildArgusNotifications,
   buildNotificationSummary,
   calculateDistanceKm,
+  type KnowledgeIncidentItem,
 } from "@/lib/notifications/notificationCenterEngine";
 import {
   getNotificationColorToken,
@@ -173,6 +174,50 @@ async function getExternalEvents(): Promise<ArgusNormalizedEvent[]> {
   }
 
   return deduplicateEvents([...persistedEvents, ...usgsResult.events]);
+}
+
+/**
+ * The knowledge-intake pipeline (NWS tornado/severe-weather alerts, NOAA
+ * Storm Events, structural/bridge collapse domains, SENAPRED-fed incidents,
+ * etc.) persists to `KnowledgeIncident`, entirely separate from
+ * `ExternalEvent`. Before this, nothing here ever read that table, so a
+ * high/critical incident classified correctly by knowledge-intake could
+ * never produce a notification. Only high/critical rows are fetched — the
+ * severity gate is enforced again in `buildArgusNotifications` itself, this
+ * query is just an optimization to avoid pulling low-severity rows.
+ */
+async function getCriticalKnowledgeIncidents(): Promise<KnowledgeIncidentItem[]> {
+  try {
+    const incidents = await prisma.knowledgeIncident.findMany({
+      where: { severity: { in: ["high", "critical"] } },
+      orderBy: [{ occurredAt: "desc" }, { detectedAt: "desc" }],
+      take: 60,
+    });
+
+    return incidents.map((incident) => ({
+      id: incident.id,
+      externalId: incident.externalId,
+      title: incident.title,
+      summary: incident.summary,
+      domain: incident.domain,
+      subtype: incident.subtype,
+      severity: incident.severity,
+      confidenceScore: incident.confidenceScore,
+      sourceId: incident.sourceId,
+      sourceName: incident.sourceName,
+      country: incident.country,
+      region: incident.region,
+      locality: incident.locality,
+      latitude: incident.latitude,
+      longitude: incident.longitude,
+      occurredAt: incident.occurredAt,
+      detectedAt: incident.detectedAt,
+      createdAt: incident.createdAt,
+      updatedAt: incident.updatedAt,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 async function getSourceHealth() {
@@ -340,12 +385,20 @@ export async function GET(request: NextRequest) {
       ? { lat, lng, countryCode: request.nextUrl.searchParams.get("countryCode") ?? "CL" }
       : undefined;
 
-  const [persistedEvents, externalEvents, sourceHealth, predictiveNotifications, vestaReminders] = await Promise.all([
+  const [
+    persistedEvents,
+    externalEvents,
+    sourceHealth,
+    predictiveNotifications,
+    vestaReminders,
+    knowledgeIncidents,
+  ] = await Promise.all([
     getPersistedEvents(),
     getExternalEvents(),
     getSourceHealth(),
     getPredictiveNotifications(readIds),
     getDueVestaReminders(),
+    getCriticalKnowledgeIncidents(),
   ]);
   const events = persistedEvents.length
     ? persistedEvents
@@ -360,6 +413,7 @@ export async function GET(request: NextRequest) {
       routes: demoRoutes,
       sourceHealth,
       reminders: vestaReminders,
+      knowledgeIncidents,
       readIds,
       userLocation,
     }),

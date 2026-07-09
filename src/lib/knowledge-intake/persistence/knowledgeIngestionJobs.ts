@@ -508,6 +508,8 @@ export async function runNwsKnowledgeIngestion(input: NwsIngestionJobInput = {})
       errors: [message],
       sampleIncidents: [],
       sampleEvidence: [],
+      incidents: [],
+      evidence: [],
     };
   }
 
@@ -583,6 +585,12 @@ export async function runNwsKnowledgeIngestion(input: NwsIngestionJobInput = {})
       errors: result.errors,
       sampleIncidents,
       sampleEvidence,
+      // Full (non-sample-capped) normalized lists — the caller feeding the
+      // operational map (`/api/knowledge-intake/live/nws?persist=true`)
+      // needs every alert to render, not just the first 5 kept for the job
+      // dashboard summary above.
+      incidents: result.incidents,
+      evidence: result.evidence,
     };
   } catch (error) {
     await finishIngestionRun(run.id, {

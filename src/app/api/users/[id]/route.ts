@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logAuditEvent } from "@/services/auditService";
 import { requireOperator } from "@/lib/security/apiGuards";
-import { canChangeUserRole } from "@/lib/security/rbac";
+import { canChangeUserRole, canChangeAccountStatus } from "@/lib/security/rbac";
 import type { ArgusRole } from "@/types/rbac";
 
 type RouteContext = {
@@ -29,6 +29,13 @@ export async function PATCH(req: Request, ctx: RouteContext) {
 
   if (role) {
     const decision = canChangeUserRole(user, userToUpdate, role);
+    if (!decision.allowed) {
+      return NextResponse.json({ error: decision.reason }, { status: 403 });
+    }
+  }
+
+  if (accountStatus) {
+    const decision = canChangeAccountStatus(user, userToUpdate);
     if (!decision.allowed) {
       return NextResponse.json({ error: decision.reason }, { status: 403 });
     }

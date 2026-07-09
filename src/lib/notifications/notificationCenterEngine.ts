@@ -24,6 +24,34 @@ type VestaReminderItem = {
   status: string;
 };
 
+/**
+ * Loose projection of a `KnowledgeIncident` row (`prisma/schema.prisma`) —
+ * intentionally not importing the Prisma type here so this module stays
+ * decoupled from the DB client; the caller (`/api/notifications`) is
+ * responsible for querying and shaping this from `prisma.knowledgeIncident`.
+ */
+export type KnowledgeIncidentItem = {
+  id: string;
+  externalId?: string | null;
+  title: string;
+  summary: string;
+  domain: string;
+  subtype?: string | null;
+  severity: string;
+  confidenceScore: number;
+  sourceId: string;
+  sourceName: string;
+  country?: string | null;
+  region?: string | null;
+  locality?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  occurredAt?: Date | string | null;
+  detectedAt?: Date | string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
 type SourceHealthItem = {
   id?: string;
   sourceId?: string;
@@ -49,6 +77,16 @@ export interface BuildNotificationInput {
   routes?: ArgusRoute[];
   sourceHealth?: SourceHealthItem[];
   reminders?: VestaReminderItem[];
+  /**
+   * `KnowledgeIncident` rows (tornado, structural collapse, severe weather,
+   * official alerts ingested through the knowledge-intake pipeline, etc).
+   * The caller may pass any subset it likes — `buildArgusNotifications`
+   * itself only turns `severity: "high" | "critical"` rows into
+   * notifications (see `isNotifiableKnowledgeSeverity` below), so lower
+   * severities passed in are silently dropped rather than trusted to the
+   * caller's query.
+   */
+  knowledgeIncidents?: KnowledgeIncidentItem[];
   readIds?: string[];
   userLocation?: { lat: number; lng: number; countryCode?: string | null };
 }
@@ -133,13 +171,40 @@ function typeFromCategory(category: string | null | undefined, fallback: ArgusNo
   if (normalized.includes("earthquake") || normalized.includes("sismo")) return "EARTHQUAKE";
   if (normalized.includes("tsunami")) return "TSUNAMI";
   if (normalized.includes("fire") || normalized.includes("incendio") || normalized.includes("wildfire")) return "FIRE";
-  if (normalized.includes("weather") || normalized.includes("clima") || normalized.includes("storm")) return "WEATHER";
+  if (
+    normalized.includes("weather") ||
+    normalized.includes("clima") ||
+    normalized.includes("storm") ||
+    normalized.includes("tornado") ||
+    normalized.includes("waterspout") ||
+    normalized.includes("tromba") ||
+    normalized.includes("severe_wind") ||
+    normalized.includes("viento") ||
+    normalized.includes("hurricane") ||
+    normalized.includes("cyclone")
+  ) {
+    return "WEATHER";
+  }
   if (normalized.includes("flood") || normalized.includes("inund")) return "FLOOD";
   if (normalized.includes("volcano") || normalized.includes("volcan")) return "VOLCANO";
   if (normalized.includes("medical") || normalized.includes("medic")) return "MEDICAL";
   if (normalized.includes("missing_person")) return "MISSING_PERSON";
   if (normalized.includes("conflict") || normalized.includes("war")) return "CONFLICT";
   return fallback;
+}
+
+/**
+ * Minimum rule requested for P0: a `KnowledgeIncident` only becomes a
+ * notification once it has reached "high" or "critical" severity — tornado,
+ * structural/roof/bridge collapse with occupants, trapped people, and
+ * confirmed severe-weather/official-alert domains are expected to already
+ * carry that severity by the time they reach this function (see the
+ * per-source severity mapping in `src/lib/knowledge-intake/adapters/*` and
+ * `src/lib/adapters/senapred/senapredEventosAdapter.ts`).
+ */
+function isNotifiableKnowledgeSeverity(severity: string | null | undefined): boolean {
+  const normalized = severity?.toLowerCase();
+  return normalized === "high" || normalized === "critical";
 }
 
 function sourceTypeForExternal(event: ArgusNormalizedEvent): ArgusNotificationSourceType {
@@ -462,6 +527,58 @@ function reminderToNotification(reminder: VestaReminderItem, readIds: Set<string
   );
 }
 
+function knowledgeIncidentToNotification(
+  incident: KnowledgeIncidentItem,
+  readIds: Set<string>,
+  userLocation?: BuildNotificationInput["userLocation"]
+) {
+  const lat = toFiniteNumber(incident.latitude);
+  const lng = toFiniteNumber(incident.longitude);
+  const eventTime = toIso(incident.occurredAt ?? incident.detectedAt ?? incident.createdAt);
+  const updatedAt = toIso(incident.updatedAt, new Date(eventTime));
+  const countryCode = incident.country ?? null;
+  const distanceKm =
+    userLocation && lat !== null && lng !== null
+      ? calculateDistanceKm(userLocation, { lat, lng })
+      : null;
+  const id = `knowledge-incident-${incident.id}`;
+
+  return finalize(
+    {
+      id,
+      title: incident.title,
+      description: incident.summary,
+      type: typeFromCategory(incident.domain, "SYSTEM"),
+      severity: mapSeverity(incident.severity),
+      scope: scopeForLocation(lat, lng, countryCode, userLocation),
+      status: "MONITORING",
+      createdAt: toIso(incident.createdAt),
+      updatedAt,
+      eventTime,
+      sourceType: "OFFICIAL",
+      sourceName: incident.sourceName,
+      confidence: Math.max(0, Math.min(100, Number(incident.confidenceScore ?? 70))),
+      lat,
+      lng,
+      countryCode,
+      region: incident.region ?? incident.locality ?? null,
+      city: incident.locality ?? null,
+      distanceKm,
+      relatedEventId: incident.id,
+      relatedReportId: null,
+      relatedIncidentId: incident.id,
+      relatedFenixScenarioId: lat !== null && lng !== null ? "fenix-wildfire-urban-edge" : null,
+      relatedRouteId: null,
+      actionUrl:
+        lat !== null && lng !== null
+          ? `/app?lat=${lat}&lng=${lng}&notificationId=${id}`
+          : `/app?eventId=${encodeURIComponent(incident.id)}`,
+      sourceUrl: null,
+    },
+    readIds
+  );
+}
+
 function sourceToNotification(source: SourceHealthItem, readIds: Set<string>) {
   const sourceId = source.sourceId ?? source.id ?? "unknown";
   const name = source.sourceName ?? source.name ?? sourceId;
@@ -514,6 +631,9 @@ export function buildArgusNotifications(input: BuildNotificationInput) {
     ...(input.events ?? []).map((event) => eventToNotification(event, readIds, input.userLocation)),
     ...(input.externalEvents ?? []).map((event) => externalToNotification(event, readIds, input.userLocation)),
     ...(input.conflictEvents ?? []).map((event) => conflictToNotification(event, readIds, input.userLocation)),
+    ...(input.knowledgeIncidents ?? [])
+      .filter((incident) => isNotifiableKnowledgeSeverity(incident.severity))
+      .map((incident) => knowledgeIncidentToNotification(incident, readIds, input.userLocation)),
     ...(input.routes ?? []).map((route) => routeToNotification(route, readIds)),
     ...(input.sourceHealth ?? []).map((source) => sourceToNotification(source, readIds)),
     ...(input.reminders ?? []).map((reminder) => reminderToNotification(reminder, readIds)),

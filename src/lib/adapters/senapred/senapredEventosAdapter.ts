@@ -6,6 +6,7 @@ import {
   fetchSenapredReferenceTables,
   type SenapredAlertaRecord,
 } from "@/lib/adapters/senapred/senapredGraphqlClient";
+import { classifySeverityFromLevel } from "@/lib/weather/severeWeatherClassifier";
 
 const senapredSource = chileSources.find((source) => source.id === "senapred_eventos");
 if (!senapredSource) throw new Error("Chile source pack is missing 'senapred_eventos'");
@@ -48,13 +49,27 @@ function mapEventType(variableRiesgoNombre?: string): ArgusEventType {
   return "SEVERE_WEATHER";
 }
 
-function mapTipoAlerta(tipoAlertaNombre?: string): { severity: ArgusSeverity; status: ArgusEventStatus } {
+/**
+ * `status` (active/risk/observation/monitoring) has no equivalent in the
+ * shared classifier, so it stays local to this adapter — only `severity`
+ * comes from `classifySeverityFromLevel` now (see import above), which is
+ * also what `alertPromotionEngine` uses, so the same alert text can never
+ * disagree on severity depending on which pipeline reads it first.
+ */
+function statusFromTipoAlerta(tipoAlertaNombre?: string): ArgusEventStatus {
   const normalized = (tipoAlertaNombre ?? "").toLowerCase();
-  if (normalized.includes("roja")) return { severity: "critical", status: "active" };
-  if (normalized.includes("naranja")) return { severity: "high", status: "risk" };
-  if (normalized.includes("amarilla")) return { severity: "medium", status: "risk" };
-  if (normalized.includes("verde")) return { severity: "low", status: "monitoring" };
-  return { severity: "medium", status: "monitoring" };
+  if (normalized.includes("roja")) return "active";
+  if (normalized.includes("naranja")) return "risk";
+  if (normalized.includes("amarilla")) return "risk";
+  if (normalized.includes("temprana preventiva") || normalized.includes("alerta temprana")) return "observation";
+  if (normalized.includes("verde")) return "monitoring";
+  return "monitoring";
+}
+
+/** `classifySeverityFromLevel` is typed `ArgusIncidentSeverity` (includes `"unknown"`, for knowledge-intake domains that never apply to a SENAPRED `tipoAlerta.nombre`); this adapter's `ArgusSeverity` has no `"unknown"`, so it's defensively mapped to `"medium"` — never actually hit given the classifier's own fallback already returns `"medium"`, not `"unknown"`. Exported (not just internal) so tests can assert parity against `classifySeverityFromLevel` directly instead of duplicating the assumption. */
+export function severityFromTipoAlerta(tipoAlertaNombre?: string): ArgusSeverity {
+  const severity = classifySeverityFromLevel(tipoAlertaNombre ?? "");
+  return severity === "unknown" ? "medium" : severity;
 }
 
 function stripHtml(value?: string): string {
@@ -93,7 +108,8 @@ function normalizeAlertaToSignal(alerta: SenapredAlertaRecord): OfficialAlertSig
 
   const regionNames = regionInfos.map((info) => info.displayName);
   const anchor = regionInfos[0].anchor;
-  const { severity, status } = mapTipoAlerta(alerta.variableRiesgo?.tipoAlerta?.nombre);
+  const severity = severityFromTipoAlerta(alerta.variableRiesgo?.tipoAlerta?.nombre);
+  const status = statusFromTipoAlerta(alerta.variableRiesgo?.tipoAlerta?.nombre);
   const eventType = mapEventType(alerta.variableRiesgo?.nombre);
   const publishedAt = new Date(alerta.fechaHora).toISOString();
   const summary = stripHtml(alerta.contenido).slice(0, 900) || stripHtml(alerta.titulo);

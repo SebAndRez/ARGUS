@@ -88,6 +88,25 @@ export function canChangeUserRole(
   return { allowed: true };
 }
 
+/**
+ * Policy for mutating a user's `accountStatus` (ban/unban/suspend/restore).
+ * Mirrors `canChangeUserRole`'s ADMIN+ floor and SUPER_ADMIN protection —
+ * `requireOperator()` alone (OPERATOR/ANALYST included) is not sufficient
+ * for this action, only for reading/listing users.
+ */
+export function canChangeAccountStatus(
+  actor: RbacUser | null | undefined,
+  target: { id: string; role?: string | null }
+): { allowed: boolean; reason?: string } {
+  if (!hasRole(actor, "ADMIN")) {
+    return { allowed: false, reason: "Solo ADMIN o SUPER_ADMIN pueden cambiar el estado de la cuenta." };
+  }
+  if (normalizeRole(target.role) === "SUPER_ADMIN" && !hasRole(actor, "SUPER_ADMIN")) {
+    return { allowed: false, reason: "Solo SUPER_ADMIN puede modificar el estado de otro SUPER_ADMIN." };
+  }
+  return { allowed: true };
+}
+
 export function canAccessDashboard(user: RbacUser | null | undefined) {
   return hasAnyRole(user, commandRoles);
 }

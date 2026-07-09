@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { demoArgusEvents } from "@/data/demoArgusEvents";
+import { fetchSenapredAlerts } from "@/lib/adapters/senapred/senapredEventosAdapter";
+import { correlateSignals } from "@/lib/correlation/argusCorrelationEngine";
+import { getCachedSource, setCachedSource } from "@/lib/ingestion/sourceCache";
 import type {
   ArgusConfidence,
   ArgusEvent,
@@ -10,6 +13,9 @@ import type {
 } from "@/types/argusEvent";
 
 export const dynamic = "force-dynamic";
+
+const SOURCE_CACHE_KEY = "argus-events:senapred_eventos";
+const CACHE_TTL_MS = 5 * 60_000;
 
 function eventLat(event: ArgusEvent): number | null {
   if (event.geometry.type === "point") return event.geometry.coordinates[0];
@@ -35,11 +41,54 @@ function eventLng(event: ArgusEvent): number | null {
   return null;
 }
 
+interface SenapredEventsCacheData {
+  events: ArgusEvent[];
+}
+
+type RealSourceOutcome =
+  | { ok: true; events: ArgusEvent[]; cached: boolean }
+  | { ok: false; reason: string };
+
 /**
- * Curated demo events today (`demoArgusEvents`), but the filter contract
- * (country/eventType/severity/status/sourceType/confidence/bbox) is the same
- * one a future real ingestion-backed source would serve — swap the data
- * source here, keep the query params.
+ * Live SENAPRED source for the "official alerts" map layer. Falls back to
+ * `demoArgusEvents` (caller's responsibility) whenever this returns
+ * `ok: false` — never throws.
+ */
+async function loadSenapredEvents(): Promise<RealSourceOutcome> {
+  const cached = getCachedSource<SenapredEventsCacheData>(SOURCE_CACHE_KEY);
+  if (cached) {
+    return { ok: true, events: cached.data.events, cached: true };
+  }
+
+  try {
+    const result = await fetchSenapredAlerts();
+    if (result.status === "error") {
+      return { ok: false, reason: result.errors[0] ?? "SENAPRED live fetch failed" };
+    }
+    if (result.signals.length === 0) {
+      return { ok: false, reason: "SENAPRED returned no active alerts for the lookback window" };
+    }
+
+    const events = correlateSignals(result.signals);
+    setCachedSource<SenapredEventsCacheData>(SOURCE_CACHE_KEY, { events }, CACHE_TTL_MS);
+    return { ok: true, events, cached: false };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : "SENAPRED live fetch failed",
+    };
+  }
+}
+
+/**
+ * Real SENAPRED events are the primary source for this endpoint; the
+ * hand-curated `demoArgusEvents` (`@/data/demoArgusEvents`) is used only as
+ * an explicit fallback — either because the live source failed/returned
+ * nothing, or because `ARGUS_EVENTS_DEMO_MODE=true` forces demo data (e.g.
+ * for screenshots/demos where a stable dataset is wanted). The filter
+ * contract (country/eventType/severity/status/sourceType/confidence/bbox) is
+ * unchanged either way, so `ArgusEventLayer` never needs to know which
+ * source produced the data.
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -63,7 +112,24 @@ export async function GET(request: NextRequest) {
         }
       : null;
 
-  const events = demoArgusEvents.filter((event) => {
+  const demoModeForced = process.env.ARGUS_EVENTS_DEMO_MODE === "true";
+
+  let source: "senapred_live" | "senapred_live_cached" | "curated_demo" = "curated_demo";
+  let events: ArgusEvent[] = demoArgusEvents;
+  let fallbackReason: string | null = demoModeForced ? "ARGUS_EVENTS_DEMO_MODE is enabled" : null;
+
+  if (!demoModeForced) {
+    const outcome = await loadSenapredEvents();
+    if (outcome.ok) {
+      source = outcome.cached ? "senapred_live_cached" : "senapred_live";
+      events = outcome.events;
+      fallbackReason = null;
+    } else {
+      fallbackReason = outcome.reason;
+    }
+  }
+
+  const filtered = events.filter((event) => {
     if (country && event.country.toUpperCase() !== country.toUpperCase()) return false;
     if (eventType && event.eventType !== eventType) return false;
     if (severity && event.severity !== severity) return false;
@@ -80,8 +146,9 @@ export async function GET(request: NextRequest) {
   });
 
   return NextResponse.json({
-    source: "curated_demo",
-    count: events.length,
-    events,
+    source,
+    ...(fallbackReason ? { fallbackReason } : {}),
+    count: filtered.length,
+    events: filtered,
   });
 }

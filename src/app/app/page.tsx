@@ -386,6 +386,13 @@ export default function AppPage() {
   const [nwsUserAgentConfigured, setNwsUserAgentConfigured] = useState<boolean | null>(null);
   const [nwsRetryVersion, setNwsRetryVersion] = useState(0);
   const nwsFetchStartedRef = useRef(false);
+  // Starts from the curated demo dataset so the official-alerts layer is
+  // never blank before the first live fetch resolves, then upgrades to real
+  // SENAPRED events once `/api/argus/events` responds — that endpoint
+  // itself falls back to the same demo dataset if the live SENAPRED source
+  // fails, so this state is never worse than what used to be hardcoded here.
+  const [argusEvents, setArgusEvents] = useState<ArgusEvent[]>(demoArgusEvents);
+  const argusEventsFetchStartedRef = useRef(false);
   const [reliefWebEvents, setReliefWebEvents] = useState<
     ArgusNormalizedEvent[]
   >([]);
@@ -1839,6 +1846,58 @@ export default function AppPage() {
   };
 
   useEffect(() => {
+    if (!dataActive.argusOfficialAlerts || argusEventsFetchStartedRef.current) return;
+
+    argusEventsFetchStartedRef.current = true;
+
+    async function loadArgusEvents() {
+      let baseEvents: ArgusEvent[] | null = null;
+      try {
+        const response = await fetch("/api/argus/events", { cache: "no-store" });
+        const payload = (await response.json()) as {
+          events?: ArgusEvent[];
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(
+            payload.error || "No fue posible cargar las alertas oficiales ARGUS."
+          );
+        }
+
+        if (Array.isArray(payload.events)) baseEvents = payload.events;
+      } catch {
+        // Keep whatever was already rendered (the curated demo dataset on
+        // first load) — never blank the official-alerts layer just because
+        // a live refresh attempt failed.
+      }
+
+      // Persisted Chile severe-weather alerts (SENAPRED, promoted via
+      // `alertPromotionEngine`) — merged in alongside the demo/live SENAPRED
+      // events above so they render through the same `ArgusEventLayer`
+      // (real polygon geometry, existing phenomenon-based toggles). Never a
+      // separate "Chile Official Alerts" layer/toggle.
+      try {
+        const chileAlertsResponse = await fetch("/api/chile-alerts", { cache: "no-store" });
+        const chileAlertsPayload = (await chileAlertsResponse.json()) as { events?: ArgusEvent[] };
+        if (chileAlertsResponse.ok && Array.isArray(chileAlertsPayload.events) && chileAlertsPayload.events.length > 0) {
+          const base = baseEvents ?? demoArgusEvents;
+          const baseIds = new Set(base.map((event) => event.id));
+          const merged = base.concat(chileAlertsPayload.events.filter((event) => !baseIds.has(event.id)));
+          setArgusEvents(merged);
+          return;
+        }
+      } catch {
+        // Chile alerts are additive — a failed fetch here should not affect
+        // the base ARGUS events layer.
+      }
+
+      if (baseEvents) setArgusEvents(baseEvents);
+    }
+
+    loadArgusEvents();
+  }, [dataActive.argusOfficialAlerts]);
+
+  useEffect(() => {
     if (
       !dataActive.nasaFirms ||
       nasaConfigured !== true ||
@@ -1941,9 +2000,10 @@ export default function AppPage() {
 
     async function loadNwsAlerts() {
       try {
-        const response = await fetch("/api/knowledge-intake/live/nws?mode=alerts&area=US&limit=100", {
-          cache: "no-store",
-        });
+        const response = await fetch(
+          "/api/knowledge-intake/live/nws?mode=alerts&area=US&limit=100&persist=true",
+          { cache: "no-store" }
+        );
         const payload = (await response.json()) as {
           incidents?: ArgusIncidentKnowledge[];
           userAgentConfigured?: boolean;
@@ -2216,7 +2276,7 @@ export default function AppPage() {
         newsEvidence={curatedNewsEvidence}
         selectedConflictZoneId={selectedConflictZone?.id}
         onConflictZoneSelect={selectConflictZone}
-        argusEvents={demoArgusEvents}
+        argusEvents={argusEvents}
         selectedArgusEventId={selectedArgusEvent?.id}
         onArgusEventSelect={selectArgusEvent}
         baseMapType={baseMapType}

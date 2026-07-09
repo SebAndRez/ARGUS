@@ -1,0 +1,254 @@
+import {
+  classifyThreat,
+  classifySeverityFromLevel,
+  mapThreatToHazardDomain,
+  type SevereWeatherThreatType,
+} from "@/lib/weather/severeWeatherClassifier";
+import { resolveAdministrativeAreaWithFallback } from "@/lib/geometry/argusGeometryResolver";
+import { extractDmcMentionEvidence } from "@/lib/sources/chile/dmcProvider";
+import type { ChileOfficialAlertRaw } from "@/lib/sources/chile/senapredProvider";
+import {
+  createIngestionRun,
+  finishIngestionRun,
+  saveKnowledgeEvidenceIfNew,
+  upsertKnowledgeIncidentByExternalId,
+} from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
+import type { ArgusEvidenceConfidenceScore, ArgusIncidentKnowledge } from "@/types/knowledgeIntake";
+
+/**
+ * Promotes classified Chile official alerts (severity `high`/`critical`
+ * only) into persisted `KnowledgeIncident` + `KnowledgeEvidence` rows,
+ * reusing the *existing* dedup-aware persistence service untouched
+ * (`upsertKnowledgeIncidentByExternalId`, `saveKnowledgeEvidenceIfNew`) — no
+ * new dedup logic. `incident.id` doubles as the DB `externalId` (see
+ * `getExternalIdFromIncident` in `knowledgeDeduplication.ts`: any
+ * `sourceIds[0]` not in its known-prefix list falls through to using
+ * `incident.id` verbatim), so re-running ingestion for the same
+ * threat+area+day updates the same row instead of duplicating it.
+ */
+const SOURCE_ID = "senapred_eventos";
+const SOURCE_NAME = "SENAPRED";
+
+function slugify(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function buildExternalId(threat: SevereWeatherThreatType, areaName: string, issuedAt: string): string {
+  const date = issuedAt.slice(0, 10);
+  return `${threat.toLowerCase()}:${slugify(areaName)}:${date}`;
+}
+
+const RECOMMENDED_ACTIONS: Record<SevereWeatherThreatType, string> = {
+  TORNADO: "Buscar refugio en un lugar bajo y firme, alejarse de ventanas y estructuras livianas, seguir instrucciones de SENAPRED.",
+  WATERSPOUT: "Alejarse de la costa y de embarcaciones menores, no acercarse a observar el fenómeno.",
+  SEVERE_WIND: "Asegurar objetos sueltos, evitar estructuras livianas y árboles, evitar desplazamientos innecesarios.",
+  THUNDERSTORM: "Evitar espacios abiertos y estructuras metálicas, desconectar equipos eléctricos sensibles.",
+  HEAVY_RAIN: "Evitar desplazamientos innecesarios, monitorear rutas y cortes, evitar cruces de cauces crecidos.",
+  LANDSLIDE_RISK: "Evitar laderas, quebradas y taludes; no cruzar zonas con barro activo; reportar cortes o material sobre caminos.",
+  FLOOD: "Evitar sectores anegados y cruces de cauces crecidos; priorizar rutas alternativas.",
+  OTHER: "Revisar canales oficiales de SENAPRED y DMC antes de tomar decisiones operativas.",
+};
+
+function buildEvidenceConfidence(finalConfidence: number, label: ArgusEvidenceConfidenceScore["label"]): ArgusEvidenceConfidenceScore {
+  return {
+    sourceReliability: finalConfidence,
+    corroborationCount: 1,
+    geolocationPrecision: finalConfidence,
+    timestampPrecision: 85,
+    documentQuality: 80,
+    extractionConfidence: 80,
+    conflictWithOtherSources: 0,
+    finalConfidence,
+    label,
+  };
+}
+
+export type ChileAlertPromotionSummary = {
+  status: "success" | "partial" | "failed";
+  runId: string | null;
+  inserted: number;
+  updated: number;
+  skipped: number;
+  notPromoted: number;
+  incidents: ArgusIncidentKnowledge[];
+  errors: string[];
+};
+
+export async function promoteChileOfficialAlerts(rawAlerts: ChileOfficialAlertRaw[]): Promise<ChileAlertPromotionSummary> {
+  let run: Awaited<ReturnType<typeof createIngestionRun>>;
+  try {
+    run = await createIngestionRun({
+      sourceId: SOURCE_ID,
+      sourceName: SOURCE_NAME,
+      metadataJson: { alertsConsidered: rawAlerts.length },
+    });
+  } catch (error) {
+    return {
+      status: "failed",
+      runId: null,
+      inserted: 0,
+      updated: 0,
+      skipped: 0,
+      notPromoted: 0,
+      incidents: [],
+      errors: [error instanceof Error ? error.message : "Failed to create ingestion run"],
+    };
+  }
+
+  let inserted = 0;
+  let updated = 0;
+  let skipped = 0;
+  let notPromoted = 0;
+  const errors: string[] = [];
+  const incidents: ArgusIncidentKnowledge[] = [];
+
+  for (const raw of rawAlerts) {
+    const threat = classifyThreat(raw.threatText);
+    const severity = classifySeverityFromLevel(raw.levelText);
+    if (severity !== "high" && severity !== "critical") {
+      notPromoted += 1;
+      continue;
+    }
+
+    const areaName = raw.commune ?? raw.province ?? raw.region ?? "chile";
+    const geometryResolved = resolveAdministrativeAreaWithFallback("CL", {
+      commune: raw.commune,
+      province: raw.province,
+      region: raw.region,
+    });
+    const externalId = buildExternalId(threat, areaName, raw.issuedAt);
+    const domain = mapThreatToHazardDomain(threat);
+
+    const incident: ArgusIncidentKnowledge = {
+      id: externalId,
+      title: raw.title,
+      summary: raw.threatText.slice(0, 900),
+      domain,
+      subtype: threat.toLowerCase(),
+      severity,
+      confidenceScore: 90,
+      actionabilityScore: severity === "critical" ? 90 : 75,
+      sourceReliabilityScore: 95,
+      evidenceCount: 1,
+      sourceIds: [SOURCE_ID],
+      sourceNames: [SOURCE_NAME],
+      occurredAt: raw.issuedAt,
+      detectedAt: raw.updatedAt,
+      country: "CL",
+      region: raw.region,
+      locality: raw.commune ?? raw.province,
+      latitude: geometryResolved?.anchor[0],
+      longitude: geometryResolved?.anchor[1],
+      geometry: geometryResolved
+        ? {
+            type: "administrative_area",
+            geojson: geometryResolved.geojson,
+            regionNames: geometryResolved.regionNames,
+            anchor: geometryResolved.anchor,
+            precisionLevel: geometryResolved.resolvedLevel,
+          }
+        : undefined,
+      // `ArgusIncidentTechnicalFactors` models physical-incident factors (fire
+      // behavior, vehicle type, ...) that don't have a severe-weather-alert
+      // equivalent; this is still stored as-is in the `technicalFactorsJson`
+      // Json column, so the extra fields survive for `knowledgeIncidentToArgusEvent`
+      // to read back.
+      technicalFactors: {
+        threatType: threat,
+        levelText: raw.levelText,
+        region: raw.region,
+        province: raw.province,
+        commune: raw.commune,
+      } as unknown as ArgusIncidentKnowledge["technicalFactors"],
+      causes: [raw.levelText],
+      contributingFactors: [],
+      responseActions: [],
+      lessonsLearned: [],
+      recommendedActions: [
+        {
+          id: `rec-${externalId}`,
+          audience: "citizen",
+          priority: severity === "critical" ? "critical" : "high",
+          text: RECOMMENDED_ACTIONS[threat],
+          rationale: "Alerta oficial SENAPRED.",
+          confidenceScore: 90,
+          safetyLimit: "Estimación informativa ARGUS; seguir siempre instrucciones oficiales de SENAPRED/DMC.",
+          requiresHumanValidation: false,
+        },
+      ],
+      relatedHistoricalEvents: [],
+      similarIncidentIds: [],
+      tags: ["senapred", threat.toLowerCase(), slugify(raw.levelText)],
+      language: "es",
+      rawEvidenceRefs: raw.evidenceUrl ? [raw.evidenceUrl] : [],
+      createdAt: raw.issuedAt,
+      updatedAt: raw.updatedAt,
+    };
+
+    try {
+      const saved = await upsertKnowledgeIncidentByExternalId(incident);
+      if (saved.action === "inserted") inserted += 1;
+      if (saved.action === "updated") updated += 1;
+      if (saved.action === "skipped") skipped += 1;
+      incidents.push(incident);
+
+      await saveKnowledgeEvidenceIfNew({
+        id: `evidence-${externalId}-senapred`,
+        incidentId: saved.incident.id,
+        sourceId: SOURCE_ID,
+        sourceName: SOURCE_NAME,
+        title: raw.title,
+        url: raw.evidenceUrl,
+        summary: raw.threatText.slice(0, 500),
+        confidenceScore: buildEvidenceConfidence(90, "high"),
+        locationConfidence: geometryResolved ? 90 : 40,
+        timestampConfidence: 85,
+        extractedAt: new Date().toISOString(),
+      });
+
+      const dmcMention = extractDmcMentionEvidence(raw);
+      if (dmcMention) {
+        await saveKnowledgeEvidenceIfNew({
+          id: `evidence-${externalId}-dmc-mention`,
+          incidentId: saved.incident.id,
+          sourceId: "dmc_meteochile_mention",
+          sourceName: "DMC (mencionado por SENAPRED)",
+          title: `DMC citado en alerta SENAPRED: ${raw.title}`,
+          summary: dmcMention.excerpt,
+          confidenceScore: buildEvidenceConfidence(70, "medium"),
+          locationConfidence: geometryResolved ? 90 : 40,
+          timestampConfidence: 80,
+          extractedAt: new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : `Failed to persist incident ${externalId}`);
+    }
+  }
+
+  await finishIngestionRun(run.id, {
+    status: errors.length > 0 ? "partial" : "success",
+    recordsFetched: rawAlerts.length,
+    recordsNormalized: incidents.length,
+    recordsInserted: inserted,
+    recordsUpdated: updated,
+    recordsSkipped: skipped,
+    metadataJson: { notPromoted },
+  });
+
+  return {
+    status: errors.length > 0 ? "partial" : "success",
+    runId: run.id,
+    inserted,
+    updated,
+    skipped,
+    notPromoted,
+    incidents,
+    errors,
+  };
+}

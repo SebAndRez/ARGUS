@@ -180,3 +180,59 @@ export async function fetchSenapredReferenceTables(): Promise<Record<"Region" | 
   referenceTableCache = { fetchedAt: Date.now(), tables };
   return tables;
 }
+
+export type SenapredAlertaDetail = SenapredAlertaRecord & {
+  urlAccess?: string;
+  provincias: string[]; // provinciaIds
+  comunas: string[]; // comunaIds
+};
+
+const GET_ALERTA_QUERY = `
+  query GetAlerta($id: ID!) {
+    getAlerta(id: $id) {
+      id
+      titulo
+      contenido
+      fechaHora
+      autor
+      isActive
+      isDeleted
+      urlAccess
+      regionesIds
+      variableRiesgo {
+        nombre
+        codigo
+        tipoAlerta {
+          nombre
+          codigo
+        }
+      }
+      provincias {
+        items { provinciaId }
+      }
+      comunas {
+        items { comunaId }
+      }
+    }
+  }
+`;
+
+/** Full alert detail, including comuna/provincia breakdown (not present in the `alertasByDate` list query) — used only for alerts that already passed severity filtering, to avoid an N+1 fetch across every fetched alert. */
+export async function fetchAlertaDetail(id: string): Promise<SenapredAlertaDetail | null> {
+  const response = await executeSignedGraphql<{
+    getAlerta:
+      | (SenapredAlertaRecord & {
+          provincias: { items: Array<{ provinciaId: string }> };
+          comunas: { items: Array<{ comunaId: string }> };
+        })
+      | null;
+  }>(GET_ALERTA_QUERY, { id });
+
+  if (response.errors?.length || !response.data?.getAlerta) return null;
+  const detail = response.data.getAlerta;
+  return {
+    ...detail,
+    provincias: detail.provincias.items.map((item) => item.provinciaId),
+    comunas: detail.comunas.items.map((item) => item.comunaId),
+  };
+}

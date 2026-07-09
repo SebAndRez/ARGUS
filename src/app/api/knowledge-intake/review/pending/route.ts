@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const { response } = await requireOperator();
+  if (response) return response;
+
   const [incidents, documents, lessons, reviews] = await Promise.all([
     prisma.knowledgeIncident.findMany({
       where: { reviewStatus: { in: ["pending_review", "needs_more_evidence"] } },

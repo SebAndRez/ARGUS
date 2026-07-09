@@ -11,6 +11,10 @@ export type ArgusMapEventKind =
   | "official_source"
   | "live_camera"
   | "risk_assessment"
+  /** Tornado / waterspout / severe straight-line wind — shares this one differentiated funnel-cloud marker rather than falling back to generic "risk_assessment". */
+  | "tornado"
+  /** Structural / roof / bridge collapse — shares this one differentiated marker rather than falling back to generic "risk_assessment". */
+  | "structural_collapse"
   | "unknown";
 
 export type ArgusMapSeverity =
@@ -141,6 +145,10 @@ export function getArgusMarkerSymbol(kind: ArgusMapEventKind) {
       return `<path d="M8 13h15v12H8z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="m23 17 6-3v10l-6-3z" fill="currentColor"/><circle cx="15.5" cy="19" r="2.6" fill="currentColor"/>`;
     case "risk_assessment":
       return `<path d="M18 5 31 29H5z" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linejoin="round"/><path d="M18 14v7M18 25v.5" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>`;
+    case "tornado":
+      return `<path d="M6 8h24l-3 5H10z" fill="currentColor"/><path d="M10 15h16l-2.6 5H13z" fill="currentColor"/><path d="M13.5 21h9l-2 5h-5z" fill="currentColor"/><path d="M16 27h4l-.9 4h-2.2z" fill="currentColor"/>`;
+    case "structural_collapse":
+      return `<path d="M9 31V12l7-3.5v6l4-2v18.5z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M9 31h11" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M15 31l1.8-6.5 3 3.5 2-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
     default:
       return `<circle cx="18" cy="18" r="8" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M18 13v6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="18" cy="24" r="1.3" fill="currentColor"/>`;
   }

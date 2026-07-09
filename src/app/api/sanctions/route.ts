@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireOperator } from "@/lib/security/apiGuards";
+import { logAuditEvent, buildSanctionAuditMetadata } from "@/services/auditService";
 
 export async function GET() {
   const { response } = await requireOperator();
@@ -62,6 +63,21 @@ export async function POST(req: Request) {
       strikes: type === "RESTORE" ? 0 : undefined,
       updatedAt: new Date(),
     },
+  });
+
+  await logAuditEvent({
+    actorUserId: user.id,
+    action: "SANCTION_CREATED",
+    targetType: "User",
+    targetId: userId,
+    metadata: buildSanctionAuditMetadata({
+      sanctionId: sanction.id,
+      targetUserId: userId,
+      sanctionType: type,
+      reason,
+      previousAccountStatus: target.accountStatus,
+      nextAccountStatus: accountStatus,
+    }),
   });
 
   return NextResponse.json({ sanction });

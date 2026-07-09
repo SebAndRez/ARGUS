@@ -35,7 +35,13 @@ export type ArgusEventType =
   | "NEWS_REPORTED_INCIDENT"
   | "CITIZEN_REPORT"
   | "RISK_ZONE"
-  | "COASTAL_HAZARD";
+  | "COASTAL_HAZARD"
+  | "TORNADO"
+  | "WATERSPOUT"
+  | "SEVERE_WIND"
+  | "STRUCTURAL_COLLAPSE"
+  | "ROOF_COLLAPSE"
+  | "BUILDING_COLLAPSE";
 
 export type ArgusSeverity = "info" | "low" | "medium" | "high" | "critical";
 

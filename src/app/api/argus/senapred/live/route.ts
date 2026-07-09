@@ -10,9 +10,11 @@ function splitList(value: string | null) {
 /**
  * Manual/ops testing endpoint for the live SENAPRED eventos adapter — signs
  * anonymous-identity AppSync requests the same way the public
- * senapred.cl/eventos/ page does. Not wired into the map's live data path;
- * the operational map still reads `demoArgusEvents` (see
- * `src/data/demoArgusEvents.ts`).
+ * senapred.cl/eventos/ page does. Exposes raw signals/warnings/errors for
+ * debugging; the operational map's live data path is
+ * `/api/argus/events` (`src/app/api/argus/events/route.ts`), which calls the
+ * same adapter with caching and falls back to `demoArgusEvents` only if the
+ * live fetch fails or returns nothing.
  */
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;

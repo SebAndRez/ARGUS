@@ -62,6 +62,9 @@ function resolveLayerId(eventType: ArgusEventType): ArgusEventLayerId {
       return "argusOfficialAlerts";
     case "SEVERE_WEATHER":
     case "HEAVY_RAIN":
+    case "TORNADO":
+    case "WATERSPOUT":
+    case "SEVERE_WIND":
       return "argusSevereWeather";
     case "FLOOD":
     case "LANDSLIDE":
@@ -81,6 +84,14 @@ function resolveMarkerKind(eventType: ArgusEventType): ArgusMapEventKind {
     case "HEAVY_RAIN":
     case "FLOOD":
       return "weather";
+    case "TORNADO":
+    case "WATERSPOUT":
+    case "SEVERE_WIND":
+      return "tornado";
+    case "STRUCTURAL_COLLAPSE":
+    case "ROOF_COLLAPSE":
+    case "BUILDING_COLLAPSE":
+      return "structural_collapse";
     case "EARTHQUAKE":
       return "earthquake";
     case "TSUNAMI":
@@ -107,6 +118,12 @@ const markerLabel: Partial<Record<ArgusEventType, string>> = {
   EARTHQUAKE: "EQ",
   TSUNAMI: "TS",
   WILDFIRE: "WF",
+  TORNADO: "TOR",
+  WATERSPOUT: "WSP",
+  SEVERE_WIND: "WND",
+  STRUCTURAL_COLLAPSE: "COL",
+  ROOF_COLLAPSE: "RCL",
+  BUILDING_COLLAPSE: "BCL",
 };
 
 function resolveMapConfidence(confidence: ArgusConfidence): ArgusMapConfidence {
@@ -153,7 +170,10 @@ export default function ArgusEventLayer({
 
     events.forEach((event) => {
       const layerId = resolveLayerId(event.eventType);
-      if (!visibility[layerId]) return;
+      // Critical-severity events (e.g. Alerta Roja) stay visible even if their
+      // phenomenon layer is toggled off — a critical official alert should
+      // never be hidden by a UI preference.
+      if (!visibility[layerId] && event.severity !== "critical") return;
       if (!isVisibleAtZoom(resolveVisibilityCategory(event), zoom)) return;
 
       const color = resolveZoneColor(event);

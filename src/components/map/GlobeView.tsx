@@ -73,14 +73,37 @@ const toFiniteCoordinate = (value: number | null | undefined) => {
 };
 
 const getInternalKind = (event: CrisisEvent): ArgusMapEventKind => {
+  const category = event.category?.toLowerCase() ?? "";
   if (event.type === "REPORT") return "citizen_report";
   if (event.type === "SOS") return "force_report";
-  if (event.category?.toLowerCase().includes("fire")) return "fire";
-  if (event.category?.toLowerCase().includes("weather")) return "weather";
+  if (
+    category.includes("tornado") ||
+    category.includes("tromba") ||
+    category.includes("waterspout") ||
+    category.includes("viento extremo") ||
+    category.includes("severe_wind")
+  ) {
+    return "tornado";
+  }
+  if (category.includes("colapso") || category.includes("collapse") || category.includes("derrumbe")) {
+    return "structural_collapse";
+  }
+  if (category.includes("fire")) return "fire";
+  if (category.includes("weather")) return "weather";
   return "risk_assessment";
 };
 
 const getExternalKind = (event: ArgusNormalizedEvent): ArgusMapEventKind => {
+  if (event.category === "tornado" || event.category === "waterspout" || event.category === "severe_wind") {
+    return "tornado";
+  }
+  if (
+    event.category === "structural_collapse" ||
+    event.category === "roof_collapse" ||
+    event.category === "building_collapse"
+  ) {
+    return "structural_collapse";
+  }
   if (event.sourceId === "usgs_earthquake" || event.category === "earthquake") {
     return "earthquake";
   }

@@ -1,5 +1,22 @@
 [
   {
+    "changeId": "fd5d13d150c0",
+    "date": "2026-07-08",
+    "commit": "pending-fd5d13d",
+    "title": "ARGUS V.1.0.2.0",
+    "fileCount": 7,
+    "summary": "Se actualizaron 7 archivos relacionados con Mapa operativo y Capas del mapa.",
+    "changes": [
+      "Se actualizaron componentes del mapa operativo.",
+      "Se ajustaron vistas y elementos de interfaz."
+    ],
+    "affectedModules": [
+      "Mapa operativo",
+      "Capas del mapa"
+    ],
+    "simpleExplanation": "Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada."
+  },
+  {
     "changeId": "9dad468201bf",
     "date": "2026-07-08",
     "commit": "pending-9dad468",

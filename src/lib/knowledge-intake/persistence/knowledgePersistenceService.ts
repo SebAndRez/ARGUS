@@ -54,6 +54,22 @@ function toJson(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
 }
 
+/**
+ * For genuinely-optional incident fields (e.g. `casualties`/`impact`, which
+ * many sources never populate) — `undefined`/`null` must become
+ * `Prisma.JsonNull`, not the plain JS `null` literal `toJson` above
+ * produces. Prisma's client rejects a bare `null` for `Json?` columns at
+ * runtime ("must not be null. Please use undefined instead."), which is
+ * easy to hit for any adapter whose optional fields aren't always
+ * populated (not specific to one source) — kept as a separate helper from
+ * `toJson` so the many required-field call sites below don't all need a
+ * wider, Prisma-null-aware return type.
+ */
+function toNullableJson(value: unknown): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput {
+  if (value === undefined || value === null) return Prisma.JsonNull;
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
 function parseDate(value?: string) {
   if (!value) return undefined;
   const date = new Date(value);
@@ -86,9 +102,9 @@ function incidentCreateData(incident: ArgusIncidentKnowledge): Prisma.KnowledgeI
     locality: incident.locality,
     latitude: incident.latitude,
     longitude: incident.longitude,
-    geometryJson: toJson(incident.geometry),
-    casualtiesJson: toJson(incident.casualties),
-    impactJson: toJson(incident.impact),
+    geometryJson: toNullableJson(incident.geometry),
+    casualtiesJson: toNullableJson(incident.casualties),
+    impactJson: toNullableJson(incident.impact),
     technicalFactorsJson: toJson(incident.technicalFactors),
     causesJson: toJson(incident.causes),
     contributingFactorsJson: toJson(incident.contributingFactors),

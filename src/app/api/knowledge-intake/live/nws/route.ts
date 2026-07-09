@@ -51,8 +51,11 @@ export async function GET(request: NextRequest) {
         requiresConfiguration: false,
         userAgentConfigured: !result.warnings?.some((warning) => warning.includes("NWS_USER_AGENT")),
         persisted: true,
-        incidents: result.sampleIncidents,
-        evidence: result.sampleEvidence,
+        // Full normalized lists (not the 5-row `sampleIncidents`/`sampleEvidence`
+        // kept for the job-dashboard summary) — the operational map renders
+        // every alert it fetched, same as the non-persist path below.
+        incidents: result.incidents,
+        evidence: result.evidence,
       });
     }
 

@@ -19,6 +19,8 @@ const symbolRows: Array<{
   { kind: "tsunami", severity: "critical", confidence: "official", text: "Tsunami" },
   { kind: "fire", severity: "high", confidence: "raw", text: "Incendio / foco termico" },
   { kind: "wind", severity: "info", confidence: "verified", text: "Clima / viento / humo" },
+  { kind: "tornado", severity: "critical", confidence: "official", text: "Tornado / tromba / viento extremo" },
+  { kind: "structural_collapse", severity: "critical", confidence: "verified", text: "Colapso estructural / de techo" },
   { kind: "citizen_report", severity: "medium", confidence: "reported", label: "R", text: "Reporte ciudadano" },
   { kind: "force_report", severity: "high", confidence: "verified", text: "Reporte de fuerzas" },
   { kind: "official_source", severity: "info", confidence: "official", label: "I", text: "Fuente oficial / inteligencia" },

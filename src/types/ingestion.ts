@@ -51,6 +51,12 @@ export type ArgusIngestionCategory =
   | "natural_disaster"
   | "environmental_hazard"
   | "extreme_weather"
+  | "tornado"
+  | "waterspout"
+  | "severe_wind"
+  | "structural_collapse"
+  | "roof_collapse"
+  | "building_collapse"
   | "unknown";
 
 export type ArgusIngestionSeverity = "low" | "medium" | "high" | "critical";
