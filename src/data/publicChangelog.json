@@ -1,5 +1,26 @@
 [
   {
+    "changeId": "2968435f29e7",
+    "date": "2026-07-11",
+    "commit": "pending-2968435",
+    "title": "ARGUS v1.0.3.0 — Global Watch Core",
+    "fileCount": 20,
+    "summary": "Se incorporó el motor ARGUS Global Watch, que vigila desastres reales en todo el mundo y los muestra en el mapa operativo con severidad, confianza y recomendación.",
+    "changes": [
+      "Nuevo motor de vigilancia global: USGS, GDACS, NASA EONET/FIRMS, Copernicus EFFIS/EMS y SENAPRED/DMC.",
+      "Los incidentes reales de estas fuentes aparecen en el mapa operativo con ícono, severidad y recomendación.",
+      "Deduplicación entre fuentes: un mismo evento reportado por varias fuentes se fusiona en un solo incidente.",
+      "Prioridad garantizada para alertas high/critical de Global Watch en el Centro de Notificaciones.",
+      "Nuevo panel de Salud de Fuentes para operadores, con estado en tiempo real y actualización manual."
+    ],
+    "affectedModules": [
+      "Eventos y fuentes externas",
+      "Mapa operativo",
+      "Notificaciones"
+    ],
+    "simpleExplanation": "Esta actualizacion hace que incendios, terremotos, inundaciones y emergencias oficiales de cualquier pais aparezcan en ARGUS de forma automatica, priorizada y sin ruido. Queda pendiente activar ReliefWeb (crisis humanitarias) en produccion, a la espera de la aprobacion de credencial ante OCHA."
+  },
+  {
     "changeId": "d0fe548a9ced",
     "date": "2026-07-09",
     "commit": "pending-d0fe548",

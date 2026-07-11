@@ -369,6 +369,47 @@ async function getPredictiveNotifications(readIds: string[]): Promise<ArgusNotif
   });
 }
 
+/**
+ * Reserved slots for high/critical `KnowledgeIncident` notifications (ARGUS
+ * Global Watch + SENAPRED, tagged `knowledge-incident-*` by
+ * `knowledgeIncidentToNotification`) at the top of the feed. Without this,
+ * a red-alert wildfire or earthquake competes for a spot in the final
+ * `limit` slice purely by `eventTime`, and gets crowded out by citizen
+ * reports/routes/source-health items that happen to be more recent —
+ * `getCriticalKnowledgeIncidents` already caps its query at 60 rows, so
+ * this cap mainly guards against a *smaller* caller-supplied `limit`
+ * (e.g. `?limit=20`) reserving the entire page for Global Watch alone.
+ */
+const GLOBAL_WATCH_PRIORITY_CAP = 40;
+
+function isGlobalWatchPriorityNotification(notification: ArgusNotification): boolean {
+  return (
+    notification.id.startsWith("knowledge-incident-") &&
+    (notification.severity === "P0_CRITICAL" || notification.severity === "P1_HIGH")
+  );
+}
+
+/**
+ * `buildArgusNotifications` already sorts everything by `eventTime` desc
+ * (then severity), so within each partition below "most recent first" is
+ * preserved — this only changes *which* items survive the final `limit`
+ * truncation, not the relative order of same-partition items. Partitioning
+ * by id prefix means no item can appear in both groups, so this can't
+ * introduce duplicates.
+ */
+function prioritizeGlobalWatchNotifications(
+  notifications: ArgusNotification[],
+  limit: number
+): ArgusNotification[] {
+  const priority = notifications.filter(isGlobalWatchPriorityNotification);
+  const rest = notifications.filter((notification) => !isGlobalWatchPriorityNotification(notification));
+
+  const prioritySlots = Math.min(priority.length, GLOBAL_WATCH_PRIORITY_CAP, limit);
+  const remainingSlots = Math.max(0, limit - prioritySlots);
+
+  return [...priority.slice(0, prioritySlots), ...rest.slice(0, remainingSlots)];
+}
+
 export async function GET(request: NextRequest) {
   const scope = request.nextUrl.searchParams.get("scope") as ArgusNotificationScope | null;
   const severity = request.nextUrl.searchParams.get("severity") as ArgusNotificationSeverity | null;
@@ -455,7 +496,7 @@ export async function GET(request: NextRequest) {
     return true;
   });
 
-  notifications = notifications.slice(0, limit);
+  notifications = prioritizeGlobalWatchNotifications(notifications, limit);
 
   return NextResponse.json({
     notifications,
