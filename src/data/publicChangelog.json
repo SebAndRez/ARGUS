@@ -1,5 +1,20 @@
 [
   {
+    "changeId": "d0fe548a9ced",
+    "date": "2026-07-09",
+    "commit": "pending-d0fe548",
+    "title": "ARGUS V1.0.2.1 — Estabilización operacional, alertas vivas y seguridad crítica",
+    "fileCount": 4,
+    "summary": "Se actualizaron 4 archivos relacionados con ARGUS GRID.",
+    "changes": [
+      "Se actualizaron servicios internos usados por ARGUS."
+    ],
+    "affectedModules": [
+      "ARGUS GRID"
+    ],
+    "simpleExplanation": "Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada."
+  },
+  {
     "changeId": "06f845267e31",
     "date": "2026-07-09",
     "commit": "pending-06f8452",

@@ -1,5 +1,23 @@
 # ARGUS Public Changelog
 
+## 2026-07-09 - pending-d0fe548 - ARGUS V1.0.2.1 — Estabilización operacional, alertas vivas y seguridad crítica
+
+**Archivos modificados:** 4
+
+**Resumen publico:**  
+Se actualizaron 4 archivos relacionados con ARGUS GRID.
+
+**Cambios principales:**
+- Se actualizaron servicios internos usados por ARGUS.
+
+**Modulos afectados:**
+- ARGUS GRID
+
+**En simple:**  
+Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada.
+
+---
+
 ## 2026-07-09 - pending-06f8452 - ARGUS V1.0.2.0 — Estabilización operacional, alertas vivas y seguridad crítica
 
 **Archivos modificados:** 41

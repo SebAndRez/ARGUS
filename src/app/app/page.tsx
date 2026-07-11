@@ -1872,23 +1872,31 @@ export default function AppPage() {
       }
 
       // Persisted Chile severe-weather alerts (SENAPRED, promoted via
-      // `alertPromotionEngine`) — merged in alongside the demo/live SENAPRED
-      // events above so they render through the same `ArgusEventLayer`
-      // (real polygon geometry, existing phenomenon-based toggles). Never a
-      // separate "Chile Official Alerts" layer/toggle.
-      try {
-        const chileAlertsResponse = await fetch("/api/chile-alerts", { cache: "no-store" });
-        const chileAlertsPayload = (await chileAlertsResponse.json()) as { events?: ArgusEvent[] };
-        if (chileAlertsResponse.ok && Array.isArray(chileAlertsPayload.events) && chileAlertsPayload.events.length > 0) {
-          const base = baseEvents ?? demoArgusEvents;
-          const baseIds = new Set(base.map((event) => event.id));
-          const merged = base.concat(chileAlertsPayload.events.filter((event) => !baseIds.has(event.id)));
-          setArgusEvents(merged);
-          return;
+      // `alertPromotionEngine`) and ARGUS Global Watch incidents (VIGÍA:
+      // USGS/GDACS/EONET/FIRMS/EFFIS/Copernicus EMS/ReliefWeb) — merged in
+      // alongside the demo/live events above so everything renders through
+      // the same `ArgusEventLayer` (severity coloring, phenomenon-based
+      // toggles, detail panel). Both fetches are additive and independent:
+      // a failure in one never blanks the base layer or the other.
+      let merged = baseEvents ?? demoArgusEvents;
+      let hasExtraEvents = false;
+      for (const endpoint of ["/api/chile-alerts", "/api/vigia/events"]) {
+        try {
+          const extraResponse = await fetch(endpoint, { cache: "no-store" });
+          const extraPayload = (await extraResponse.json()) as { events?: ArgusEvent[] };
+          if (extraResponse.ok && Array.isArray(extraPayload.events) && extraPayload.events.length > 0) {
+            const mergedIds = new Set(merged.map((event) => event.id));
+            merged = merged.concat(extraPayload.events.filter((event) => !mergedIds.has(event.id)));
+            hasExtraEvents = true;
+          }
+        } catch {
+          // Additive layer — a failed fetch here should not affect the rest.
         }
-      } catch {
-        // Chile alerts are additive — a failed fetch here should not affect
-        // the base ARGUS events layer.
+      }
+
+      if (hasExtraEvents) {
+        setArgusEvents(merged);
+        return;
       }
 
       if (baseEvents) setArgusEvents(baseEvents);

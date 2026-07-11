@@ -1,0 +1,31 @@
+name: ARGUS Global Watch Cron
+
+# Runs the ARGUS Global Watch engine (USGS, GDACS, NASA EONET/FIRMS,
+# Copernicus EFFIS/EMS, ReliefWeb, SENAPRED) on a schedule external to
+# Vercel Cron, since Vercel Hobby only allows a cron to run once per day.
+# See src/app/api/jobs/run-global-watch/route.ts for the endpoint.
+on:
+  schedule:
+    # Every 15 minutes, offset from :00/:15/:30/:45 (and from the Chile
+    # alerts cron at :07/:22/:37/:52) to avoid top-of-hour spikes and
+    # overlapping runs against the same database.
+    - cron: "3,18,33,48 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run-global-watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger /api/jobs/run-global-watch
+        run: |
+          curl -fsS -X POST \
+            "${ARGUS_PROD_URL}/api/jobs/run-global-watch" \
+            -H "Authorization: Bearer ${ARGUS_CRON_SECRET}" \
+            -H "User-Agent: argus-github-actions-cron" \
+            --max-time 300 \
+            --retry 2 \
+            --retry-delay 10
+        env:
+          ARGUS_PROD_URL: ${{ secrets.ARGUS_PROD_URL }}
+          ARGUS_CRON_SECRET: ${{ secrets.ARGUS_CRON_SECRET }}
