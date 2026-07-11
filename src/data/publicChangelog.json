@@ -1,5 +1,28 @@
 [
   {
+    "changeId": "60af873bf4db",
+    "date": "2026-07-11",
+    "commit": "pending-60af873",
+    "title": "ARGUS v1.0.3.1 - Operational Stabilization Gate",
+    "fileCount": 62,
+    "summary": "Se actualizaron 62 archivos relacionados con Dependencias internas y Eventos y fuentes externas.",
+    "changes": [
+      "Se actualizaron componentes del mapa operativo.",
+      "Se ajusto la vista global ARGUS Orbit.",
+      "Se mejoro la lectura y gestion de reportes.",
+      "Se actualizaron eventos o fuentes externas.",
+      "Se ajustaron vistas y elementos de interfaz."
+    ],
+    "affectedModules": [
+      "Dependencias internas",
+      "Eventos y fuentes externas",
+      "Mapa operativo",
+      "ARGUS Orbit",
+      "Reportes ciudadanos"
+    ],
+    "simpleExplanation": "Esta actualizacion mejora la experiencia del mapa y la vista global para que ARGUS sea mas claro al explorar una situacion."
+  },
+  {
     "changeId": "v1031-stabilization",
     "date": "2026-07-11",
     "commit": "pending-v1031",

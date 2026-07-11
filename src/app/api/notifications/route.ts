@@ -72,19 +72,35 @@ function notificationSignature(notification: ArgusNotification) {
   return `${notification.type}:${lat}:${lng}:${bucket}`;
 }
 
+/**
+ * Ordering tier for the operational feed. A RESOLVED/DISMISSED alert must
+ * never outrank an active or monitoring one just because its stored
+ * severity is still "critical" (lifecycle sweeps update status, not
+ * severity) — so resolved status is checked before severity, not after.
+ * Within P0/P1, NEW/UPDATED ("active") ranks above MONITORING; lower
+ * severities don't bother with that distinction.
+ *
+ *   0 active   P0_CRITICAL   1 monitoring P0_CRITICAL
+ *   2 active   P1_HIGH       3 monitoring P1_HIGH
+ *   4 active/monitoring P2_MEDIUM
+ *   5 resolved/dismissed (any severity)
+ *   6 everything else (P3_LOW / P4_INFO)
+ */
+function notificationOrderTier(notification: ArgusNotification): number {
+  if (notification.status === "RESOLVED" || notification.status === "DISMISSED") return 5;
+  const isMonitoring = notification.status === "MONITORING";
+  if (notification.severity === "P0_CRITICAL") return isMonitoring ? 1 : 0;
+  if (notification.severity === "P1_HIGH") return isMonitoring ? 3 : 2;
+  if (notification.severity === "P2_MEDIUM") return 4;
+  return 6;
+}
+
 function dedupeOperationalNotifications(notifications: ArgusNotification[]) {
-  const severityRank: Record<ArgusNotificationSeverity, number> = {
-    P0_CRITICAL: 0,
-    P1_HIGH: 1,
-    P2_MEDIUM: 2,
-    P3_LOW: 3,
-    P4_INFO: 4,
-  };
   const sorted = [...notifications].sort((a, b) => {
     const category = categoryPriority(a) - categoryPriority(b);
     if (category !== 0) return category;
-    const severity = severityRank[a.severity] - severityRank[b.severity];
-    if (severity !== 0) return severity;
+    const tier = notificationOrderTier(a) - notificationOrderTier(b);
+    if (tier !== 0) return tier;
     return new Date(b.eventTime).getTime() - new Date(a.eventTime).getTime();
   });
   const seen = new Set<string>();
@@ -439,7 +455,9 @@ const GLOBAL_WATCH_PRIORITY_CAP = 40;
 function isGlobalWatchPriorityNotification(notification: ArgusNotification): boolean {
   return (
     notification.id.startsWith("knowledge-incident-") &&
-    (notification.severity === "P0_CRITICAL" || notification.severity === "P1_HIGH")
+    (notification.severity === "P0_CRITICAL" || notification.severity === "P1_HIGH") &&
+    notification.status !== "RESOLVED" &&
+    notification.status !== "DISMISSED"
   );
 }
 

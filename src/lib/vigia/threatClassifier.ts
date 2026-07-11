@@ -182,12 +182,31 @@ export type CriticalImpactSignals = {
 };
 
 const IMPACT_PATTERNS: Array<{ key: keyof Omit<CriticalImpactSignals, "shouldEscalateToCritical" | "matched">; label: string; pattern: RegExp }> = [
-  { key: "casualties", label: "víctimas", pattern: /fatalit|death[s]?|dead|killed|muert[oa]s?|fallecid|v[ií]ctima|casualt|herid[oa]s?\s+grave/i },
+  { key: "casualties", label: "víctimas", pattern: /fatalit|death[s]?|dead|killed|muert[oa]s?|fallecid|v[ií]ctima|casualt|herid[oa]s?\s+grave/gi },
   { key: "evacuation", label: "evacuación", pattern: /evacuat|evacuaci[oó]n|evacuad[oa]s|desalojo/i },
   { key: "redAlert", label: "alerta roja", pattern: /alerta\s+roja|red\s+alert|nivel\s+rojo/i },
   { key: "destruction", label: "destrucción", pattern: /destroy|destrucci[oó]n|devastat|arrasad|viviendas?\s+(destruida|quemada)|homes?\s+(destroyed|burned)/i },
   { key: "criticalInfrastructure", label: "infraestructura crítica", pattern: /hospital|airport|aeropuerto|power\s+(plant|grid)|red\s+el[eé]ctrica|planta\s+de\s+agua|puente|bridge\s+(collapse|damage)|infraestructura\s+cr[ií]tica/i },
 ];
+
+/**
+ * A casualty keyword preceded by an explicit zero ("0 deaths", "no dead",
+ * "sin víctimas") is a non-event, not an impact signal. GDACS/ReliefWeb-style
+ * feeds routinely report "0 deaths and N displaced" even for Green-level
+ * alerts — matching the bare keyword there falsely escalated severity.
+ */
+const ZERO_CASUALTY_QUALIFIER = /(?:\b0\b|\bno\b|\bzero\b|\bsin\b|\bning[uú]n[ao]?\b)\s*$/i;
+
+function hasNonZeroCasualtyMention(text: string): boolean {
+  const pattern = IMPACT_PATTERNS.find((rule) => rule.key === "casualties")!.pattern;
+  pattern.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text))) {
+    const precedingText = text.slice(Math.max(0, match.index - 15), match.index);
+    if (!ZERO_CASUALTY_QUALIFIER.test(precedingText)) return true;
+  }
+  return false;
+}
 
 /**
  * Detects human-impact signals in free text. Per Global Watch promotion
@@ -206,7 +225,8 @@ export function detectCriticalImpactSignals(text: string): CriticalImpactSignals
     matched: [],
   };
   for (const rule of IMPACT_PATTERNS) {
-    if (rule.pattern.test(text)) {
+    const matched = rule.key === "casualties" ? hasNonZeroCasualtyMention(text) : rule.pattern.test(text);
+    if (matched) {
       signals[rule.key] = true;
       signals.matched.push(rule.label);
     }

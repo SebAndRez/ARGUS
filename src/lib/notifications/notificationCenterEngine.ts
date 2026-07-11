@@ -324,8 +324,25 @@ function finalize(
     icon: getNotificationIcon(partial.type),
     colorToken: getNotificationColorToken(partial.severity),
     isRead: readIds.has(partial.id),
-    isPinned: partial.severity === "P0_CRITICAL",
+    isPinned:
+      partial.severity === "P0_CRITICAL" &&
+      partial.status !== "RESOLVED" &&
+      partial.status !== "DISMISSED",
   };
+}
+
+/**
+ * Fenix demo scenarios only cover wildfire, coastal tsunami and urban flood
+ * (`src/data/fenixDemo.ts`) — pointing every notification type at the
+ * wildfire scenario regardless of hazard was misleading (a flood or civil
+ * unrest notification linking to a wildfire preview). Returns `null` when no
+ * matching scenario exists rather than falling back to wildfire.
+ */
+function fenixScenarioIdForType(type: ArgusNotificationType): string | null {
+  if (type === "FIRE") return "fenix-wildfire-urban-edge";
+  if (type === "TSUNAMI") return "fenix-coastal-tsunami";
+  if (type === "FLOOD") return "fenix-urban-flood";
+  return null;
 }
 
 function eventToNotification(
@@ -371,7 +388,7 @@ function eventToNotification(
       relatedEventId: event.id,
       relatedReportId: event.recordType === "Report" || event.type === "REPORT" ? event.id : null,
       relatedIncidentId: event.recordType === "HelpRequest" || event.type === "SOS" ? event.id : null,
-      relatedFenixScenarioId: lat !== null && lng !== null ? "fenix-wildfire-urban-edge" : null,
+      relatedFenixScenarioId: lat !== null && lng !== null ? fenixScenarioIdForType(type) : null,
       relatedRouteId: null,
       actionUrl:
         lat !== null && lng !== null
@@ -397,13 +414,14 @@ function externalToNotification(
     userLocation && lat !== null && lng !== null
       ? calculateDistanceKm(userLocation, { lat, lng })
       : null;
+  const type = typeFromCategory(event.category, "SYSTEM");
 
   return finalize(
     {
       id: `external-${event.sourceId}-${event.externalId || event.id}`,
       title: event.title,
       description: event.description || event.whyItMatters || "Evento externo normalizado por ARGUS.",
-      type: typeFromCategory(event.category, "SYSTEM"),
+      type,
       severity: mapSeverity(event.severity),
       scope: scopeForLocation(lat, lng, countryCode, userLocation),
       status: "MONITORING",
@@ -422,7 +440,7 @@ function externalToNotification(
       relatedEventId: event.id,
       relatedReportId: null,
       relatedIncidentId: null,
-      relatedFenixScenarioId: lat !== null && lng !== null ? "fenix-wildfire-urban-edge" : null,
+      relatedFenixScenarioId: lat !== null && lng !== null ? fenixScenarioIdForType(type) : null,
       relatedRouteId: null,
       actionUrl:
         lat !== null && lng !== null
@@ -468,7 +486,8 @@ function conflictToNotification(
       relatedEventId: event.id,
       relatedReportId: null,
       relatedIncidentId: event.relatedZoneId ?? null,
-      relatedFenixScenarioId: "fenix-wildfire-urban-edge",
+      // CONFLICT has no matching Fenix demo scenario (wildfire/tsunami/flood only).
+      relatedFenixScenarioId: null,
       relatedRouteId: null,
       actionUrl: `/app?lat=${event.lat}&lng=${event.lng}&notificationId=conflict-${event.id}`,
       sourceUrl: event.sourceUrl ?? null,
@@ -576,13 +595,14 @@ function knowledgeIncidentToNotification(
       ? calculateDistanceKm(userLocation, { lat, lng })
       : null;
   const id = `knowledge-incident-${incident.id}`;
+  const type = typeFromCategory(incident.domain, "SYSTEM");
 
   return finalize(
     {
       id,
       title: incident.title,
       description: incident.summary,
-      type: typeFromCategory(incident.domain, "SYSTEM"),
+      type,
       severity: mapSeverity(incident.severity),
       scope: scopeForLocation(lat, lng, countryCode, userLocation),
       status: statusForKnowledge(incident),
@@ -601,7 +621,7 @@ function knowledgeIncidentToNotification(
       relatedEventId: incident.id,
       relatedReportId: null,
       relatedIncidentId: incident.id,
-      relatedFenixScenarioId: lat !== null && lng !== null ? "fenix-wildfire-urban-edge" : null,
+      relatedFenixScenarioId: lat !== null && lng !== null ? fenixScenarioIdForType(type) : null,
       relatedRouteId: null,
       actionUrl:
         lat !== null && lng !== null

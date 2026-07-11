@@ -1,14 +1,40 @@
 # ARGUS Public Changelog
 
+## 2026-07-11 - pending-60af873 - ARGUS v1.0.3.1 - Operational Stabilization Gate
+
+**Archivos modificados:** 62
+
+**Resumen publico:**  
+Se actualizaron 62 archivos relacionados con Dependencias internas y Eventos y fuentes externas.
+
+**Cambios principales:**
+- Se actualizaron componentes del mapa operativo.
+- Se ajusto la vista global ARGUS Orbit.
+- Se mejoro la lectura y gestion de reportes.
+- Se actualizaron eventos o fuentes externas.
+- Se ajustaron vistas y elementos de interfaz.
+
+**Modulos afectados:**
+- Dependencias internas
+- Eventos y fuentes externas
+- Mapa operativo
+- ARGUS Orbit
+- Reportes ciudadanos
+
+**En simple:**  
+Esta actualizacion mejora la experiencia del mapa y la vista global para que ARGUS sea mas claro al explorar una situacion.
+
+---
+
 ## 2026-07-11 - pending-v1031 - ARGUS v1.0.3.1 - Operational Stabilization Gate
 
 **Archivos modificados:** 55
 
-**Resumen publico:**
+**Resumen publico:**  
 Se incorporo una fase de estabilizacion operacional para proteger endpoints de ingesta, bloquear datos seed/demo en produccion y reducir ruido en notificaciones.
 
 **Cambios principales:**
-- Las ejecuciones manuales de ingesta y las ramas `persist=true` de fuentes live ahora requieren usuario operador/analista/admin.
+- Las ejecuciones manuales de ingesta y las ramas persist=true de fuentes live ahora requieren usuario operador/analista/admin.
 - Los datos seed/demo quedan bloqueados en produccion salvo habilitacion explicita y controlada por configuracion.
 - El Centro de Notificaciones separa fuentes oficiales/candidatas de analisis predictivo, evita scopes nacionales falsos cuando no hay pais y reduce duplicados operacionales.
 - Las alertas Chile registran ciclo de vida declarado/modificado/mantenido/cancelado para reflejar mejor monitoreo o resolucion.
@@ -21,7 +47,7 @@ Se incorporo una fase de estabilizacion operacional para proteger endpoints de i
 - Mapa operativo
 - ARGUS Orbit
 
-**En simple:**
+**En simple:**  
 Esta actualizacion hace que las fuentes automaticas sean mas seguras, que los datos de prueba no se mezclen con produccion y que las alertas importantes aparezcan con menos ruido y mejor prioridad.
 
 ---
@@ -30,23 +56,23 @@ Esta actualizacion hace que las fuentes automaticas sean mas seguras, que los da
 
 **Archivos modificados:** 20
 
-**Resumen publico:**
+**Resumen publico:**  
 Se incorporó el motor ARGUS Global Watch, que vigila desastres reales en todo el mundo y los muestra en el mapa operativo con severidad, confianza y recomendación.
 
 **Cambios principales:**
-- Nuevo motor de vigilancia global que consulta USGS (sismos), GDACS (multi-amenaza), NASA EONET y FIRMS (incendios y eventos naturales), Copernicus EFFIS (incendios forestales en Europa) y Copernicus EMS (activaciones oficiales de mapeo de emergencia), además del feed existente de SENAPRED/DMC para Chile.
-- Los incidentes reales de estas fuentes ahora aparecen directamente en el mapa operativo, con ícono por tipo, color por severidad y ficha con fuente, confianza y recomendación.
-- Deduplicación entre fuentes: si varias fuentes reportan el mismo evento, se fusionan en un solo incidente con confianza reforzada en vez de crear duplicados.
-- Las alertas high/critical de Global Watch ahora tienen prioridad garantizada en el Centro de Notificaciones, sin desplazar los reportes ciudadanos ni los eventos externos existentes.
-- Nuevo panel de Salud de Fuentes para operadores, con el estado de cada fuente en tiempo real y botón de actualización manual.
+- Nuevo motor de vigilancia global: USGS, GDACS, NASA EONET/FIRMS, Copernicus EFFIS/EMS y SENAPRED/DMC.
+- Los incidentes reales de estas fuentes aparecen en el mapa operativo con ícono, severidad y recomendación.
+- Deduplicación entre fuentes: un mismo evento reportado por varias fuentes se fusiona en un solo incidente.
+- Prioridad garantizada para alertas high/critical de Global Watch en el Centro de Notificaciones.
+- Nuevo panel de Salud de Fuentes para operadores, con estado en tiempo real y actualización manual.
 
 **Modulos afectados:**
 - Eventos y fuentes externas
 - Mapa operativo
 - Notificaciones
 
-**En simple:**
-Esta actualizacion hace que incendios, terremotos, inundaciones y emergencias oficiales de cualquier país aparezcan en ARGUS de forma automática, priorizada y sin ruido. Queda pendiente activar ReliefWeb (crisis humanitarias) en producción, a la espera de la aprobación de credencial ante OCHA.
+**En simple:**  
+Esta actualizacion hace que incendios, terremotos, inundaciones y emergencias oficiales de cualquier pais aparezcan en ARGUS de forma automatica, priorizada y sin ruido. Queda pendiente activar ReliefWeb (crisis humanitarias) en produccion, a la espera de la aprobacion de credencial ante OCHA.
 
 ---
 

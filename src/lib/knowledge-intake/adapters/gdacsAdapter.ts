@@ -29,6 +29,7 @@ export type GdacsRssFeature = {
   iso3?: string;
   severity?: string;
   population?: number;
+  populationText?: string;
   vulnerability?: string | number;
   latitude?: number;
   longitude?: number;
@@ -122,6 +123,7 @@ function parseGdacsRss(xml: string): GdacsRssFeature[] {
       iso3: getTagValue(itemXml, "gdacs:iso3"),
       severity: stripHtml(getTagValue(itemXml, "gdacs:severity")),
       population: parseNumber(getTagValue(itemXml, "gdacs:population")),
+      populationText: stripHtml(getTagValue(itemXml, "gdacs:population")),
       vulnerability: stripHtml(getTagValue(itemXml, "gdacs:vulnerability")),
       latitude,
       longitude,
@@ -177,6 +179,48 @@ function normalizeAlertLevel(alertLevel?: string): GdacsAlertLevel {
   return "unknown";
 }
 
+/**
+ * GDACS floods report `<gdacs:population>` as free text ("0 deaths and 1000
+ * displaced") rather than a clean number — the `value` attribute is left at
+ * 0 for this hazard type, so it must be parsed from the text.
+ */
+function parseGdacsCasualtyCounts(populationText?: string): { deaths?: number; displaced?: number } {
+  if (!populationText) return {};
+  const deathsMatch = populationText.match(/(\d[\d,]*)\s*deaths?/i);
+  const displacedMatch = populationText.match(/(\d[\d,]*)\s*displaced/i);
+  return {
+    deaths: deathsMatch ? Number(deathsMatch[1].replace(/,/g, "")) : undefined,
+    displaced: displacedMatch ? Number(displacedMatch[1].replace(/,/g, "")) : undefined,
+  };
+}
+
+/**
+ * A GDACS Green alert is low severity by default. It only rises — and only
+ * to medium/high, never critical by this path — when the impact fields
+ * themselves justify it: real displaced count or exposed population above a
+ * conservative threshold. Confirmed deaths (>0) are handled separately by
+ * `detectCriticalImpactSignals` in threatClassifier, which already escalates
+ * to critical for any source when free text reports a real (nonzero) death
+ * count — this function only covers the displaced/exposed-population case
+ * that generic text scan can't see.
+ */
+const GREEN_ESCALATION_DISPLACED_HIGH = 10_000;
+const GREEN_ESCALATION_DISPLACED_MEDIUM = 1_000;
+const GREEN_ESCALATION_POPULATION_HIGH = 50_000;
+
+function escalateGdacsGreenSeverity(
+  baseSeverity: ArgusIncidentSeverity,
+  alertLevel: GdacsAlertLevel,
+  casualties: { deaths?: number; displaced?: number },
+  populationAffected?: number
+): ArgusIncidentSeverity {
+  if (alertLevel !== "green") return baseSeverity;
+  if ((casualties.displaced ?? 0) >= GREEN_ESCALATION_DISPLACED_HIGH) return "high";
+  if ((populationAffected ?? 0) >= GREEN_ESCALATION_POPULATION_HIGH) return "high";
+  if ((casualties.displaced ?? 0) >= GREEN_ESCALATION_DISPLACED_MEDIUM) return "medium";
+  return baseSeverity;
+}
+
 export function buildGdacsExternalId(feature: GdacsRssFeature) {
   const eventType = feature.eventType?.toUpperCase() || "UNKNOWN";
   if (feature.eventId && feature.episodeId) return `${eventType}:${feature.eventId}:${feature.episodeId}`;
@@ -212,7 +256,13 @@ export function normalizeGdacsEvent(feature: GdacsRssFeature): ArgusIncidentKnow
   const externalId = buildGdacsExternalId(feature);
   const domain = mapGdacsEventTypeToArgusDomain(feature.eventType);
   const alertLevel = normalizeAlertLevel(feature.alertLevel);
-  const severity = mapGdacsAlertLevelToSeverity(alertLevel);
+  const casualtyCounts = parseGdacsCasualtyCounts(feature.populationText);
+  const severity = escalateGdacsGreenSeverity(
+    mapGdacsAlertLevelToSeverity(alertLevel),
+    alertLevel,
+    casualtyCounts,
+    feature.population
+  );
   const occurredAt = parseDate(feature.pubDate) ?? parseDate(feature.dateModified);
   const updatedAt = parseDate(feature.dateModified) ?? occurredAt ?? new Date().toISOString();
   const confidenceScore = alertLevel === "unknown" ? 72 : 86;
@@ -242,6 +292,7 @@ export function normalizeGdacsEvent(feature: GdacsRssFeature): ArgusIncidentKnow
     longitude: feature.longitude,
     geometry: feature.geometry,
     impact: feature.population ? { peopleAffected: feature.population } : undefined,
+    casualties: casualtyCounts.deaths !== undefined || casualtyCounts.displaced !== undefined ? casualtyCounts : undefined,
     technicalFactors: {
       gdacsEventType: feature.eventType,
       gdacsEventId: feature.eventId,
