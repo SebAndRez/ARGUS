@@ -3,6 +3,7 @@ import { demoArgusEvents } from "@/data/demoArgusEvents";
 import { fetchSenapredAlerts } from "@/lib/adapters/senapred/senapredEventosAdapter";
 import { correlateSignals } from "@/lib/correlation/argusCorrelationEngine";
 import { getCachedSource, setCachedSource } from "@/lib/ingestion/sourceCache";
+import { isDemoDataAllowed } from "@/lib/security/productionGuard";
 import type {
   ArgusConfidence,
   ArgusEvent,
@@ -113,12 +114,19 @@ export async function GET(request: NextRequest) {
       : null;
 
   const demoModeForced = process.env.ARGUS_EVENTS_DEMO_MODE === "true";
+  const demoAllowed = isDemoDataAllowed();
 
   let source: "senapred_live" | "senapred_live_cached" | "curated_demo" = "curated_demo";
-  let events: ArgusEvent[] = demoArgusEvents;
-  let fallbackReason: string | null = demoModeForced ? "ARGUS_EVENTS_DEMO_MODE is enabled" : null;
+  let events: ArgusEvent[] = demoAllowed ? demoArgusEvents : [];
+  let fallbackReason: string | null = demoModeForced
+    ? demoAllowed
+      ? "ARGUS_EVENTS_DEMO_MODE is enabled"
+      : "ARGUS_EVENTS_DEMO_MODE blocked in production"
+    : null;
 
-  if (!demoModeForced) {
+  if (demoModeForced && !demoAllowed) {
+    source = "senapred_live";
+  } else if (!demoModeForced) {
     const outcome = await loadSenapredEvents();
     if (outcome.ok) {
       source = outcome.cached ? "senapred_live_cached" : "senapred_live";
@@ -126,6 +134,10 @@ export async function GET(request: NextRequest) {
       fallbackReason = null;
     } else {
       fallbackReason = outcome.reason;
+      if (!demoAllowed) {
+        source = "senapred_live";
+        events = [];
+      }
     }
   }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildFloodForecastContext, buildGlofasEvidence, fetchGlofasForecastSubset, getGlofasConfigStatus, validateGlofasRequest, type CopernicusGlofasParams } from "@/lib/knowledge-intake/adapters/copernicusGlofasAdapter";
 import { saveContextEvidenceIfNew } from "@/lib/knowledge-intake/persistence/contextEvidence";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,8 @@ export async function GET(request: NextRequest) {
   const errors: string[] = [...result.errors];
   const warnings = [...result.warnings];
   if (input.persist) {
+    const { user, response: authResponse } = await requireOperator();
+    if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
     try {
       const evidence = buildGlofasEvidence(context, validation.params);
       const saved = await saveContextEvidenceIfNew({ sourceId: "copernicus-glofas", sourceName: "Copernicus GloFAS", evidenceType: "flood_forecast_context", title: evidence.title, url: evidence.url, excerpt: evidence.summary, rawRef: evidence.id, confidenceScore: evidence.confidenceScore.finalConfidence, metadataJson: context, incidentId: validation.params.incidentId });

@@ -1,5 +1,31 @@
 # ARGUS Public Changelog
 
+## 2026-07-11 - pending-v1031 - ARGUS v1.0.3.1 - Operational Stabilization Gate
+
+**Archivos modificados:** 55
+
+**Resumen publico:**
+Se incorporo una fase de estabilizacion operacional para proteger endpoints de ingesta, bloquear datos seed/demo en produccion y reducir ruido en notificaciones.
+
+**Cambios principales:**
+- Las ejecuciones manuales de ingesta y las ramas `persist=true` de fuentes live ahora requieren usuario operador/analista/admin.
+- Los datos seed/demo quedan bloqueados en produccion salvo habilitacion explicita y controlada por configuracion.
+- El Centro de Notificaciones separa fuentes oficiales/candidatas de analisis predictivo, evita scopes nacionales falsos cuando no hay pais y reduce duplicados operacionales.
+- Las alertas Chile registran ciclo de vida declarado/modificado/mantenido/cancelado para reflejar mejor monitoreo o resolucion.
+- ARGUS Orbit incorpora eventos ARGUS high/critical y se agrega una auditoria dry-run para revisar posibles datos seed/demo en base productiva.
+
+**Modulos afectados:**
+- Seguridad e ingesta
+- Eventos y fuentes externas
+- Notificaciones
+- Mapa operativo
+- ARGUS Orbit
+
+**En simple:**
+Esta actualizacion hace que las fuentes automaticas sean mas seguras, que los datos de prueba no se mezclen con produccion y que las alertas importantes aparezcan con menos ruido y mejor prioridad.
+
+---
+
 ## 2026-07-11 - pending-2968435 - ARGUS v1.0.3.0 — Global Watch Core
 
 **Archivos modificados:** 20

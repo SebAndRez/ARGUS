@@ -5,6 +5,7 @@ import {
   type NoaaNceiTsunamiFetchParams,
 } from "@/lib/knowledge-intake/adapters/noaaNceiTsunamiAdapter";
 import { runNoaaNceiTsunamiImport } from "@/lib/knowledge-intake/persistence/knowledgeIngestionJobs";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,8 @@ export async function GET(request: NextRequest) {
   const params = paramsFromSearch(request.nextUrl.searchParams);
   try {
     if (params.persist) {
+      const { user, response: authResponse } = await requireOperator();
+      if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
       const result = await runNoaaNceiTsunamiImport({ ...params, persist: true });
       return NextResponse.json({
         ...result,

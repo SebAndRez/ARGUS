@@ -1,5 +1,28 @@
 [
   {
+    "changeId": "v1031-stabilization",
+    "date": "2026-07-11",
+    "commit": "pending-v1031",
+    "title": "ARGUS v1.0.3.1 - Operational Stabilization Gate",
+    "fileCount": 55,
+    "summary": "Se incorporo una fase de estabilizacion operacional para proteger endpoints de ingesta, bloquear datos seed/demo en produccion y reducir ruido en notificaciones.",
+    "changes": [
+      "Las ejecuciones manuales de ingesta y las ramas persist=true de fuentes live ahora requieren usuario operador/analista/admin.",
+      "Los datos seed/demo quedan bloqueados en produccion salvo habilitacion explicita y controlada por configuracion.",
+      "El Centro de Notificaciones separa fuentes oficiales/candidatas de analisis predictivo, evita scopes nacionales falsos cuando no hay pais y reduce duplicados operacionales.",
+      "Las alertas Chile registran ciclo de vida declarado/modificado/mantenido/cancelado para reflejar mejor monitoreo o resolucion.",
+      "ARGUS Orbit incorpora eventos ARGUS high/critical y se agrega una auditoria dry-run para revisar posibles datos seed/demo en base productiva."
+    ],
+    "affectedModules": [
+      "Seguridad e ingesta",
+      "Eventos y fuentes externas",
+      "Notificaciones",
+      "Mapa operativo",
+      "ARGUS Orbit"
+    ],
+    "simpleExplanation": "Esta actualizacion hace que las fuentes automaticas sean mas seguras, que los datos de prueba no se mezclen con produccion y que las alertas importantes aparezcan con menos ruido y mejor prioridad."
+  },
+  {
     "changeId": "2968435f29e7",
     "date": "2026-07-11",
     "commit": "pending-2968435",

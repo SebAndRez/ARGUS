@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAndNormalizeSmithsonianGvp, type GvpFetchParams } from "@/lib/knowledge-intake/adapters/smithsonianGvpAdapter";
 import { runSmithsonianGvpCatalogImport } from "@/lib/knowledge-intake/persistence/smithsonianGvpIngestionJobs";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,8 @@ export async function GET(request: NextRequest) {
 
   try {
     if (persist && input.layer !== "activity_reports" && !input.includeActivityReports) {
+      const { user, response: authResponse } = await requireOperator();
+      if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
       const result = await runSmithsonianGvpCatalogImport(input);
       return NextResponse.json({
         ...result,

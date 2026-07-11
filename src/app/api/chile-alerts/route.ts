@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getKnowledgeIncidents } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
 import { knowledgeIncidentToArgusEvent } from "@/lib/knowledge-intake/map/knowledgeIncidentToArgusEvent";
+import { isDemoDataAllowed } from "@/lib/security/productionGuard";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const severity = params.get("severity") ?? undefined;
+  const includeDemo = params.get("includeDemo") === "true" && isDemoDataAllowed();
 
   const incidents = await getKnowledgeIncidents({
     sourceId: "senapred_eventos",
@@ -22,7 +24,8 @@ export async function GET(request: NextRequest) {
   const events = incidents
     .filter((incident) => !severity || incident.severity === severity)
     .map((incident) => knowledgeIncidentToArgusEvent(incident))
-    .filter((event): event is NonNullable<typeof event> => Boolean(event));
+    .filter((event): event is NonNullable<typeof event> => Boolean(event))
+    .filter((event) => includeDemo || !event.isDemo);
 
   return NextResponse.json({
     source: "senapred_eventos_persisted",

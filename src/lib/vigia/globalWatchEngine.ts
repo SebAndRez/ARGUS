@@ -9,6 +9,7 @@ import { fetchChileOfficialAlertsRaw } from "@/lib/sources/chile/senapredProvide
 import { promoteChileOfficialAlerts } from "@/lib/incidents/alertPromotionEngine";
 import { chileAlertsSeed } from "@/data/chileAlertsSeed";
 import { globalWatchSeedIncidents } from "@/data/globalWatchSeed";
+import { isDemoDataAllowed } from "@/lib/security/productionGuard";
 import {
   createIngestionRun,
   finishIngestionRun,
@@ -262,6 +263,9 @@ async function runSenapredSource(source: VigiaSourceDefinition, seedMode: boolea
 export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promise<GlobalWatchSummary> {
   const startedAt = new Date();
   const seedMode = options.seedMode ?? false;
+  if (seedMode && !isDemoDataAllowed()) {
+    throw new Error("seedMode no esta permitido en produccion.");
+  }
   const only = options.onlySources?.length ? new Set(options.onlySources) : null;
 
   const sourcesToRun = VIGIA_SOURCE_REGISTRY.filter((source) => {

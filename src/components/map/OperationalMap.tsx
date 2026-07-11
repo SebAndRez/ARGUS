@@ -1538,10 +1538,12 @@ export default function OperationalMap({
             events={visibleEvents}
             demoEvents={visibleDemoEvents}
             externalEvents={visibleExternalEvents}
+            argusEvents={argusEvents}
             initialCenter={globeInitialCenter}
             returnZoom={RETURN_FROM_GLOBE_ZOOM}
             onSelectEvent={onEventSelect}
             onSelectExternalEvent={onExternalEventSelect}
+            onSelectArgusEvent={onArgusEventSelect}
             onCenterChange={(center) => {
               lastGlobeCenterRef.current = center;
             }}

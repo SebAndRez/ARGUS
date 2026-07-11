@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { vigiaIncidentToArgusEvent } from "@/lib/vigia/vigiaIncidentToArgusEvent";
 import { VIGIA_SOURCE_REGISTRY } from "@/lib/vigia/sourceRegistry";
+import { isDemoDataAllowed } from "@/lib/security/productionGuard";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const severity = params.get("severity") ?? undefined;
   const threat = params.get("threat")?.toUpperCase() ?? undefined;
+  const includeDemo = params.get("includeDemo") === "true" && isDemoDataAllowed();
   const days = Math.min(Math.max(Number(params.get("days") ?? 14) || 14, 1), 60);
   const limit = Math.min(Math.max(Number(params.get("limit") ?? 200) || 200, 1), 400);
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -40,6 +42,7 @@ export async function GET(request: NextRequest) {
   const events = incidents
     .map((incident) => vigiaIncidentToArgusEvent(incident))
     .filter((event): event is NonNullable<typeof event> => Boolean(event))
+    .filter((event) => includeDemo || !event.isDemo)
     .filter((event) => event.status !== "archived")
     .filter((event) => !threat || event.tags?.includes(`vigia:${threat.toLowerCase()}`));
 

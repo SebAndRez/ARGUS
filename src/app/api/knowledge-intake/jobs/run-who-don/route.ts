@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { buildWhoDonEvidencePayload, buildWhoDonIncidentPayload, fetchWhoDonItems, normalizeWhoDonItem, type WhoDonParams } from "@/lib/knowledge-intake/adapters/whoDonAdapter";
 import { saveContextEvidenceIfNew } from "@/lib/knowledge-intake/persistence/contextEvidence";
 import { upsertKnowledgeIncidentByExternalId } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const { user, response: authResponse } = await requireOperator();
+  if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
   const body = await request.json().catch(() => ({})) as WhoDonParams & { sinceDays?: number };
   const since = body.since ?? (body.sinceDays ? new Date(Date.now() - body.sinceDays * 86_400_000).toISOString() : undefined);
   const result = await fetchWhoDonItems({ ...body, top: body.top ?? 50, since });

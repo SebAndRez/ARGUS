@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { buildGdeltCrisisNarrativeContext, buildGdeltCrossSourceCorroborationContext, buildGdeltEvidence, buildGdeltNewsCoverageSnapshot, fetchGdeltDoc, type GdeltParams } from "@/lib/knowledge-intake/adapters/gdeltAdapter";
 import { saveContextEvidenceIfNew } from "@/lib/knowledge-intake/persistence/contextEvidence";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const { user, response: authResponse } = await requireOperator();
+  if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
   const body = await request.json().catch(() => ({})) as GdeltParams & { templates?: string[]; maxIncidents?: number; sinceHours?: number };
   const templates = body.templates ?? (body.templateId ? [body.templateId] : ["gdelt-earthquake-tsunami-media", "gdelt-wildfire-smoke-media", "gdelt-public-health-outbreak-media"]);
   let evidenceCreated = 0;

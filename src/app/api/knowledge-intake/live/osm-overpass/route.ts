@@ -7,6 +7,7 @@ import {
   type OsmOverpassRequestParams,
 } from "@/lib/knowledge-intake/adapters/osmOverpassAdapter";
 import { saveWeatherContextEvidenceIfFreshMissing } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
@@ -84,6 +85,8 @@ export async function GET(request: NextRequest) {
   ];
 
   if (validation.params.persist && result.context) {
+    const { user, response: authResponse } = await requireOperator();
+    if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
     const evidence = buildOsmEvidence(result.context, validation.params);
     try {
       const saved = await saveWeatherContextEvidenceIfFreshMissing({

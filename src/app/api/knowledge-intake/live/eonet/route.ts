@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchEonetEvents, type EonetStatus } from "@/lib/knowledge-intake/adapters/eonetAdapter";
 import { runEonetKnowledgeIngestion } from "@/lib/knowledge-intake/persistence/knowledgeIngestionJobs";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,8 @@ export async function GET(request: NextRequest) {
 
   try {
     if (persist) {
+      const { user, response: authResponse } = await requireOperator();
+      if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
       const result = await runEonetKnowledgeIngestion(input);
       return NextResponse.json({
         ...result,

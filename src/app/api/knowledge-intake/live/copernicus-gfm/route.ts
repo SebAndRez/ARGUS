@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildGfmEvidence, buildGfmIncidentPayload, buildObservedFloodExtentContext, fetchGfmProducts, getGfmConfigStatus, normalizeGfmProduct, shouldCreateObservedFloodIncident, validateGfmRequest, type CopernicusGfmParams } from "@/lib/knowledge-intake/adapters/copernicusGfmAdapter";
 import { saveContextEvidenceIfNew } from "@/lib/knowledge-intake/persistence/contextEvidence";
 import { upsertKnowledgeIncidentByExternalId } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Read-only preview stays public; `?persist=true` writes `KnowledgeEvidence`
+ * (and optionally `KnowledgeIncident`), so that branch requires the same
+ * operator/admin session as the equivalent `jobs/*` POST endpoint.
+ */
 export async function GET(request: NextRequest) {
   const p = request.nextUrl.searchParams;
   const input: CopernicusGfmParams = { aoiId: p.get("aoiId") ?? undefined, productId: p.get("productId") ?? undefined, lat: num(p, "lat"), lon: num(p, "lon"), bbox: p.get("bbox") ?? undefined, since: p.get("since") ?? undefined, until: p.get("until") ?? undefined, incidentId: p.get("incidentId") ?? undefined, routeAnalysisId: p.get("routeAnalysisId") ?? undefined, fenixSimulationId: p.get("fenixSimulationId") ?? undefined, persist: p.get("persist") === "true", createIncident: p.get("createIncident") === "true", includeGeometry: p.get("includeGeometry") === "true", includeRaster: p.get("includeRaster") === "true", includeAffectedPopulation: p.get("includeAffectedPopulation") === "true", includeAffectedLandcover: p.get("includeAffectedLandcover") === "true" };
@@ -21,6 +27,8 @@ export async function GET(request: NextRequest) {
   const errors = [...result.errors];
   const warnings = [...result.warnings];
   if (input.persist) {
+    const { user, response: authResponse } = await requireOperator();
+    if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
     try {
       const evidence = buildGfmEvidence(context, validation.params);
       const saved = await saveContextEvidenceIfNew({ sourceId: "copernicus-gfm", sourceName: "Copernicus GFM", evidenceType: "observed_flood_extent_context", title: evidence.title, url: evidence.url, excerpt: evidence.summary, rawRef: evidence.id, confidenceScore: evidence.confidenceScore.finalConfidence, metadataJson: context, incidentId: validation.params.incidentId });

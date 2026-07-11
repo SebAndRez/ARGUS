@@ -50,6 +50,8 @@ export type KnowledgeIncidentItem = {
   detectedAt?: Date | string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
+  tagsJson?: unknown;
+  technicalFactorsJson?: unknown;
 };
 
 type SourceHealthItem = {
@@ -92,6 +94,18 @@ export interface BuildNotificationInput {
 }
 
 const DEFAULT_COUNTRY = "CL";
+const OFFICIAL_KNOWLEDGE_SOURCES = new Set([
+  "senapred_eventos",
+  "usgs_earthquake",
+  "gdacs",
+  "nasa-eonet",
+  "nws",
+  "noaa-ncei-tsunami",
+  "noaa-storm-events",
+  "who-don",
+  "smithsonian-gvp",
+  "usgs-volcano-hans",
+]);
 
 function toIso(value: Date | string | null | undefined, fallback = new Date()) {
   if (value instanceof Date) return value.toISOString();
@@ -128,7 +142,7 @@ function scopeForLocation(
   countryCode: string | null,
   userLocation?: BuildNotificationInput["userLocation"]
 ): ArgusNotificationScope {
-  if (!lat || !lng) return "GLOBAL";
+  if (lat === null || lng === null) return "GLOBAL";
   if (userLocation) {
     const distanceKm = calculateDistanceKm(userLocation, { lat, lng });
     if (distanceKm <= 75) return "LOCAL";
@@ -140,7 +154,8 @@ function scopeForLocation(
       return "NATIONAL";
     }
   }
-  if ((countryCode ?? DEFAULT_COUNTRY).toUpperCase() === DEFAULT_COUNTRY) {
+  if (!countryCode) return "INTERNATIONAL";
+  if (countryCode.toUpperCase() === DEFAULT_COUNTRY) {
     return "NATIONAL";
   }
   return "INTERNATIONAL";
@@ -212,6 +227,25 @@ function sourceTypeForExternal(event: ArgusNormalizedEvent): ArgusNotificationSo
     return "OFFICIAL";
   }
   return "OPEN_DATA";
+}
+
+function sourceTypeForKnowledge(incident: KnowledgeIncidentItem): ArgusNotificationSourceType {
+  if (OFFICIAL_KNOWLEDGE_SOURCES.has(incident.sourceId)) return "OFFICIAL";
+  if (incident.sourceId === "nasa_firms" || incident.sourceId === "copernicus_effis" || incident.sourceId === "copernicus_ems") {
+    return "OPEN_DATA";
+  }
+  return "ARGUS_ESTIMATE";
+}
+
+function statusForKnowledge(incident: KnowledgeIncidentItem): ArgusNotificationStatus {
+  const tags = Array.isArray(incident.tagsJson) ? incident.tagsJson.map(String) : [];
+  const technicalFactors = incident.technicalFactorsJson && typeof incident.technicalFactorsJson === "object"
+    ? incident.technicalFactorsJson as Record<string, unknown>
+    : {};
+  const lifecycle = typeof technicalFactors.lifecycle === "string" ? technicalFactors.lifecycle : null;
+  if (tags.includes("lifecycle:cancelled") || lifecycle === "resolved" || lifecycle === "archived") return "RESOLVED";
+  if (tags.includes("lifecycle:modified") || lifecycle === "monitoring" || lifecycle === "contained") return "UPDATED";
+  return "MONITORING";
 }
 
 function buildActions(notification: {
@@ -551,11 +585,11 @@ function knowledgeIncidentToNotification(
       type: typeFromCategory(incident.domain, "SYSTEM"),
       severity: mapSeverity(incident.severity),
       scope: scopeForLocation(lat, lng, countryCode, userLocation),
-      status: "MONITORING",
+      status: statusForKnowledge(incident),
       createdAt: toIso(incident.createdAt),
       updatedAt,
       eventTime,
-      sourceType: "OFFICIAL",
+      sourceType: sourceTypeForKnowledge(incident),
       sourceName: incident.sourceName,
       confidence: Math.max(0, Math.min(100, Number(incident.confidenceScore ?? 70))),
       lat,

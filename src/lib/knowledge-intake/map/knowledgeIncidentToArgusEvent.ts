@@ -47,6 +47,13 @@ function mapStatus(severity: ArgusSeverity): ArgusEventStatus {
   return "monitoring";
 }
 
+function statusFromLifecycle(tags: string[], fallback: ArgusEventStatus): ArgusEventStatus {
+  if (tags.includes("lifecycle:cancelled")) return "resolved";
+  if (tags.includes("lifecycle:modified") || tags.includes("lifecycle:maintained")) return "monitoring";
+  if (tags.includes("lifecycle:declared")) return "active";
+  return fallback;
+}
+
 export function knowledgeIncidentToArgusEvent(incident: PersistedKnowledgeIncident): ArgusEvent | null {
   const severity = mapSeverity(incident.severity);
   const technicalFactors = (incident.technicalFactorsJson as {
@@ -74,6 +81,7 @@ export function knowledgeIncidentToArgusEvent(incident: PersistedKnowledgeIncide
   const rawEvidenceRefs = (incident.rawEvidenceRefsJson as string[] | null) ?? [];
   const occurredAtIso = incident.occurredAt?.toISOString();
   const detectedAtIso = incident.detectedAt?.toISOString() ?? occurredAtIso ?? incident.createdAt.toISOString();
+  const tags = (incident.tagsJson as string[] | null) ?? [];
 
   return {
     id: `chile-alert-${incident.id}`,
@@ -84,7 +92,7 @@ export function knowledgeIncidentToArgusEvent(incident: PersistedKnowledgeIncide
     commune: technicalFactors.commune,
     eventType: DOMAIN_TO_EVENT_TYPE[incident.domain] ?? "OFFICIAL_ALERT",
     severity,
-    status: mapStatus(severity),
+    status: statusFromLifecycle(tags, mapStatus(severity)),
     confidence: "high",
     sourceType: "official",
     sources: [
@@ -105,7 +113,7 @@ export function knowledgeIncidentToArgusEvent(incident: PersistedKnowledgeIncide
     needsOfficialConfirmation: false,
     operationalSummary: incident.summary,
     recommendedActions: recommendedActionsJson.map((action) => action.text).filter((text): text is string => Boolean(text)),
-    tags: (incident.tagsJson as string[] | null) ?? [],
-    isDemo: false,
+    tags,
+    isDemo: tags.includes("seed"),
   };
 }

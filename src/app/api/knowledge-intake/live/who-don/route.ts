@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildWhoDonEvidencePayload, buildWhoDonIncidentPayload, fetchWhoDonItems, normalizeWhoDonItem, type WhoDonParams } from "@/lib/knowledge-intake/adapters/whoDonAdapter";
 import { saveContextEvidenceIfNew } from "@/lib/knowledge-intake/persistence/contextEvidence";
 import { upsertKnowledgeIncidentByExternalId } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,8 @@ export async function GET(request: NextRequest) {
   const warnings = [...result.warnings, "WHO DON is official public health context, not diagnosis, local surveillance completeness or automatic citizen alert."];
   const errors = [...result.errors];
   if (input.persist) {
+    const { user, response: authResponse } = await requireOperator();
+    if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
     for (const context of contexts) {
       try {
         let incidentId: string | undefined;

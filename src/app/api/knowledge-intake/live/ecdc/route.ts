@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildEcdcEvidencePayload, buildEcdcIncidentPayload, fetchEcdcFeeds, type EcdcParams } from "@/lib/knowledge-intake/adapters/ecdcAdapter";
 import { saveContextEvidenceIfNew } from "@/lib/knowledge-intake/persistence/contextEvidence";
 import { upsertKnowledgeIncidentByExternalId } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,8 @@ export async function GET(request: NextRequest) {
   const errors = [...result.errors];
   const warnings = [...result.warnings, "ECDC CDTR is evidence/report by default and does not create direct incidents unless item extraction is clear."];
   if (input.persist) {
+    const { user, response: authResponse } = await requireOperator();
+    if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
     for (const context of result.items) {
       try {
         let incidentId: string | undefined;

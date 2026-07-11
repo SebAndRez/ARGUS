@@ -3,12 +3,14 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { CrisisEvent } from "@/types/crisis";
+import type { ArgusEvent } from "@/types/argusEvent";
 import type { ArgusNormalizedEvent } from "@/types/ingestion";
 import type { ArgusMapEventKind } from "@/lib/mapSymbols/argusMapSymbols";
 
 type GlobeEvent =
   | { kind: "internal"; event: CrisisEvent }
-  | { kind: "external"; event: ArgusNormalizedEvent };
+  | { kind: "external"; event: ArgusNormalizedEvent }
+  | { kind: "argus"; event: ArgusEvent };
 
 interface GlobeMarker {
   id: string;
@@ -29,12 +31,14 @@ interface Props {
   events?: CrisisEvent[];
   demoEvents?: CrisisEvent[];
   externalEvents?: ArgusNormalizedEvent[];
+  argusEvents?: ArgusEvent[];
   active?: boolean;
   className?: string;
   initialCenter?: GlobeCenter;
   returnZoom?: number;
   onSelectEvent?: (event: CrisisEvent) => void;
   onSelectExternalEvent?: (event: ArgusNormalizedEvent) => void;
+  onSelectArgusEvent?: (event: ArgusEvent) => void;
   onCenterChange?: (center: GlobeCenter) => void;
   onExitGlobe?: (view: { center: GlobeCenter; zoom?: number }) => void;
 }
@@ -120,6 +124,22 @@ const getExternalKind = (event: ArgusNormalizedEvent): ArgusMapEventKind => {
   }
   if (["weather", "cyclone", "flood"].includes(event.category)) return "weather";
   return "official_source";
+};
+
+const getArgusKind = (event: ArgusEvent): ArgusMapEventKind => {
+  if (event.eventType === "EARTHQUAKE") return "earthquake";
+  if (event.eventType === "TSUNAMI") return "tsunami";
+  if (event.eventType === "WILDFIRE") return "fire";
+  if (event.eventType === "TORNADO" || event.eventType === "WATERSPOUT" || event.eventType === "SEVERE_WIND") return "tornado";
+  if (event.eventType === "LANDSLIDE" || event.eventType === "FLOOD" || event.eventType === "HEAVY_RAIN") return "weather";
+  return event.sourceType === "official" ? "official_source" : "risk_assessment";
+};
+
+const argusCoordinates = (event: ArgusEvent) => {
+  if (event.geometry.type === "point") return event.geometry.coordinates;
+  if (event.geometry.type === "administrative_area" || event.geometry.type === "region_reference") return event.geometry.anchor;
+  if (event.geometry.type === "polygon" || event.geometry.type === "route") return event.geometry.coordinates[0] ?? null;
+  return null;
 };
 
 const latLngToVector = (latitude: number, longitude: number, radius: number) => {
@@ -218,7 +238,8 @@ const createMarkerGeometry = (marker: GlobeMarker) => {
 const buildMarkers = (
   events: CrisisEvent[],
   demoEvents: CrisisEvent[],
-  externalEvents: ArgusNormalizedEvent[]
+  externalEvents: ArgusNormalizedEvent[],
+  argusEvents: ArgusEvent[]
 ) => {
   const internalMarkers = [...events, ...demoEvents]
     .map<GlobeMarker | null>((event) => {
@@ -256,30 +277,54 @@ const buildMarkers = (
     })
     .filter(Boolean) as GlobeMarker[];
 
-  return [...internalMarkers, ...externalMarkers].slice(0, 650);
+  const argusMarkers = argusEvents
+    .filter((event) => event.severity === "critical" || event.severity === "high")
+    .map<GlobeMarker | null>((event) => {
+      const coordinates = argusCoordinates(event);
+      if (!coordinates) return null;
+      const latitude = toFiniteCoordinate(coordinates[0]);
+      const longitude = toFiniteCoordinate(coordinates[1]);
+      if (latitude === null || longitude === null) return null;
+
+      return {
+        id: event.id,
+        title: event.title,
+        latitude,
+        longitude,
+        severity: normalizeSeverity(event.severity),
+        kind: getArgusKind(event),
+        payload: { kind: "argus", event },
+      };
+    })
+    .filter(Boolean) as GlobeMarker[];
+
+  return [...argusMarkers, ...internalMarkers, ...externalMarkers].slice(0, 650);
 };
 
 export default function GlobeView({
   events = [],
   demoEvents = [],
   externalEvents = [],
+  argusEvents = [],
   active = true,
   className = "",
   initialCenter,
   returnZoom,
   onSelectEvent,
   onSelectExternalEvent,
+  onSelectArgusEvent,
   onCenterChange,
   onExitGlobe,
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const markers = useMemo(
-    () => buildMarkers(events, demoEvents, externalEvents),
-    [demoEvents, events, externalEvents]
+    () => buildMarkers(events, demoEvents, externalEvents, argusEvents),
+    [argusEvents, demoEvents, events, externalEvents]
   );
   const markersRef = useRef(markers);
   const selectInternalRef = useRef(onSelectEvent);
   const selectExternalRef = useRef(onSelectExternalEvent);
+  const selectArgusRef = useRef(onSelectArgusEvent);
   const centerChangeRef = useRef(onCenterChange);
   const exitGlobeRef = useRef(onExitGlobe);
   const visibleCenterRef = useRef<GlobeCenter>(
@@ -293,9 +338,10 @@ export default function GlobeView({
   useEffect(() => {
     selectInternalRef.current = onSelectEvent;
     selectExternalRef.current = onSelectExternalEvent;
+    selectArgusRef.current = onSelectArgusEvent;
     centerChangeRef.current = onCenterChange;
     exitGlobeRef.current = onExitGlobe;
-  }, [onCenterChange, onExitGlobe, onSelectEvent, onSelectExternalEvent]);
+  }, [onCenterChange, onExitGlobe, onSelectArgusEvent, onSelectEvent, onSelectExternalEvent]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -499,8 +545,10 @@ export default function GlobeView({
 
       if (marker.payload.kind === "internal") {
         selectInternalRef.current?.(marker.payload.event);
-      } else {
+      } else if (marker.payload.kind === "external") {
         selectExternalRef.current?.(marker.payload.event);
+      } else {
+        selectArgusRef.current?.(marker.payload.event);
       }
     };
 

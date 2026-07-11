@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOperator } from "@/lib/security/apiGuards";
+import { isDemoDataAllowed } from "@/lib/security/productionGuard";
 import { runGlobalWatch } from "@/lib/vigia/globalWatchEngine";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,9 @@ export async function POST(request: NextRequest) {
 
   const params = request.nextUrl.searchParams;
   const seedMode = params.get("seed") === "true";
+  if (seedMode && !isDemoDataAllowed()) {
+    return NextResponse.json({ status: "error", error: "seed=true no esta permitido en produccion." }, { status: 403 });
+  }
   const onlySources = params.getAll("source").map((value) => value.trim()).filter(Boolean);
 
   try {

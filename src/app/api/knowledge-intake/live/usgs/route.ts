@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchUsgsEarthquakes } from "@/lib/knowledge-intake/adapters/usgsAdapter";
 import { runUsgsKnowledgeIngestion } from "@/lib/knowledge-intake/persistence/knowledgeIngestionJobs";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,8 @@ export async function GET(request: NextRequest) {
     const persist = request.nextUrl.searchParams.get("persist") === "true";
     const normalizedFeed = feed === "significant" || feed === "day" || feed === "relevant" || feed === "week" ? feed : "relevant";
     if (persist) {
+      const { user, response: authResponse } = await requireOperator();
+      if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
       const result = await runUsgsKnowledgeIngestion({
         feedType: normalizedFeed,
         limit: Number.isFinite(limit) ? limit : 25,

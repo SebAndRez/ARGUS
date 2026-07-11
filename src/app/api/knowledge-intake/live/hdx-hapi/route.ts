@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildHapiEvidence, buildHapiHumanitarianContextSnapshot, getHapiIdentifierStatus, validateHapiRequest, type HapiRequestParams } from "@/lib/knowledge-intake/adapters/hdxHapiAdapter";
 import { saveContextEvidenceIfNew } from "@/lib/knowledge-intake/persistence/contextEvidence";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,8 @@ export async function GET(request: NextRequest) {
   const warnings = [...result.warnings];
   const errors = [...result.errors];
   if (input.persist && result.humanitarianContextSnapshot) {
+    const { user, response: authResponse } = await requireOperator();
+    if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
     try {
       const evidence = buildHapiEvidence(result.humanitarianContextSnapshot, validation.params);
       const saved = await saveContextEvidenceIfNew({ sourceId: "hdx-hapi", sourceName: "HDX / OCHA HAPI", evidenceType: "humanitarian_context", title: evidence.title, url: evidence.url, excerpt: evidence.summary, rawRef: evidence.id, confidenceScore: evidence.confidenceScore.finalConfidence, metadataJson: result.humanitarianContextSnapshot, incidentId: validation.params.incidentId });

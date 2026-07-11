@@ -49,6 +49,63 @@ function parseReadIds(value: string | null) {
     .slice(0, 500);
 }
 
+type NotificationCategory = "official" | "argus_analysis" | "candidate";
+
+function notificationCategory(notification: ArgusNotification): NotificationCategory {
+  if (notification.id.startsWith("predictive-")) return "argus_analysis";
+  if (notification.sourceType === "ARGUS_ESTIMATE" || notification.sourceType === "SYSTEM") return "argus_analysis";
+  if (notification.sourceType === "CITIZEN") return "candidate";
+  return "official";
+}
+
+function categoryPriority(notification: ArgusNotification) {
+  const category = notificationCategory(notification);
+  if (category === "official") return 0;
+  if (category === "candidate") return 1;
+  return 2;
+}
+
+function notificationSignature(notification: ArgusNotification) {
+  const lat = notification.lat === null ? "x" : Math.round(notification.lat * 10) / 10;
+  const lng = notification.lng === null ? "x" : Math.round(notification.lng * 10) / 10;
+  const bucket = Math.floor(new Date(notification.eventTime).getTime() / (6 * 60 * 60 * 1000));
+  return `${notification.type}:${lat}:${lng}:${bucket}`;
+}
+
+function dedupeOperationalNotifications(notifications: ArgusNotification[]) {
+  const severityRank: Record<ArgusNotificationSeverity, number> = {
+    P0_CRITICAL: 0,
+    P1_HIGH: 1,
+    P2_MEDIUM: 2,
+    P3_LOW: 3,
+    P4_INFO: 4,
+  };
+  const sorted = [...notifications].sort((a, b) => {
+    const category = categoryPriority(a) - categoryPriority(b);
+    if (category !== 0) return category;
+    const severity = severityRank[a.severity] - severityRank[b.severity];
+    if (severity !== 0) return severity;
+    return new Date(b.eventTime).getTime() - new Date(a.eventTime).getTime();
+  });
+  const seen = new Set<string>();
+  return sorted.filter((notification) => {
+    const signature = notificationSignature(notification);
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+}
+
+function buildCategorySummary(notifications: ArgusNotification[]) {
+  return notifications.reduce(
+    (acc, notification) => {
+      acc[notificationCategory(notification)] += 1;
+      return acc;
+    },
+    { official: 0, candidate: 0, argus_analysis: 0 }
+  );
+}
+
 async function getPersistedEvents(): Promise<CrisisEvent[]> {
   try {
     const [reports, helpRequests] = await Promise.all([
@@ -214,6 +271,8 @@ async function getCriticalKnowledgeIncidents(): Promise<KnowledgeIncidentItem[]>
       detectedAt: incident.detectedAt,
       createdAt: incident.createdAt,
       updatedAt: incident.updatedAt,
+      tagsJson: incident.tagsJson,
+      technicalFactorsJson: incident.technicalFactorsJson,
     }));
   } catch {
     return [];
@@ -324,7 +383,7 @@ async function getPredictiveNotifications(readIds: string[]): Promise<ArgusNotif
       description: packet.notification?.body ?? packet.analysis.publicMessage,
       type: predictiveType(packet.analysis.inputId),
       severity,
-      scope: packet.mapFocus ? "LOCAL" : "GLOBAL",
+      scope: "GLOBAL",
       status:
         packet.analysis.status === "confirmed_by_official_source"
           ? "UPDATED"
@@ -332,12 +391,7 @@ async function getPredictiveNotifications(readIds: string[]): Promise<ArgusNotif
       createdAt: packet.analysis.createdAt,
       updatedAt: packet.analysis.updatedAt,
       eventTime: packet.analysis.updatedAt,
-      sourceType:
-        packet.analysis.primaryMode === "official"
-          ? "OFFICIAL"
-          : packet.analysis.primaryMode === "citizen"
-            ? "CITIZEN"
-            : "ARGUS_ESTIMATE",
+      sourceType: "ARGUS_ESTIMATE",
       sourceName: "ARGUS Predictive Intelligence Core",
       confidence: packet.analysis.confidence,
       lat: packet.mapFocus?.latitude ?? null,
@@ -401,8 +455,9 @@ function prioritizeGlobalWatchNotifications(
   notifications: ArgusNotification[],
   limit: number
 ): ArgusNotification[] {
-  const priority = notifications.filter(isGlobalWatchPriorityNotification);
-  const rest = notifications.filter((notification) => !isGlobalWatchPriorityNotification(notification));
+  const ordered = dedupeOperationalNotifications(notifications);
+  const priority = ordered.filter(isGlobalWatchPriorityNotification);
+  const rest = ordered.filter((notification) => !isGlobalWatchPriorityNotification(notification));
 
   const prioritySlots = Math.min(priority.length, GLOBAL_WATCH_PRIORITY_CAP, limit);
   const remainingSlots = Math.max(0, limit - prioritySlots);
@@ -414,6 +469,7 @@ export async function GET(request: NextRequest) {
   const scope = request.nextUrl.searchParams.get("scope") as ArgusNotificationScope | null;
   const severity = request.nextUrl.searchParams.get("severity") as ArgusNotificationSeverity | null;
   const type = request.nextUrl.searchParams.get("type") as ArgusNotificationType | null;
+  const category = request.nextUrl.searchParams.get("category") as NotificationCategory | "all" | null;
   const lat = parseCoordinate(request.nextUrl.searchParams.get("lat"));
   const lng = parseCoordinate(request.nextUrl.searchParams.get("lng"));
   const radiusKm = Number(request.nextUrl.searchParams.get("radiusKm") ?? "75");
@@ -479,6 +535,7 @@ export async function GET(request: NextRequest) {
     }
     if (severity && notification.severity !== severity) return false;
     if (type && notification.type !== type) return false;
+    if (category && category !== "all" && notificationCategory(notification) !== category) return false;
     if (onlyUnread && notification.isRead) return false;
     if (
       scope === "LOCAL" &&
@@ -500,6 +557,9 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     notifications,
-    summary: buildNotificationSummary(notifications),
+    summary: {
+      ...buildNotificationSummary(notifications),
+      byCategory: buildCategorySummary(notifications),
+    },
   });
 }

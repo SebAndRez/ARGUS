@@ -7,6 +7,7 @@ import {
   type NoaaCoopsRequestParams,
 } from "@/lib/knowledge-intake/adapters/noaaCoopsAdapter";
 import { saveWeatherContextEvidenceIfFreshMissing } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
@@ -105,6 +106,8 @@ export async function GET(request: NextRequest) {
   const errors = [...result.errors];
 
   if (validation.params.persist) {
+    const { user, response: authResponse } = await requireOperator();
+    if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
     try {
       const saved = await saveWeatherContextEvidenceIfFreshMissing({
         incidentId: validation.params.incidentId,

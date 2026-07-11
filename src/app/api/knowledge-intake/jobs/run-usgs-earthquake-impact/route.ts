@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { runUsgsEarthquakeImpactEnrichment } from "@/lib/knowledge-intake/persistence/usgsEarthquakeImpactIngestionJobs";
 import type { UsgsEarthquakeImpactParams } from "@/lib/knowledge-intake/adapters/usgsEarthquakeImpactAdapter";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const { user, response: authResponse } = await requireOperator();
+  if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
   try {
     const body = (await request.json().catch(() => ({}))) as UsgsEarthquakeImpactParams & {
       sinceHours?: number;
