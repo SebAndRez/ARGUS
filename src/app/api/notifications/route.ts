@@ -289,6 +289,8 @@ async function getCriticalKnowledgeIncidents(): Promise<KnowledgeIncidentItem[]>
       updatedAt: incident.updatedAt,
       tagsJson: incident.tagsJson,
       technicalFactorsJson: incident.technicalFactorsJson,
+      impactJson: incident.impactJson,
+      casualtiesJson: incident.casualtiesJson,
     }));
   } catch {
     return [];

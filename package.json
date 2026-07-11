@@ -18,6 +18,7 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate": "prisma migrate deploy",
     "audit:prod-seed": "tsx scripts/auditProdSeedData.ts",
+    "repair:gdacs-green": "tsx scripts/repairGdacsGreenSeverity.ts",
     "db:setup:local": "tsx scripts/guardLocalDatabase.ts && prisma generate && prisma db push && npm run db:seed",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",

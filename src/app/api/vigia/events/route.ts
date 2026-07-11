@@ -27,6 +27,11 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(Math.max(Number(params.get("limit") ?? 200) || 200, 1), 400);
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
+  // `severity` filters the DB query by the *stored* value, which for GDACS
+  // rows persisted before the v1.0.3.2 severity fix can still say "critical"
+  // — fetch on the raw column, but re-filter below on the canonicalized
+  // value `vigiaIncidentToArgusEvent` actually returns, so `?severity=` never
+  // contradicts what the response body shows.
   const incidents = await prisma.knowledgeIncident.findMany({
     where: {
       sourceId: { in: VIGIA_SOURCE_IDS },
@@ -44,6 +49,7 @@ export async function GET(request: NextRequest) {
     .filter((event): event is NonNullable<typeof event> => Boolean(event))
     .filter((event) => includeDemo || !event.isDemo)
     .filter((event) => event.status !== "archived")
+    .filter((event) => !severity || event.severity === severity)
     .filter((event) => !threat || event.tags?.includes(`vigia:${threat.toLowerCase()}`));
 
   return NextResponse.json({

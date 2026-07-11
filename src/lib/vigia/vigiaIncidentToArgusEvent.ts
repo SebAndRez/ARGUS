@@ -4,6 +4,7 @@ import {
   threatToArgusEventType,
   type GlobalThreatType,
 } from "@/lib/vigia/threatClassifier";
+import { canonicalizeGdacsSeverity } from "@/lib/vigia/gdacsSeverity";
 import { getVigiaSource } from "@/lib/vigia/sourceRegistry";
 import type { IncidentLifecycle } from "@/lib/vigia/incidentLifecycle";
 import type {
@@ -57,8 +58,22 @@ function sourceTypeFor(sourceId: string): ArgusSourceType {
 export function vigiaIncidentToArgusEvent(incident: PersistedKnowledgeIncident): ArgusEvent | null {
   if (typeof incident.latitude !== "number" || typeof incident.longitude !== "number") return null;
 
-  const severity = mapSeverity(incident.severity);
   const tags = (incident.tagsJson as string[] | null) ?? [];
+  // ARGUS v1.0.3.2: canonicalize at read time so an already-persisted stale
+  // GDACS Green row (e.g. severity="critical" from before the ingestion fix)
+  // never reaches the map as critical, even before a repair/re-ingest runs.
+  const canonicalSeverity = canonicalizeGdacsSeverity({
+    sourceId: incident.sourceId,
+    sourceName: incident.sourceName,
+    tags,
+    title: incident.title,
+    description: incident.summary,
+    severity: incident.severity,
+    technicalFactors: (incident.technicalFactorsJson as Record<string, unknown> | null) ?? undefined,
+    impact: (incident.impactJson as { peopleAffected?: number } | null) ?? undefined,
+    casualties: (incident.casualtiesJson as { deaths?: number; displaced?: number } | null) ?? undefined,
+  }).severity;
+  const severity = mapSeverity(canonicalSeverity);
   const unconfirmed = tags.includes("no-confirmado");
   const technicalFactors = (incident.technicalFactorsJson as Record<string, unknown> | null) ?? {};
   const lifecycle = (typeof technicalFactors.lifecycle === "string"

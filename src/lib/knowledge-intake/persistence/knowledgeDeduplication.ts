@@ -96,7 +96,20 @@ export function shouldUpdateExistingIncident(
 ) {
   if (incoming.confidenceScore > existing.confidenceScore) return true;
   if ((incoming.evidenceCount ?? 0) > (existing.evidenceCount ?? 0)) return true;
-  if (existing.sourceId === "nws" || existing.sourceId === "noaa-storm-events" || existing.sourceId === "noaa-ncei-tsunami" || existing.sourceId === "openfema") {
+  if (
+    existing.sourceId === "nws" ||
+    existing.sourceId === "noaa-storm-events" ||
+    existing.sourceId === "noaa-ncei-tsunami" ||
+    existing.sourceId === "openfema" ||
+    // GDACS `dateModified` mirrors GDACS's own feed timestamp, which stops
+    // advancing once an episode ages out of the rolling RSS window — the
+    // final `incomingUpdatedAt > existing.updatedAt` check below would
+    // never fire for those, permanently locking in a stale severity
+    // (ARGUS v1.0.3.2: GDACS Green severity canonicalization) even after
+    // the computation itself was fixed. Forcing the severity check here
+    // lets a corrected recomputation overwrite an old value on the next run.
+    existing.sourceId === "gdacs"
+  ) {
     if (existing.severity !== incoming.severity) return true;
     const existingTech = JSON.stringify(existing.technicalFactorsJson ?? {});
     const incomingTech = JSON.stringify(incoming.technicalFactors ?? {});

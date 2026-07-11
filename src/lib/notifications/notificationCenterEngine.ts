@@ -16,6 +16,7 @@ import {
   getNotificationIcon,
   severityOrder,
 } from "@/lib/notifications/notificationVisuals";
+import { canonicalizeGdacsSeverity } from "@/lib/vigia/gdacsSeverity";
 
 type VestaReminderItem = {
   id: string;
@@ -52,6 +53,8 @@ export type KnowledgeIncidentItem = {
   updatedAt: Date | string;
   tagsJson?: unknown;
   technicalFactorsJson?: unknown;
+  impactJson?: unknown;
+  casualtiesJson?: unknown;
 };
 
 type SourceHealthItem = {
@@ -596,6 +599,20 @@ function knowledgeIncidentToNotification(
       : null;
   const id = `knowledge-incident-${incident.id}`;
   const type = typeFromCategory(incident.domain, "SYSTEM");
+  // ARGUS v1.0.3.2: canonicalize at read time so an already-persisted stale
+  // GDACS Green row never surfaces as P0_CRITICAL, even before a repair/
+  // re-ingest corrects the stored value.
+  const canonicalSeverity = canonicalizeGdacsSeverity({
+    sourceId: incident.sourceId,
+    sourceName: incident.sourceName,
+    tags: Array.isArray(incident.tagsJson) ? incident.tagsJson.map(String) : [],
+    title: incident.title,
+    description: incident.summary,
+    severity: incident.severity,
+    technicalFactors: (incident.technicalFactorsJson as Record<string, unknown> | null) ?? undefined,
+    impact: (incident.impactJson as { peopleAffected?: number } | null) ?? undefined,
+    casualties: (incident.casualtiesJson as { deaths?: number; displaced?: number } | null) ?? undefined,
+  }).severity;
 
   return finalize(
     {
@@ -603,7 +620,7 @@ function knowledgeIncidentToNotification(
       title: incident.title,
       description: incident.summary,
       type,
-      severity: mapSeverity(incident.severity),
+      severity: mapSeverity(canonicalSeverity),
       scope: scopeForLocation(lat, lng, countryCode, userLocation),
       status: statusForKnowledge(incident),
       createdAt: toIso(incident.createdAt),
