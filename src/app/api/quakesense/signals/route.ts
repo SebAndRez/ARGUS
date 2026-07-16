@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addQuakeSenseSignal, getQuakeSenseClusters } from "@/lib/quakesense/quakesenseMemoryStore";
 import { sanitizeQuakeSenseSignal } from "@/lib/quakesense/privacy";
+import { rejectOversizedPayload } from "@/lib/security/payloadSizeGuard";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 import type { QuakeSenseCitizenSignal } from "@/types/quakesense";
 
 export const dynamic = "force-dynamic";
+
+const MAX_SIGNAL_PAYLOAD_BYTES = 32 * 1024;
 
 export async function GET(request: NextRequest) {
   const limit = Math.min(50, Math.max(1, Number(request.nextUrl.searchParams.get("limit") ?? 10)));
@@ -17,6 +21,13 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const oversized = rejectOversizedPayload(request, MAX_SIGNAL_PAYLOAD_BYTES);
+  if (oversized) return oversized;
+
+  const rateLimitOutcome = await enforceRateLimit({ policy: "quakesense_signal", request });
+  const rateLimitedResponse = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   try {
     const body = (await request.json()) as Partial<QuakeSenseCitizenSignal>;
     const candidate: QuakeSenseCitizenSignal = {

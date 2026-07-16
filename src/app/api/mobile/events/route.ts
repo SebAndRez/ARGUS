@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { createSensorSafetyDetection } from "@/lib/sensor-safety/sensorSafetyStore";
+import { rejectOversizedPayload } from "@/lib/security/payloadSizeGuard";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 import type { MobileEventPayload } from "@/types/mobileApiContracts";
 import type { SensorSafetyDetectionType, SensorSafetyModule } from "@/types/sensorSafety";
+
+const MAX_SIGNAL_PAYLOAD_BYTES = 32 * 1024;
 
 const moduleMap: Record<string, SensorSafetyModule> = {
   QUAKESENSE: "QUAKESENSE",
@@ -24,6 +28,13 @@ const typeMap: Record<string, SensorSafetyDetectionType> = {
 };
 
 export async function POST(request: Request) {
+  const oversized = rejectOversizedPayload(request, MAX_SIGNAL_PAYLOAD_BYTES);
+  if (oversized) return oversized;
+
+  const rateLimitOutcome = await enforceRateLimit({ policy: "mobile_safety_signal", request });
+  const rateLimitedResponse = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   const payload = (await request.json().catch(() => ({}))) as Partial<MobileEventPayload>;
   if (!payload.deviceIdHash || !payload.eventType || !payload.module || !payload.consentVersion) {
     return NextResponse.json({ accepted: false, error: "Payload mobile incompleto." }, { status: 400 });

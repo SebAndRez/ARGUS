@@ -9,7 +9,10 @@ import type {
   ArgusNotificationSeverity,
   ArgusNotificationSourceType,
   ArgusNotificationStatus,
+  ArgusNotificationSummary,
   ArgusNotificationType,
+  NotificationCategory,
+  VerificationStatus,
 } from "@/types/notificationCenter";
 import {
   getNotificationColorToken,
@@ -17,6 +20,8 @@ import {
   severityOrder,
 } from "@/lib/notifications/notificationVisuals";
 import { canonicalizeGdacsSeverity } from "@/lib/vigia/gdacsSeverity";
+import { canonicalizeDemoLikeNotification } from "@/lib/security/demoDataGuard";
+import { classifyLifecycleVisibility } from "@/lib/lifecycle/operationalVisibilityPolicy";
 
 type VestaReminderItem = {
   id: string;
@@ -184,6 +189,25 @@ function mapStatus(value: string | null | undefined): ArgusNotificationStatus {
   return "NEW";
 }
 
+/**
+ * Report/HelpRequest moderation status → `VerificationStatus`. A citizen
+ * report never reaches `"official"` through this path alone (Prompt 11
+ * §7/§19) — at most `"corroborated"` once validated/escalated/assigned.
+ */
+function verificationForReportStatus(status: string | null | undefined): VerificationStatus {
+  const normalized = status?.toUpperCase();
+  if (normalized === "DISCARDED" || normalized === "CANCELLED") return "rejected";
+  if (
+    normalized === "VALIDATED" ||
+    normalized === "ESCALATED" ||
+    normalized === "RESOLVED" ||
+    normalized === "ASSIGNED"
+  ) {
+    return "corroborated";
+  }
+  return "unverified";
+}
+
 function typeFromCategory(category: string | null | undefined, fallback: ArgusNotificationType) {
   const normalized = category?.toLowerCase() ?? "";
   if (normalized.includes("earthquake") || normalized.includes("sismo")) return "EARTHQUAKE";
@@ -303,6 +327,15 @@ function buildActions(notification: {
   return actions;
 }
 
+/**
+ * ARGUS v1.0.3.3 — every notification, of every type, funnels through this
+ * single choke point, so demo/placeholder canonicalization is enforced here
+ * rather than duplicated per `*ToNotification` builder. Caps `severity`
+ * (which also drives `isPinned` below) and remaps `sourceType` away from
+ * `category=official` for demo-like content in production — see
+ * `canonicalizeDemoLikeNotification` for the exact rule and why "test"-style
+ * common words never trip it from free text alone.
+ */
 function finalize(
   partial: Omit<ArgusNotification, "icon" | "colorToken" | "isRead" | "isPinned" | "actions"> & {
     sourceUrl?: string | null;
@@ -311,6 +344,31 @@ function finalize(
 ): ArgusNotification {
   const { sourceUrl: _sourceUrl, ...notificationFields } = partial;
   void _sourceUrl;
+  const demoPatch = canonicalizeDemoLikeNotification({
+    severity: partial.severity,
+    sourceType: partial.sourceType,
+    title: partial.title,
+    description: partial.description,
+    sourceName: partial.sourceName,
+    relatedIncidentId: partial.relatedIncidentId,
+    relatedEventId: partial.relatedEventId,
+    sourceUrl: partial.sourceUrl,
+    // Explicit structural flag always wins inside `isDemoLikeSource` — this
+    // is what lets demoEvents/demoRoutes be recognized as demo without
+    // relying on "demo" appearing somewhere in sourceName/title text.
+    isDemo: partial.isDemo ?? null,
+  });
+  const severity = demoPatch.severity;
+  const sourceType = demoPatch.sourceType;
+  // Prompt 11 §8.8/§18: a demo-like item is always `category: "demo"`,
+  // `isOfficial: false`, and has no meaningful verification status — this
+  // overrides whatever the builder computed from the (pre-demo-check) raw
+  // source signal, the same way `severity`/`sourceType` are already capped
+  // above. Never the other direction: a genuinely official/confirmed item
+  // that isn't demo-like keeps the category the builder assigned.
+  const category = demoPatch.isDemoLike ? "demo" : partial.category;
+  const verificationStatus = demoPatch.isDemoLike ? undefined : partial.verificationStatus;
+  const isOfficial = demoPatch.isDemoLike ? false : partial.isOfficial;
   const actions = buildActions({
     type: partial.type,
     lat: partial.lat,
@@ -323,12 +381,23 @@ function finalize(
 
   return {
     ...notificationFields,
+    severity,
+    sourceType,
+    // Canonical demo verdict, independent of whatever value (if any) the
+    // caller passed in — this is what `/api/notifications` filters on to
+    // exclude unauthorized demo data before slots/priority/summary are
+    // computed, so it must reflect the guard's own detection, not just the
+    // caller's raw flag.
+    isDemo: demoPatch.isDemoLike,
+    category,
+    verificationStatus,
+    isOfficial,
     actions,
     icon: getNotificationIcon(partial.type),
-    colorToken: getNotificationColorToken(partial.severity),
+    colorToken: getNotificationColorToken(severity),
     isRead: readIds.has(partial.id),
     isPinned:
-      partial.severity === "P0_CRITICAL" &&
+      severity === "P0_CRITICAL" &&
       partial.status !== "RESOLVED" &&
       partial.status !== "DISMISSED",
   };
@@ -366,6 +435,10 @@ function eventToNotification(
     userLocation && lat !== null && lng !== null
       ? calculateDistanceKm(userLocation, { lat, lng })
       : null;
+  // Prompt 11 §19: a citizen report/help request never auto-promotes to
+  // `confirmed_incident`/`official_alert` here — at most `corroborated`
+  // once the Report/HelpRequest moderation status reflects validation.
+  const isCitizenSourced = event.type === "SOS" || event.type === "REPORT";
 
   return finalize(
     {
@@ -379,7 +452,10 @@ function eventToNotification(
       createdAt: eventTime,
       updatedAt,
       eventTime,
-      sourceType: event.type === "SOS" || event.type === "REPORT" ? "CITIZEN" : "ARGUS_ESTIMATE",
+      sourceType: isCitizenSourced ? "CITIZEN" : "ARGUS_ESTIMATE",
+      category: isCitizenSourced ? "citizen_report" : "system_notice",
+      verificationStatus: isCitizenSourced ? verificationForReportStatus(event.status) : undefined,
+      isOfficial: false,
       sourceName: event.isDemo ? "ARGUS demo events" : event.type === "SOS" ? "ARGUS SOS" : "ARGUS reportes",
       confidence: Math.max(0, Math.min(100, Number(event.aiConfidence ?? event.confidence ?? 60))),
       lat,
@@ -398,6 +474,7 @@ function eventToNotification(
           ? `/app?lat=${lat}&lng=${lng}&notificationId=argus-event-${event.id}`
           : `/app?eventId=${encodeURIComponent(event.id)}`,
       sourceUrl: null,
+      isDemo: event.isDemo,
     },
     readIds
   );
@@ -418,6 +495,7 @@ function externalToNotification(
       ? calculateDistanceKm(userLocation, { lat, lng })
       : null;
   const type = typeFromCategory(event.category, "SYSTEM");
+  const officialSource = sourceTypeForExternal(event) === "OFFICIAL";
 
   return finalize(
     {
@@ -432,6 +510,9 @@ function externalToNotification(
       updatedAt,
       eventTime,
       sourceType: sourceTypeForExternal(event),
+      category: officialSource ? "official_alert" : "confirmed_incident",
+      verificationStatus: officialSource ? "official" : "corroborated",
+      isOfficial: officialSource,
       sourceName: event.sourceName,
       confidence: Math.max(0, Math.min(100, Number(event.confidence ?? 70))),
       lat,
@@ -464,6 +545,12 @@ function conflictToNotification(
   const distanceKm = userLocation
     ? calculateDistanceKm(userLocation, { lat: event.lat, lng: event.lng })
     : null;
+  // Curated/hand-maintained conflict entries (`src/data/conflictZones.ts`)
+  // are preliminary signal pending validation, never a corroborated feed —
+  // see the `event-gaza-humanitarian-alert` root cause documented in
+  // `demoDataGuard.ts`. Only genuinely fed (non-curated) entries count as
+  // `confirmed_incident`.
+  const isCurated = event.rawProvider === "manual_curated";
 
   return finalize(
     {
@@ -477,7 +564,10 @@ function conflictToNotification(
       createdAt: eventTime,
       updatedAt: eventTime,
       eventTime,
-      sourceType: event.rawProvider === "manual_curated" ? "ARGUS_ESTIMATE" : "OPEN_DATA",
+      sourceType: isCurated ? "ARGUS_ESTIMATE" : "OPEN_DATA",
+      category: isCurated ? "candidate_signal" : "confirmed_incident",
+      verificationStatus: isCurated ? "candidate" : "corroborated",
+      isOfficial: false,
       sourceName: event.sourceName,
       confidence: event.confidence === "high" ? 85 : event.confidence === "medium" ? 65 : 45,
       lat: event.lat,
@@ -511,13 +601,16 @@ function routeToNotification(route: ArgusRoute, readIds: Set<string>) {
       title: route.title,
       description: route.description ?? `Ruta ${route.type} disponible para inteligencia operacional.`,
       type: "ROUTE",
-      severity: route.status?.toLowerCase().includes("demo") ? "P4_INFO" : "P3_LOW",
+      severity: route.isDemo ? "P4_INFO" : "P3_LOW",
       scope: "NATIONAL",
       status: "MONITORING",
       createdAt: demoRouteTime,
       updatedAt: demoRouteTime,
       eventTime: demoRouteTime,
       sourceType: "ARGUS_ESTIMATE",
+      category: "system_notice",
+      verificationStatus: undefined,
+      isOfficial: false,
       sourceName: "ARGUS Routing Intelligence demo",
       confidence: Math.max(0, Math.min(100, Number(route.confidence ?? 60))),
       lat,
@@ -536,6 +629,7 @@ function routeToNotification(route: ArgusRoute, readIds: Set<string>) {
           ? `/app?lat=${lat}&lng=${lng}&notificationId=route-${route.id}`
           : `/app?routeId=${route.id}`,
       sourceUrl: null,
+      isDemo: route.isDemo,
     },
     readIds
   );
@@ -563,6 +657,9 @@ function reminderToNotification(reminder: VestaReminderItem, readIds: Set<string
       updatedAt: time,
       eventTime: time,
       sourceType: "SYSTEM",
+      category: "preparedness_reminder",
+      verificationStatus: undefined,
+      isOfficial: false,
       sourceName: "ARGUS VESTA",
       confidence: 100,
       lat: null,
@@ -613,6 +710,25 @@ function knowledgeIncidentToNotification(
     impact: (incident.impactJson as { peopleAffected?: number } | null) ?? undefined,
     casualties: (incident.casualtiesJson as { deaths?: number; displaced?: number } | null) ?? undefined,
   }).severity;
+  // Prompt 11 §8.1/§21 Caso 1: SENAPRED/USGS/GDACS/etc. (the
+  // `OFFICIAL_KNOWLEDGE_SOURCES` allowlist) are `official_alert`; FIRMS/EFFIS/
+  // EMS satellite feeds are corroborated-but-not-official `confirmed_incident`;
+  // anything else reaching notifiable severity through Global Watch without a
+  // recognized source is a preliminary `candidate_signal` — never promoted to
+  // official by severity alone.
+  const knowledgeSourceType = sourceTypeForKnowledge(incident);
+  const knowledgeCategory: NotificationCategory =
+    knowledgeSourceType === "OFFICIAL"
+      ? "official_alert"
+      : knowledgeSourceType === "OPEN_DATA"
+        ? "confirmed_incident"
+        : "candidate_signal";
+  const knowledgeVerification: VerificationStatus =
+    knowledgeSourceType === "OFFICIAL"
+      ? "official"
+      : knowledgeSourceType === "OPEN_DATA"
+        ? "corroborated"
+        : "candidate";
 
   return finalize(
     {
@@ -626,7 +742,10 @@ function knowledgeIncidentToNotification(
       createdAt: toIso(incident.createdAt),
       updatedAt,
       eventTime,
-      sourceType: sourceTypeForKnowledge(incident),
+      sourceType: knowledgeSourceType,
+      category: knowledgeCategory,
+      verificationStatus: knowledgeVerification,
+      isOfficial: knowledgeSourceType === "OFFICIAL",
       sourceName: incident.sourceName,
       confidence: Math.max(0, Math.min(100, Number(incident.confidenceScore ?? 70))),
       lat,
@@ -676,6 +795,12 @@ function sourceToNotification(source: SourceHealthItem, readIds: Set<string>) {
       updatedAt: time,
       eventTime: time,
       sourceType: source.isOfficial ? "OFFICIAL" : "SYSTEM",
+      // Source health is a technical status of ARGUS's own ingestion, never
+      // a crisis signal — always `source_health`, never `official_alert`
+      // even when the underlying source is an official one (Prompt 11 §20).
+      category: "source_health",
+      verificationStatus: undefined,
+      isOfficial: false,
       sourceName: "ARGUS Source Registry",
       confidence: hasProblem ? 70 : 80,
       lat: null,
@@ -725,16 +850,232 @@ export function sortNotificationsBySeverity(notifications: ArgusNotification[]) 
   });
 }
 
-export function buildNotificationSummary(notifications: ArgusNotification[]) {
+/**
+ * Prompt 11 §11: composite ordering rank combining `category` and, only for
+ * the top four slots, `severity` — matching the explicit precedence list
+ * ("Predicción crítica ≠ alerta oficial crítica"; the alert always wins).
+ * From `candidate_signal` down, rank is purely categorical: severity no
+ * longer breaks ties at that point (the mandate's own list doesn't
+ * qualify tiers 5-12 by severity), leaving `notificationOrderTier` (lifecycle/
+ * severity) as the secondary sort key for same-rank items.
+ */
+export function categoryPriorityRank(notification: ArgusNotification): number {
+  const { category, severity } = notification;
+  if (category === "official_alert" && severity === "P0_CRITICAL") return 0;
+  if (category === "confirmed_incident" && severity === "P0_CRITICAL") return 1;
+  if (category === "official_alert" && severity === "P1_HIGH") return 2;
+  if (category === "confirmed_incident" && severity === "P1_HIGH") return 3;
+  if (category === "official_alert" || category === "confirmed_incident") return 4;
+  if (category === "candidate_signal") return 5;
+  if (category === "recommendation") return 6;
+  if (category === "argus_analysis") return 7;
+  if (category === "prediction") return 8;
+  if (category === "citizen_report") return 9;
+  if (category === "preparedness_reminder") return 10;
+  if (category === "source_health" || category === "system_notice") return 11;
+  return 12; // demo
+}
+
+function notificationSignature(notification: ArgusNotification) {
+  const lat = notification.lat === null ? "x" : Math.round(notification.lat * 10) / 10;
+  const lng = notification.lng === null ? "x" : Math.round(notification.lng * 10) / 10;
+  const bucket = Math.floor(new Date(notification.eventTime).getTime() / (6 * 60 * 60 * 1000));
+  return `${notification.type}:${lat}:${lng}:${bucket}`;
+}
+
+/**
+ * Ordering tier for the operational feed. A RESOLVED/DISMISSED alert must
+ * never outrank an active or monitoring one just because its stored
+ * severity is still "critical" (lifecycle sweeps update status, not
+ * severity) — so resolved status is checked before severity, not after.
+ * Within P0/P1, NEW/UPDATED ("active") ranks above MONITORING; lower
+ * severities don't bother with that distinction.
+ *
+ *   0 active   P0_CRITICAL   1 monitoring P0_CRITICAL
+ *   2 active   P1_HIGH       3 monitoring P1_HIGH
+ *   4 active/monitoring P2_MEDIUM
+ *   5 resolved/dismissed (any severity)
+ *   6 everything else (P3_LOW / P4_INFO)
+ */
+export function notificationOrderTier(notification: ArgusNotification): number {
+  if (notification.status === "RESOLVED" || notification.status === "DISMISSED") return 5;
+  const isMonitoring = notification.status === "MONITORING";
+  if (notification.severity === "P0_CRITICAL") return isMonitoring ? 1 : 0;
+  if (notification.severity === "P1_HIGH") return isMonitoring ? 3 : 2;
+  if (notification.severity === "P2_MEDIUM") return 4;
+  return 6;
+}
+
+/**
+ * Sorts by `categoryPriorityRank` then `notificationOrderTier` then most
+ * recent, then drops later duplicates sharing the same
+ * type/rounded-location/6h-time-bucket signature.
+ */
+export function dedupeOperationalNotifications(notifications: ArgusNotification[]): ArgusNotification[] {
+  const sorted = [...notifications].sort((a, b) => {
+    const category = categoryPriorityRank(a) - categoryPriorityRank(b);
+    if (category !== 0) return category;
+    const tier = notificationOrderTier(a) - notificationOrderTier(b);
+    if (tier !== 0) return tier;
+    return new Date(b.eventTime).getTime() - new Date(a.eventTime).getTime();
+  });
+  const seen = new Set<string>();
+  return sorted.filter((notification) => {
+    const signature = notificationSignature(notification);
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+}
+
+/**
+ * Reserved slots for high/critical `KnowledgeIncident` notifications (ARGUS
+ * Global Watch + SENAPRED, tagged `knowledge-incident-*` by
+ * `knowledgeIncidentToNotification`) at the top of the feed. Without this,
+ * a red-alert wildfire or earthquake competes for a spot in the final
+ * `limit` slice purely by `eventTime`, and gets crowded out by citizen
+ * reports/routes/source-health items that happen to be more recent — the
+ * caller's own query is expected to cap around 60 rows, so this cap mainly
+ * guards against a *smaller* caller-supplied `limit` (e.g. `?limit=20`)
+ * reserving the entire page for Global Watch alone.
+ */
+export const GLOBAL_WATCH_PRIORITY_CAP = 40;
+
+function isGlobalWatchPriorityNotification(notification: ArgusNotification): boolean {
+  return (
+    notification.id.startsWith("knowledge-incident-") &&
+    (notification.severity === "P0_CRITICAL" || notification.severity === "P1_HIGH") &&
+    notification.status !== "RESOLVED" &&
+    notification.status !== "DISMISSED"
+  );
+}
+
+/**
+ * `buildArgusNotifications` already sorts everything by `eventTime` desc
+ * (then severity), so within each partition below "most recent first" is
+ * preserved — this only changes *which* items survive the final `limit`
+ * truncation, not the relative order of same-partition items. Partitioning
+ * by id prefix means no item can appear in both groups, so this can't
+ * introduce duplicates. Prompt 11 §12: predictions/candidates/reminders
+ * never occupy a Global Watch slot because `isGlobalWatchPriorityNotification`
+ * only matches `knowledge-incident-*` ids, and those always resolve to
+ * `official_alert`/`confirmed_incident`/`candidate_signal` categories —
+ * never `prediction` (built separately, a different id prefix).
+ */
+export function prioritizeGlobalWatchNotifications(
+  notifications: ArgusNotification[],
+  limit: number
+): ArgusNotification[] {
+  const ordered = dedupeOperationalNotifications(notifications);
+  const priority = ordered.filter(isGlobalWatchPriorityNotification);
+  const rest = ordered.filter((notification) => !isGlobalWatchPriorityNotification(notification));
+
+  const prioritySlots = Math.min(priority.length, GLOBAL_WATCH_PRIORITY_CAP, limit);
+  const remainingSlots = Math.max(0, limit - prioritySlots);
+
+  return [...priority.slice(0, prioritySlots), ...rest.slice(0, remainingSlots)];
+}
+
+/**
+ * ARGUS v1.0.3.3 — the single, testable choke point excluding unauthorized
+ * demo/placeholder notifications before any slot/priority/summary logic
+ * runs (see tests/p0/notification-demo-guard.test.ts). Callers must run
+ * this before `prioritizeGlobalWatchNotifications`/`buildNotificationSummary`
+ * so an excluded demo item can never influence a slot count, a critical
+ * count, or a dedup decision against a real notification.
+ */
+export function filterAuthorizedNotifications(
+  notifications: ArgusNotification[],
+  demoAllowed: boolean
+): ArgusNotification[] {
+  return notifications.filter((notification) => notification.isDemo !== true || demoAllowed);
+}
+
+/**
+ * Fail-closed replacement for "if no real data, fall back to a demo
+ * dataset" — the fallback is only ever built when `demoAllowed` is true.
+ * Mirrors the exact ternary previously inlined in
+ * `src/app/api/notifications/route.ts`, extracted so it can be unit-tested
+ * without a Prisma-backed caller (see Case G, "ausencia de datos reales",
+ * in tests/p0/notification-demo-guard.test.ts).
+ */
+export function resolveDemoFallback<T>(persistedItems: T[], demoAllowed: boolean, buildDemoItems: () => T[]): T[] {
+  if (persistedItems.length > 0) return persistedItems;
+  return demoAllowed ? buildDemoItems() : [];
+}
+
+/**
+ * Prompt 11 §13: the operational critical/high counter must include only
+ * `official_alert`/`confirmed_incident` — predictions, ARGUS analysis,
+ * recommendations, candidate signals, citizen reports, source health,
+ * reminders and demo items never count, *regardless of severity*. A
+ * `category: "prediction"` item stamped `P0_CRITICAL` still does not count
+ * (Prompt 11 §11 example: "Predicción crítica ≠ alerta oficial crítica").
+ */
+const OPERATIONAL_CRITICAL_CATEGORIES: ReadonlySet<NotificationCategory> = new Set([
+  "official_alert",
+  "confirmed_incident",
+]);
+
+/**
+ * Prompt 10 — un incidente crítico ya `RESOLVED`/`DISMISSED` conserva su
+ * `severity` original (la severidad no cambia al resolverse, solo el
+ * `status`), así que antes de esta corrección seguía sumando al contador
+ * `critical`/`high` — la campana mostraba una alerta activa que ya no lo
+ * era. `total`/`unread`/`scope` se dejan intactos a propósito: una
+ * notificación de resolución puede seguir apareciendo en el feed general
+ * (Prompt 10 §14), solo no debe contarse como alerta activa. Prompt 11
+ * extends this with the category gate above.
+ */
+function isActiveForCriticalCount(notification: ArgusNotification): boolean {
+  return (
+    OPERATIONAL_CRITICAL_CATEGORIES.has(notification.category) &&
+    classifyLifecycleVisibility(notification.status).visible
+  );
+}
+
+const NOTIFICATION_CATEGORY_KEYS: NotificationCategory[] = [
+  "official_alert",
+  "confirmed_incident",
+  "candidate_signal",
+  "citizen_report",
+  "argus_analysis",
+  "prediction",
+  "recommendation",
+  "source_health",
+  "preparedness_reminder",
+  "system_notice",
+  "demo",
+];
+
+function buildCategoryBreakdown(notifications: ArgusNotification[]): Record<NotificationCategory, number> {
+  const breakdown = NOTIFICATION_CATEGORY_KEYS.reduce((acc, key) => {
+    acc[key] = 0;
+    return acc;
+  }, {} as Record<NotificationCategory, number>);
+  notifications.forEach((item) => {
+    breakdown[item.category] += 1;
+  });
+  return breakdown;
+}
+
+/**
+ * The single, shared summary calculation — imported directly by both
+ * `/api/notifications` (server) and `NotificationCenterPanel.tsx` (client,
+ * no I/O in this module so it's safe to import from a "use client"
+ * component) so server and client counts can never diverge (Prompt 11 §23).
+ */
+export function buildNotificationSummary(notifications: ArgusNotification[]): ArgusNotificationSummary {
   return {
     total: notifications.length,
     unread: notifications.filter((item) => !item.isRead).length,
-    critical: notifications.filter((item) => item.severity === "P0_CRITICAL").length,
-    high: notifications.filter((item) => item.severity === "P1_HIGH").length,
+    critical: notifications.filter((item) => item.severity === "P0_CRITICAL" && isActiveForCriticalCount(item)).length,
+    high: notifications.filter((item) => item.severity === "P1_HIGH" && isActiveForCriticalCount(item)).length,
     local: notifications.filter((item) => item.scope === "LOCAL").length,
     national: notifications.filter((item) => item.scope === "NATIONAL").length,
     international: notifications.filter((item) => item.scope === "INTERNATIONAL").length,
     global: notifications.filter((item) => item.scope === "GLOBAL").length,
     latestAt: notifications[0]?.eventTime ?? null,
+    byCategory: buildCategoryBreakdown(notifications),
   };
 }

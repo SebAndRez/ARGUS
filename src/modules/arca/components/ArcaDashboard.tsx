@@ -13,6 +13,7 @@ import { calculateArcaCapacityStatus } from "@/modules/arca/arcaCapacity";
 import { resolveArcaModuleAccess, resolveArcaRole, canUseArcaFeature } from "@/modules/arca/arcaAccess";
 import { auditArcaAction } from "@/modules/arca/arcaAudit";
 import { formatArcaRelativeTime } from "@/modules/arca/utils";
+import { getModuleById } from "@/data/argusModules";
 import { calculateHermesRoutes } from "@/modules/hermes/hermesRouting";
 import type { HermesRoute } from "@/modules/hermes/types";
 
@@ -41,6 +42,8 @@ export default function ArcaDashboard() {
   const canViewDetailedCapacity = canUseArcaFeature(sessionUser, "view_detailed_capacity");
   const canViewInternalNotes = canUseArcaFeature(sessionUser, "view_internal_notes");
   const canViewNeeds = canUseArcaFeature(sessionUser, "view_needs");
+  const canPlanRoute = canUseArcaFeature(sessionUser, "send_to_hermes");
+  const arcaModule = getModuleById("argus-arca");
 
   useEffect(() => {
     if (!moduleAccess.canEnter || sessionLoading) return;
@@ -117,7 +120,7 @@ export default function ArcaDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
-      <ArcaHeader isDemoData={isDemoData} saturatedCount={saturatedCount} userRole={arcaRole} />
+      <ArcaHeader isDemoData={isDemoData} saturatedCount={saturatedCount} userRole={arcaRole} maturity={arcaModule?.maturity} />
       <ArcaKpiGrid kpis={kpis} />
 
       {vigiaSignalCount > 0 && (
@@ -138,13 +141,14 @@ export default function ArcaDashboard() {
             userLocation={{ lat: location.latitude, lng: location.longitude }}
             onSelect={(shelter) => setSelectedId(shelter.id)}
             onPlanRoute={handlePlanRoute}
-            canPlanRoute
+            canPlanRoute={canPlanRoute}
           />
           {canViewNeeds && <ArcaNeedsPanel shelters={shelters} />}
           <ArcaNearbySheltersPanel
             shelters={shelters}
             userLocation={{ lat: location.latitude, lng: location.longitude }}
             onPlanRoute={handlePlanRoute}
+            canPlanRoute={canPlanRoute}
           />
           <ArcaIntegrationPanel />
         </div>

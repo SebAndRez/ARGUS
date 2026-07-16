@@ -6,7 +6,10 @@
  * menos los toca y explicarlo en un routeSafetyLabel.
  */
 
-export type RouteHazardSeverity = "low" | "medium" | "high" | "critical";
+import type { ArgusIngestionSeverity } from "@/types/ingestion";
+
+/** @deprecated Value-identical to `ArgusIngestionSeverity` — use that directly in new code. Kept as an alias (Prompt 20 cleanup) since this name has no external consumers of its own but renaming every local reference isn't necessary for the consolidation. */
+export type RouteHazardSeverity = ArgusIngestionSeverity;
 
 export type RouteHazardPoint = {
   id: string;

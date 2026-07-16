@@ -1,18 +1,9 @@
 import { NextResponse } from "next/server";
-import { buildDemoIncidents } from "@/lib/command/incidentBuilder";
+import { getCommandCenterIncidents } from "@/lib/command/incidentBuilder";
 import { getCommandSourceHealth } from "@/lib/command/sourceHealthService";
-import { buildIncidentFromSafetyCheck } from "@/lib/mobile-safety/mobileSafetyIncidentAdapter";
-import { getSafetyChecks } from "@/lib/mobile-safety/mobileSafetyService";
-import { buildIncidentFromQuakeSenseCluster } from "@/lib/quakesense/quakesenseIncidentAdapter";
-import { getQuakeSenseClusters } from "@/lib/quakesense/quakesenseMemoryStore";
-import { buildIncidentFromSensorSafetyDetection } from "@/lib/sensor-safety/sensorSafetyIncidentAdapter";
-import { getSensorSafetyDetections } from "@/lib/sensor-safety/sensorSafetyStore";
 import { getPredictiveAnalyses } from "@/lib/predictive-core/predictiveFeed";
-import type {
-  IncidentCommandView,
-  IncidentPriority,
-  SourceHealthStatus,
-} from "@/types/incident";
+import { classifyLifecycleVisibility } from "@/lib/lifecycle/operationalVisibilityPolicy";
+import type { IncidentPriority, SourceHealthStatus } from "@/types/incident";
 
 export const dynamic = "force-dynamic";
 
@@ -31,31 +22,29 @@ const sourceStatuses: SourceHealthStatus[] = [
   "UNKNOWN",
 ];
 
-const isIncident = (
-  incident: IncidentCommandView | null
-): incident is IncidentCommandView => Boolean(incident);
-
+/**
+ * ARGUS v1.0.3.4 — see docs/product/ARGUS_COMMAND_CENTER_STATUS.md. Incident
+ * counts/priorities below come exclusively from `getCommandCenterIncidents()`
+ * (fail-closed on `isDemoDataAllowed()`) — in production without explicit
+ * authorization, `totalActiveIncidents`/`priorityCounts`/`topIncidents` are
+ * always zero/empty, never backfilled from the synthetic builders.
+ */
 export async function GET() {
   const predictiveAnalyses = await getPredictiveAnalyses({ limit: 8 });
-  const quakeSenseIncidents = getQuakeSenseClusters().map(
-    buildIncidentFromQuakeSenseCluster
-  );
-  const safetyIncidents = getSafetyChecks()
-    .map(buildIncidentFromSafetyCheck)
-    .filter(isIncident);
-  const sensorSafetyIncidents = getSensorSafetyDetections()
-    .map(buildIncidentFromSensorSafetyDetection)
-    .filter(isIncident);
-  const incidents = [
-    ...quakeSenseIncidents,
-    ...safetyIncidents,
-    ...sensorSafetyIncidents,
-    ...buildDemoIncidents(),
-  ];
+  const { mode, operational, incidents: allIncidents, message } = getCommandCenterIncidents();
   const sources = getCommandSourceHealth();
+  // Prompt 10 — `incidents` puede incluir estados terminales (`CLOSED`/
+  // `DISMISSED`); ninguno de los constructores demo actuales los produce hoy
+  // (verificado por inspección), pero el conteo/listado "activo" del Command
+  // Center no debía depender de esa coincidencia — se aplica la misma
+  // política de vigencia usada en el resto de los endpoints.
+  const incidents = allIncidents.filter((incident) => classifyLifecycleVisibility(incident.status).visible);
 
   return NextResponse.json({
     overview: {
+      mode,
+      operational,
+      message,
       totalActiveIncidents: incidents.length,
       priorityCounts: Object.fromEntries(
         priorities.map((priority) => [
@@ -78,8 +67,9 @@ export async function GET() {
             (analysis) =>
               `Intelligence hint ${analysis.severity}: ${analysis.title} (${analysis.status}, confianza ${analysis.confidence}%).`
           ),
-        "Modo demo: incidentes construidos desde fallback local.",
-        "ARGUS estima, no confirma sin fuente oficial.",
+        mode === "demo-disabled"
+          ? "Sin fuente operacional conectada. Datos de demostracion desactivados en este entorno."
+          : "Modo demo: incidentes construidos desde fallback local. ARGUS estima, no confirma sin fuente oficial.",
         "QuakeSense y Mobile Safety son experimentales; requieren revision humana.",
         "Sensor Safety Suite es demo/runtime y no reemplaza servicios de emergencia.",
         ...sources

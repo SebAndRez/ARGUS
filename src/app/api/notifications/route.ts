@@ -4,6 +4,8 @@ import { curatedConflictEvents } from "@/data/conflictZones";
 import { demoRoutes } from "@/data/demoRoutes";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/services/authService";
+import { isDemoDataAllowed } from "@/lib/security/productionGuard";
+import { logOperationalEvent } from "@/lib/observability/operationalEvents";
 import { getPredictiveNotificationPackets } from "@/lib/predictive-core/predictiveFeed";
 import { deduplicateEvents } from "@/lib/ingestion/deduplicateEvents";
 import { getOrFetchUsgsEarthquakes } from "@/lib/ingestion/ingestUsgsEarthquakes";
@@ -11,6 +13,9 @@ import {
   buildArgusNotifications,
   buildNotificationSummary,
   calculateDistanceKm,
+  filterAuthorizedNotifications,
+  prioritizeGlobalWatchNotifications,
+  resolveDemoFallback,
   type KnowledgeIncidentItem,
 } from "@/lib/notifications/notificationCenterEngine";
 import {
@@ -25,6 +30,7 @@ import type {
   ArgusNotificationScope,
   ArgusNotificationSeverity,
   ArgusNotificationType,
+  NotificationCategory,
 } from "@/types/notificationCenter";
 
 export const dynamic = "force-dynamic";
@@ -47,79 +53,6 @@ function parseReadIds(value: string | null) {
     .map((id) => id.trim())
     .filter(Boolean)
     .slice(0, 500);
-}
-
-type NotificationCategory = "official" | "argus_analysis" | "candidate";
-
-function notificationCategory(notification: ArgusNotification): NotificationCategory {
-  if (notification.id.startsWith("predictive-")) return "argus_analysis";
-  if (notification.sourceType === "ARGUS_ESTIMATE" || notification.sourceType === "SYSTEM") return "argus_analysis";
-  if (notification.sourceType === "CITIZEN") return "candidate";
-  return "official";
-}
-
-function categoryPriority(notification: ArgusNotification) {
-  const category = notificationCategory(notification);
-  if (category === "official") return 0;
-  if (category === "candidate") return 1;
-  return 2;
-}
-
-function notificationSignature(notification: ArgusNotification) {
-  const lat = notification.lat === null ? "x" : Math.round(notification.lat * 10) / 10;
-  const lng = notification.lng === null ? "x" : Math.round(notification.lng * 10) / 10;
-  const bucket = Math.floor(new Date(notification.eventTime).getTime() / (6 * 60 * 60 * 1000));
-  return `${notification.type}:${lat}:${lng}:${bucket}`;
-}
-
-/**
- * Ordering tier for the operational feed. A RESOLVED/DISMISSED alert must
- * never outrank an active or monitoring one just because its stored
- * severity is still "critical" (lifecycle sweeps update status, not
- * severity) — so resolved status is checked before severity, not after.
- * Within P0/P1, NEW/UPDATED ("active") ranks above MONITORING; lower
- * severities don't bother with that distinction.
- *
- *   0 active   P0_CRITICAL   1 monitoring P0_CRITICAL
- *   2 active   P1_HIGH       3 monitoring P1_HIGH
- *   4 active/monitoring P2_MEDIUM
- *   5 resolved/dismissed (any severity)
- *   6 everything else (P3_LOW / P4_INFO)
- */
-function notificationOrderTier(notification: ArgusNotification): number {
-  if (notification.status === "RESOLVED" || notification.status === "DISMISSED") return 5;
-  const isMonitoring = notification.status === "MONITORING";
-  if (notification.severity === "P0_CRITICAL") return isMonitoring ? 1 : 0;
-  if (notification.severity === "P1_HIGH") return isMonitoring ? 3 : 2;
-  if (notification.severity === "P2_MEDIUM") return 4;
-  return 6;
-}
-
-function dedupeOperationalNotifications(notifications: ArgusNotification[]) {
-  const sorted = [...notifications].sort((a, b) => {
-    const category = categoryPriority(a) - categoryPriority(b);
-    if (category !== 0) return category;
-    const tier = notificationOrderTier(a) - notificationOrderTier(b);
-    if (tier !== 0) return tier;
-    return new Date(b.eventTime).getTime() - new Date(a.eventTime).getTime();
-  });
-  const seen = new Set<string>();
-  return sorted.filter((notification) => {
-    const signature = notificationSignature(notification);
-    if (seen.has(signature)) return false;
-    seen.add(signature);
-    return true;
-  });
-}
-
-function buildCategorySummary(notifications: ArgusNotification[]) {
-  return notifications.reduce(
-    (acc, notification) => {
-      acc[notificationCategory(notification)] += 1;
-      return acc;
-    },
-    { official: 0, candidate: 0, argus_analysis: 0 }
-  );
 }
 
 async function getPersistedEvents(): Promise<CrisisEvent[]> {
@@ -176,14 +109,30 @@ async function getPersistedEvents(): Promise<CrisisEvent[]> {
         recordType: "HelpRequest" as const,
       })),
     ];
-  } catch {
+  } catch (error) {
+    logOperationalEvent({
+      event: "notification_source_fetch_failed",
+      level: "error",
+      component: "notifications",
+      outcome: "failure",
+      detail: { source: "reports_help_requests", message: error instanceof Error ? error.message : "unknown" },
+    });
     return [];
   }
 }
 
+/**
+ * `expiresAt` es una columna real de `ExternalEvent` (no JSON) — se filtra
+ * directamente en la query (Prompt 10 §9), preservando siempre las filas
+ * con `expiresAt: null` (§8: nulo nunca implica expiración). Antes de esta
+ * corrección, un sismo USGS con TTL de 60s persistido hace días seguía
+ * pudiendo alimentar notificaciones activas indefinidamente.
+ */
 async function getPersistedExternalEvents(): Promise<ArgusNormalizedEvent[]> {
   try {
+    const now = new Date();
     const events = await prisma.externalEvent.findMany({
+      where: { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
       orderBy: [{ occurredAt: "desc" }, { updatedAt: "desc" }],
       take: 120,
     });
@@ -222,7 +171,14 @@ async function getPersistedExternalEvents(): Promise<ArgusNormalizedEvent[]> {
       whyItMatters: null,
       isExternal: true,
     }));
-  } catch {
+  } catch (error) {
+    logOperationalEvent({
+      event: "notification_source_fetch_failed",
+      level: "error",
+      component: "notifications",
+      outcome: "failure",
+      detail: { source: "external_events", message: error instanceof Error ? error.message : "unknown" },
+    });
     return [];
   }
 }
@@ -292,7 +248,17 @@ async function getCriticalKnowledgeIncidents(): Promise<KnowledgeIncidentItem[]>
       impactJson: incident.impactJson,
       casualtiesJson: incident.casualtiesJson,
     }));
-  } catch {
+  } catch (error) {
+    // Highest-risk silent gap (Prompt 19): this feeds official/critical
+    // KnowledgeIncident rows into notifications — a swallowed failure here
+    // means a P0 alert can vanish from the bell with no trace.
+    logOperationalEvent({
+      event: "notification_source_fetch_failed",
+      level: "error",
+      component: "notifications",
+      outcome: "failure",
+      detail: { source: "critical_knowledge_incidents", message: error instanceof Error ? error.message : "unknown" },
+    });
     return [];
   }
 }
@@ -332,7 +298,14 @@ async function getSourceHealth() {
         latestIngestionRun: latestRuns.get(sourceId) ?? null,
       })
     );
-  } catch {
+  } catch (error) {
+    logOperationalEvent({
+      event: "notification_source_fetch_failed",
+      level: "error",
+      component: "notifications",
+      outcome: "failure",
+      detail: { source: "source_health", message: error instanceof Error ? error.message : "unknown" },
+    });
     return [];
   }
 }
@@ -364,7 +337,14 @@ async function getDueVestaReminders() {
       dueAt: reminder.dueAt,
       status: reminder.status,
     }));
-  } catch {
+  } catch (error) {
+    logOperationalEvent({
+      event: "notification_source_fetch_failed",
+      level: "warn",
+      component: "notifications",
+      outcome: "failure",
+      detail: { source: "vesta_reminders", message: error instanceof Error ? error.message : "unknown" },
+    });
     return [];
   }
 }
@@ -385,7 +365,14 @@ async function getPredictiveNotifications(readIds: string[]): Promise<ArgusNotif
   let packets: Awaited<ReturnType<typeof getPredictiveNotificationPackets>> = [];
   try {
     packets = await getPredictiveNotificationPackets({ limit: 30 });
-  } catch {
+  } catch (error) {
+    logOperationalEvent({
+      event: "notification_source_fetch_failed",
+      level: "warn",
+      component: "notifications",
+      outcome: "failure",
+      detail: { source: "predictive_notifications", message: error instanceof Error ? error.message : "unknown" },
+    });
     return [];
   }
   const readSet = new Set(readIds);
@@ -410,6 +397,13 @@ async function getPredictiveNotifications(readIds: string[]): Promise<ArgusNotif
       updatedAt: packet.analysis.updatedAt,
       eventTime: packet.analysis.updatedAt,
       sourceType: "ARGUS_ESTIMATE",
+      // Prompt 11 §21 Caso 4: a prediction never becomes `official_alert`/
+      // `isOfficial: true`, regardless of severity or of the underlying
+      // analysis reaching `confirmed_by_official_source` (that only affects
+      // `status`, a different dimension — see §6).
+      category: "prediction",
+      verificationStatus: "model_generated",
+      isOfficial: false,
       sourceName: "ARGUS Predictive Intelligence Core",
       confidence: packet.analysis.confidence,
       lat: packet.mapFocus?.latitude ?? null,
@@ -439,50 +433,6 @@ async function getPredictiveNotifications(readIds: string[]): Promise<ArgusNotif
       isPinned: severity === "P0_CRITICAL",
     };
   });
-}
-
-/**
- * Reserved slots for high/critical `KnowledgeIncident` notifications (ARGUS
- * Global Watch + SENAPRED, tagged `knowledge-incident-*` by
- * `knowledgeIncidentToNotification`) at the top of the feed. Without this,
- * a red-alert wildfire or earthquake competes for a spot in the final
- * `limit` slice purely by `eventTime`, and gets crowded out by citizen
- * reports/routes/source-health items that happen to be more recent —
- * `getCriticalKnowledgeIncidents` already caps its query at 60 rows, so
- * this cap mainly guards against a *smaller* caller-supplied `limit`
- * (e.g. `?limit=20`) reserving the entire page for Global Watch alone.
- */
-const GLOBAL_WATCH_PRIORITY_CAP = 40;
-
-function isGlobalWatchPriorityNotification(notification: ArgusNotification): boolean {
-  return (
-    notification.id.startsWith("knowledge-incident-") &&
-    (notification.severity === "P0_CRITICAL" || notification.severity === "P1_HIGH") &&
-    notification.status !== "RESOLVED" &&
-    notification.status !== "DISMISSED"
-  );
-}
-
-/**
- * `buildArgusNotifications` already sorts everything by `eventTime` desc
- * (then severity), so within each partition below "most recent first" is
- * preserved — this only changes *which* items survive the final `limit`
- * truncation, not the relative order of same-partition items. Partitioning
- * by id prefix means no item can appear in both groups, so this can't
- * introduce duplicates.
- */
-function prioritizeGlobalWatchNotifications(
-  notifications: ArgusNotification[],
-  limit: number
-): ArgusNotification[] {
-  const ordered = dedupeOperationalNotifications(notifications);
-  const priority = ordered.filter(isGlobalWatchPriorityNotification);
-  const rest = ordered.filter((notification) => !isGlobalWatchPriorityNotification(notification));
-
-  const prioritySlots = Math.min(priority.length, GLOBAL_WATCH_PRIORITY_CAP, limit);
-  const remainingSlots = Math.max(0, limit - prioritySlots);
-
-  return [...priority.slice(0, prioritySlots), ...rest.slice(0, remainingSlots)];
 }
 
 export async function GET(request: NextRequest) {
@@ -517,9 +467,17 @@ export async function GET(request: NextRequest) {
     getDueVestaReminders(),
     getCriticalKnowledgeIncidents(),
   ]);
-  const events = persistedEvents.length
-    ? persistedEvents
-    : demoEvents.map((event) => ({ ...event, isDemo: true }));
+  // Fail-closed: an empty real-data result never auto-fills with demoEvents.
+  // The fallback only fires when `isDemoDataAllowed()` (src/lib/security/
+  // productionGuard.ts, reused as-is — same ARGUS_ALLOW_DEMO_DATA variable
+  // already used by Global Watch/Chile alerts seed mode) says demo content
+  // is permitted for this environment: true outside production by default,
+  // false in production unless ARGUS_ALLOW_DEMO_DATA="true" exactly.
+  const demoAllowed = isDemoDataAllowed();
+  const events = resolveDemoFallback(persistedEvents, demoAllowed, () =>
+    demoEvents.map((event) => ({ ...event, isDemo: true }))
+  );
+  const routes = resolveDemoFallback<typeof demoRoutes[number]>([], demoAllowed, () => demoRoutes);
 
   let notifications = [
     ...predictiveNotifications,
@@ -527,7 +485,7 @@ export async function GET(request: NextRequest) {
       events,
       externalEvents,
       conflictEvents: curatedConflictEvents,
-      routes: demoRoutes,
+      routes,
       sourceHealth,
       reminders: vestaReminders,
       knowledgeIncidents,
@@ -535,6 +493,14 @@ export async function GET(request: NextRequest) {
       userLocation,
     }),
   ];
+
+  // Defense-in-depth safety net: even if a future source forgets to gate
+  // itself at the call site above, no `isDemo:true` notification survives
+  // past this point unless explicitly authorized — and this runs before any
+  // slot allocation, priority ordering, deduplication-against-real-events,
+  // or summary/count calculation below, so excluded demo items can never
+  // influence any of those.
+  notifications = filterAuthorizedNotifications(notifications, demoAllowed);
 
   if (userLocation) {
     notifications = notifications.map((notification) => {
@@ -555,7 +521,7 @@ export async function GET(request: NextRequest) {
     }
     if (severity && notification.severity !== severity) return false;
     if (type && notification.type !== type) return false;
-    if (category && category !== "all" && notificationCategory(notification) !== category) return false;
+    if (category && category !== "all" && notification.category !== category) return false;
     if (onlyUnread && notification.isRead) return false;
     if (
       scope === "LOCAL" &&
@@ -577,9 +543,6 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     notifications,
-    summary: {
-      ...buildNotificationSummary(notifications),
-      byCategory: buildCategorySummary(notifications),
-    },
+    summary: buildNotificationSummary(notifications),
   });
 }

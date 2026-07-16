@@ -6,13 +6,14 @@ interface Props {
   shelters: ArcaShelter[];
   userLocation?: { lat: number; lng: number };
   onPlanRoute?: (shelter: ArcaShelter) => void;
+  canPlanRoute?: boolean;
 }
 
 /**
  * Vista para usuario común: refugios cercanos, capacidad pública, servicios
  * básicos y advertencias — sin notas internas.
  */
-export default function ArcaNearbySheltersPanel({ shelters, userLocation, onPlanRoute }: Props) {
+export default function ArcaNearbySheltersPanel({ shelters, userLocation, onPlanRoute, canPlanRoute }: Props) {
   const ranked = shelters
     .filter((shelter) => shelter.isPublic !== false)
     .map((shelter) => ({ shelter, suitability: scoreArcaShelterSuitability(shelter, { userLocation }) }))
@@ -35,13 +36,15 @@ export default function ArcaNearbySheltersPanel({ shelters, userLocation, onPlan
             {suitability.warnings.length > 0 && (
               <p className="mt-1 text-[0.6rem] text-amber-300/80">⚠ {suitability.warnings[0]}</p>
             )}
-            <button
-              type="button"
-              onClick={() => onPlanRoute?.(shelter)}
-              className="mt-2 w-full border border-teal-300/30 bg-teal-400/10 px-3 py-1.5 text-[0.6rem] font-bold uppercase text-teal-100"
-            >
-              Sugerir ruta con HERMES
-            </button>
+            {canPlanRoute && (
+              <button
+                type="button"
+                onClick={() => onPlanRoute?.(shelter)}
+                className="mt-2 w-full border border-teal-300/30 bg-teal-400/10 px-3 py-1.5 text-[0.6rem] font-bold uppercase text-teal-100"
+              >
+                Sugerir ruta con HERMES
+              </button>
+            )}
           </div>
         ))}
         {ranked.length === 0 && <p className="text-xs text-slate-500">Sin refugios cercanos disponibles.</p>}

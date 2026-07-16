@@ -1,18 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runFenixSimulation } from "@/lib/fenix/fenixSimulationEngine";
 import { createFenixSeedFromPrediction } from "@/lib/predictive-core/fenixBridge";
-import { getCurrentUser } from "@/services/authService";
+import { requireOperator } from "@/lib/security/apiGuards";
 import type { ArgusDecisionPacket } from "@/types/predictiveCore";
 import type { FenixSimulationInput } from "@/types/fenixSimulation";
 
 export const dynamic = "force-dynamic";
-const INSTITUTIONAL_ROLES = new Set([
-  "OPERATOR",
-  "ANALYST",
-  "ADMIN",
-  "SUPER_ADMIN",
-  "INSTITUTIONAL_ADMIN",
-]);
 
 function mapPredictiveSeverity(value?: string | null): FenixSimulationInput["initialSeverity"] | undefined {
   if (!value) return undefined;
@@ -39,6 +32,16 @@ function mapPredictiveHazard(value?: string | null): FenixSimulationInput["crisi
 }
 
 export async function POST(request: NextRequest) {
+  // Guard first, before any body parsing/simulation — see docs/modules/
+  // ARGUS_FENIX_CANONICALIZATION.md. Previously this endpoint let anonymous
+  // callers through in "public" mode (only "institutional" mode was
+  // checked); FÉNIX's own module registry entry is `visibility:
+  // "institutional"`, so no unauthenticated/citizen caller can legitimately
+  // reach this endpoint through the UI at all — reusing `requireOperator()`
+  // (already used by 20+ other routes) closes the direct-API-bypass gap.
+  const { user, response: authResponse } = await requireOperator();
+  if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
+
   try {
     const body = (await request.json()) as Partial<FenixSimulationInput> & {
       scenarioId?: string;
@@ -70,21 +73,11 @@ export async function POST(request: NextRequest) {
     const initialRadiusKm = Number(body.initialRadiusKm ?? body.radiusKm ?? 5);
     const simulationMinutes = Number(body.simulationMinutes ?? body.simulationHorizonMinutes ?? 60);
     const speedKmh = Number(body.growth?.speedKmh ?? body.growthSpeedKmh ?? 2.5);
+    // `requireOperator()` above already guarantees an operator-tier role for
+    // every request that reaches this point, so `requestedMode` (public
+    // preview vs institutional) is now purely an output-shaping choice made
+    // by an already-authorized caller — not a second authorization check.
     const requestedMode = body.mode ?? body.viewMode ?? "public";
-    const user = await getCurrentUser();
-    const canUseInstitutionalMode = Boolean(
-      user && INSTITUTIONAL_ROLES.has(user.role)
-    );
-
-    if (requestedMode === "institutional" && !canUseInstitutionalMode) {
-      return NextResponse.json(
-        {
-          error:
-            "Modo institucional Fenix requiere rol operativo. Use modo publico para simulacion ciudadana.",
-        },
-        { status: 403 }
-      );
-    }
 
     if (!Number.isFinite(initialRadiusKm) || initialRadiusKm <= 0) {
       return NextResponse.json({ error: "Radio inicial inválido." }, { status: 400 });
@@ -116,7 +109,7 @@ export async function POST(request: NextRequest) {
         speedKmh,
       },
       mobility: body.mobility ?? body.mobilityMode,
-      mode: canUseInstitutionalMode ? requestedMode : "public",
+      mode: requestedMode,
       initialSeverity:
         body.initialSeverity ??
         body.severity ??
@@ -166,6 +159,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
+  const { response: authResponse } = await requireOperator();
+  if (authResponse) return authResponse;
+
   const result = runFenixSimulation({ scenarioId: "fenix-wildfire-urban-edge" });
   return NextResponse.json({
     source: "demo",

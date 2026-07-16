@@ -7,11 +7,19 @@ import SourceHealthPanel from "@/components/command/SourceHealthPanel";
 import UsgsEarthquakeImpactPanel from "@/components/command/UsgsEarthquakeImpactPanel";
 import MobileAppReadinessPanel from "@/components/mobile/MobileAppReadinessPanel";
 import SourceStatusPanel from "@/components/sources/SourceStatusPanel";
-import { buildDemoIncidents } from "@/lib/command/incidentBuilder";
+import { getCommandCenterIncidents } from "@/lib/command/incidentBuilder";
 import { getCommandSourceHealth } from "@/lib/command/sourceHealthService";
 
+/**
+ * ARGUS v1.0.3.4 — see docs/product/ARGUS_COMMAND_CENTER_STATUS.md. This
+ * panel has no real operational incident source connected; it previously
+ * called `buildDemoIncidents()` directly and unconditionally, and assumed
+ * `incidents[0]` always existed. `getCommandCenterIncidents()` is
+ * fail-closed (reuses `isDemoDataAllowed()`), so in production without
+ * explicit authorization this renders an honest empty state instead.
+ */
 export default function CommandCenterPanel() {
-  const incidents = buildDemoIncidents();
+  const { mode, incidents } = getCommandCenterIncidents();
   const sources = getCommandSourceHealth();
 
   return (
@@ -25,13 +33,27 @@ export default function CommandCenterPanel() {
             Inteligencia de incidentes
           </h2>
         </div>
-        <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-2 py-1 text-[0.56rem] font-bold uppercase text-cyan-100">
-          Demo
-        </span>
+        {mode === "demo" && (
+          <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-2 py-1 text-[0.56rem] font-bold uppercase text-cyan-100">
+            Demo
+          </span>
+        )}
       </header>
       <div className="mt-4 grid gap-4">
-        <CommandOverviewCards incidents={incidents} />
-        <IncidentCommandCard incident={incidents[0]} />
+        {mode === "demo-disabled" ? (
+          <p className="rounded-lg border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-400">
+            Command Center sin fuente operacional conectada. Datos de demostración desactivados en este entorno.
+          </p>
+        ) : incidents.length === 0 ? (
+          <p className="rounded-lg border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-400">
+            Sin incidentes de demostración disponibles en este momento.
+          </p>
+        ) : (
+          <>
+            <CommandOverviewCards incidents={incidents} />
+            <IncidentCommandCard incident={incidents[0]} />
+          </>
+        )}
         <UsgsEarthquakeImpactPanel />
         <SmithsonianGvpVolcanoIntelligencePanel />
         <OpenAqAirQualityPanel />

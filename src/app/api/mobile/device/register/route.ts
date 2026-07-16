@@ -1,13 +1,23 @@
 import { NextResponse } from "next/server";
+import { rejectOversizedPayload } from "@/lib/security/payloadSizeGuard";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 import type { MobileDeviceRegistration, MobilePlatform } from "@/types/mobileApiContracts";
 
 const platforms = new Set<MobilePlatform>(["ANDROID", "IOS", "WEB_PWA", "UNKNOWN"]);
+const MAX_SIGNAL_PAYLOAD_BYTES = 32 * 1024;
 
 function clean(value: unknown, max = 120) {
   return String(value ?? "").replace(/[<>]/g, "").trim().slice(0, max);
 }
 
 export async function POST(request: Request) {
+  const oversized = rejectOversizedPayload(request, MAX_SIGNAL_PAYLOAD_BYTES);
+  if (oversized) return oversized;
+
+  const rateLimitOutcome = await enforceRateLimit({ policy: "mobile_safety_signal", request });
+  const rateLimitedResponse = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const deviceIdHash = clean(body.deviceIdHash);
   const platform = platforms.has(body.platform as MobilePlatform)

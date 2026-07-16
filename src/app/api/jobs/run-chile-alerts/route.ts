@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runChileAlertsIngestion } from "@/app/api/chile-alerts/run/route";
+import { acquireJobLock, logJobEvent, responseForJobLockResult } from "@/lib/jobs/jobLock";
+import { resolveIdempotencyKey } from "@/lib/jobs/runIdentity";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +16,9 @@ export const dynamic = "force-dynamic";
  * on the server AND the request's `Authorization` header matches it exactly.
  * If `CRON_SECRET` is unset, every request is rejected — never fall back to
  * "unset secret means open".
+ *
+ * Orden (Prompt 13 §14): secreto → idempotency key → lock (`chile-alerts`,
+ * compartido con `/api/chile-alerts/run`) → pipeline → liberar.
  */
 function isAuthorized(request: NextRequest): boolean {
   const cronSecret = process.env.CRON_SECRET;
@@ -25,19 +30,41 @@ async function runJob(request: NextRequest) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ status: "error", error: "Unauthorized" }, { status: 401 });
   }
+
+  const idempotency = resolveIdempotencyKey(request.headers);
+  if (!idempotency.valid) {
+    return NextResponse.json(
+      { status: "error", error: "Invalid Idempotency-Key/X-Argus-Run-Id header." },
+      { status: 400 }
+    );
+  }
+  const runId = idempotency.runId;
+
+  const lock = await acquireJobLock({ name: "chile-alerts", runId });
+  if (!lock.acquired) return responseForJobLockResult(lock)!;
+
+  const startedAt = Date.now();
+  logJobEvent("job_started", { pipeline: "chile-alerts" });
   try {
-    const result = await runChileAlertsIngestion(false);
+    const result = await runChileAlertsIngestion(false, runId);
+    logJobEvent(result.status === "success" ? "job_completed" : "job_partial", {
+      pipeline: "chile-alerts",
+      durationMs: Date.now() - startedAt,
+    });
     return NextResponse.json(result);
   } catch (error) {
+    logJobEvent("job_failed", { pipeline: "chile-alerts", durationMs: Date.now() - startedAt });
     // Deliberately return only `error.message`, never the raw `error` object
     // or the request's Authorization header — avoids leaking upstream
     // response bodies (which could echo back request details) or secrets
     // into the client response or, by extension, into any log that
     // captures response bodies.
     return NextResponse.json(
-      { status: "error", error: error instanceof Error ? error.message : "Chile alerts job failed" },
+      { status: "error", error: error instanceof Error ? error.message : "Chile alerts job failed", runId },
       { status: 502 }
     );
+  } finally {
+    await lock.release();
   }
 }
 

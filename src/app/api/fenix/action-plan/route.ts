@@ -1,28 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runFenixSimulation } from "@/lib/fenix/fenixSimulationEngine";
-import { getCurrentUser } from "@/services/authService";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
-const INSTITUTIONAL_ROLES = new Set([
-  "OPERATOR",
-  "ANALYST",
-  "ADMIN",
-  "SUPER_ADMIN",
-  "INSTITUTIONAL_ADMIN",
-]);
 
+/**
+ * Reuses `requireOperator()` (src/lib/security/apiGuards.ts) instead of a
+ * second, locally-duplicated `INSTITUTIONAL_ROLES` set — see docs/modules/
+ * ARGUS_FENIX_CANONICALIZATION.md. Same allowed roles as before
+ * (OPERATOR/ANALYST/ADMIN/SUPER_ADMIN); `INSTITUTIONAL_ADMIN` was never
+ * reachable from a real session anyway (see docs/security/
+ * ARGUS_MODULE_ACCESS_BASELINE.md).
+ */
 export async function POST(request: NextRequest) {
+  const { user, response: authResponse } = await requireOperator();
+  if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
+
   try {
-    const user = await getCurrentUser();
-    if (!user || !INSTITUTIONAL_ROLES.has(user.role)) {
-      return NextResponse.json(
-        {
-          error:
-            "Plan institucional Fenix requiere rol operativo. Use modo publico para resumen ciudadano.",
-        },
-        { status: 403 }
-      );
-    }
     const body = await request.json();
     const scenarioId =
       typeof body.scenarioId === "string"

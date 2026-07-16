@@ -1,21 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { loadLocalEnvFiles } from "./lib/databaseSafety";
 
-function loadEnvFile(path: string, override = false) {
-  if (!existsSync(path)) return;
-  for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const separator = trimmed.indexOf("=");
-    if (separator < 1) continue;
-    const key = trimmed.slice(0, separator).trim();
-    const value = trimmed.slice(separator + 1).trim().replace(/^["']|["']$/g, "");
-    if (!process.env[key] || override) process.env[key] = value;
-  }
-}
-
-loadEnvFile(join(process.cwd(), ".env"));
-loadEnvFile(join(process.cwd(), ".env.local"), true);
+loadLocalEnvFiles();
 
 const urls = [process.env.DATABASE_URL, process.env.DIRECT_URL].filter(Boolean);
 const unsafePatterns = [

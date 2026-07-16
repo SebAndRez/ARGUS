@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useSession } from "@/hooks/useSession";
 import { useUserLocation } from "@/hooks/useUserLocation";
+import CanonicalIncidentPanel from "@/components/modules/CanonicalIncidentPanel";
+import VigiaCanonicalIncidentDetail from "@/modules/vigia/components/VigiaCanonicalIncidentDetail";
+import VigiaSourceHealthMiniPanel from "@/modules/vigia/components/VigiaSourceHealthMiniPanel";
 import type { CrisisEvent } from "@/types/crisis";
 import type { BaseMapType } from "@/types/map";
 import type { VigiaReport, VigiaReportStatus } from "@/modules/vigia/types";
@@ -39,6 +43,12 @@ export default function VigiaDashboard() {
   const { user: sessionUser, loading: sessionLoading } = useSession();
   const location = useUserLocation();
   const [baseMapType] = useState<BaseMapType>("streets");
+  const searchParams = useSearchParams();
+  // Prompt 17 §10/§25 — identidad canónica compartida: ATLAS/ORÁCULO/TALOS
+  // navegan aquí con `?incidentId=`, nunca con el incidente completo.
+  const [selectedCanonicalIncidentId, setSelectedCanonicalIncidentId] = useState<string | null>(
+    searchParams.get("incidentId")
+  );
 
   const [apiReports, setApiReports] = useState<VigiaReport[]>([]);
   const [apiLoaded, setApiLoaded] = useState(false);
@@ -255,6 +265,20 @@ export default function VigiaDashboard() {
             onEventSelect={setSelectedEvent}
             baseMapType={baseMapType}
           />
+
+          {/* Prompt 17 §12 — VIGÍA como interfaz de detección/vigilancia/evidencia sobre incidentes canónicos (Global Watch/SENAPRED), separado de los reportes ciudadanos de arriba. */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <CanonicalIncidentPanel
+              moduleId="argus-vigia"
+              title="Incidentes canónicos (Global Watch/SENAPRED)"
+              selectedIncidentId={selectedCanonicalIncidentId}
+              onSelect={setSelectedCanonicalIncidentId}
+            />
+            <div className="grid gap-3">
+              <VigiaCanonicalIncidentDetail incidentId={selectedCanonicalIncidentId} canViewSourceHealth={canValidate} />
+              <VigiaSourceHealthMiniPanel visible={canValidate} />
+            </div>
+          </div>
 
           {canValidate && (
             <VigiaValidationPanel

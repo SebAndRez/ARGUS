@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useSession } from "@/hooks/useSession";
+import OraculoCanonicalIncidentPanel from "@/modules/oraculo/components/OraculoCanonicalIncidentPanel";
 import type { CrisisEvent } from "@/types/crisis";
 import type { OraculoEvidence, OraculoVerificationStatus } from "@/modules/oraculo/types";
 import { oraculoDemoEvidence } from "@/modules/oraculo/data";
@@ -36,6 +38,10 @@ import OraculoAccessDenied from "@/modules/oraculo/components/OraculoAccessDenie
 
 export default function OraculoDashboard() {
   const { user: sessionUser, loading: sessionLoading } = useSession();
+  const searchParams = useSearchParams();
+  const [selectedCanonicalIncidentId, setSelectedCanonicalIncidentId] = useState<string | null>(
+    searchParams.get("incidentId")
+  );
 
   const [vigiaEvidence, setVigiaEvidence] = useState<OraculoEvidence[]>([]);
   const [apiLoaded, setApiLoaded] = useState(false);
@@ -203,6 +209,10 @@ export default function OraculoDashboard() {
 
       <main className="grid gap-4 px-4 pb-8 sm:px-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="grid gap-4 min-w-0">
+          <OraculoCanonicalIncidentPanel
+            selectedIncidentId={selectedCanonicalIncidentId}
+            onSelect={setSelectedCanonicalIncidentId}
+          />
           <OraculoSourceRegistryPanel sources={oraculoSourceRegistry} />
           <div className="grid gap-4 sm:grid-cols-2">
             <OraculoSourceHealthPanel sources={oraculoSourceRegistry} />

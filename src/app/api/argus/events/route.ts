@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { demoArgusEvents } from "@/data/demoArgusEvents";
-import { fetchSenapredAlerts } from "@/lib/adapters/senapred/senapredEventosAdapter";
-import { correlateSignals } from "@/lib/correlation/argusCorrelationEngine";
-import { getCachedSource, setCachedSource } from "@/lib/ingestion/sourceCache";
+import { getKnowledgeIncidents } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
+import { canonicalKnowledgeIncidentToArgusEvent } from "@/lib/canonical/canonicalKnowledgeIncidentToArgusEvent";
 import { isDemoDataAllowed } from "@/lib/security/productionGuard";
+import { isIncidentOperationallyActive } from "@/lib/lifecycle/operationalVisibilityPolicy";
 import type {
   ArgusConfidence,
   ArgusEvent,
@@ -15,8 +15,21 @@ import type {
 
 export const dynamic = "force-dynamic";
 
-const SOURCE_CACHE_KEY = "argus-events:senapred_eventos";
-const CACHE_TTL_MS = 5 * 60_000;
+/**
+ * ARGUS Prompt 14 — consolidación SENAPRED. Este endpoint solía llamar
+ * `fetchSenapredAlerts()` (`senapredEventosAdapter.ts`) directamente en cada
+ * request: una TERCERA consulta AppSync independiente de la ingestión
+ * canónica (`/api/chile-alerts/run` + fuente `senapred_eventos` de Global
+ * Watch, ambas ya consolidadas en `promoteChileOfficialAlerts` y protegidas
+ * por el lock compartido `senapred-ingestion`, Prompt 13). Ahora lee
+ * directamente la misma persistencia canónica (`KnowledgeIncident`) que
+ * `/api/chile-alerts`/`/api/vigia/events` ya usan — misma entidad
+ * persistida, misma proyección `ArgusEvent`, mismo `id` (mismo `idPrefix`
+ * "chile-alert"), solo un contrato de filtros/respuesta propio de esta ruta
+ * (country/eventType/status/sourceType/confidence/bbox), sin una segunda
+ * consulta a la fuente oficial.
+ */
+const PERSISTENCE_SERVICE_MAX_LIMIT = 200;
 
 function eventLat(event: ArgusEvent): number | null {
   if (event.geometry.type === "point") return event.geometry.coordinates[0];
@@ -42,55 +55,33 @@ function eventLng(event: ArgusEvent): number | null {
   return null;
 }
 
-interface SenapredEventsCacheData {
-  events: ArgusEvent[];
-}
-
 type RealSourceOutcome =
-  | { ok: true; events: ArgusEvent[]; cached: boolean }
+  | { ok: true; events: ArgusEvent[] }
   | { ok: false; reason: string };
 
 /**
- * Live SENAPRED source for the "official alerts" map layer. Falls back to
- * `demoArgusEvents` (caller's responsibility) whenever this returns
- * `ok: false` — never throws.
+ * Lee `KnowledgeIncident` (fuente `senapred_eventos`) — la misma
+ * persistencia canónica que `/api/chile-alerts` — y proyecta con el mismo
+ * mapeador único (Prompt 9). Nunca lanza; un fallo real de Prisma se
+ * distingue explícitamente de "cero alertas vigentes ahora mismo" (Prompt 14
+ * §23: una respuesta vacía válida no es un fallo) — solo el primero
+ * dispara el fallback a datos demo más abajo.
  */
-async function loadSenapredEvents(): Promise<RealSourceOutcome> {
-  const cached = getCachedSource<SenapredEventsCacheData>(SOURCE_CACHE_KEY);
-  if (cached) {
-    return { ok: true, events: cached.data.events, cached: true };
-  }
-
+async function loadPersistedSenapredEvents(): Promise<RealSourceOutcome> {
   try {
-    const result = await fetchSenapredAlerts();
-    if (result.status === "error") {
-      return { ok: false, reason: result.errors[0] ?? "SENAPRED live fetch failed" };
-    }
-    if (result.signals.length === 0) {
-      return { ok: false, reason: "SENAPRED returned no active alerts for the lookback window" };
-    }
-
-    const events = correlateSignals(result.signals);
-    setCachedSource<SenapredEventsCacheData>(SOURCE_CACHE_KEY, { events }, CACHE_TTL_MS);
-    return { ok: true, events, cached: false };
+    const incidents = await getKnowledgeIncidents({
+      sourceId: "senapred_eventos",
+      limit: PERSISTENCE_SERVICE_MAX_LIMIT,
+    });
+    const events = incidents
+      .map((incident) => canonicalKnowledgeIncidentToArgusEvent(incident, { idPrefix: "chile-alert" }))
+      .filter((event): event is NonNullable<typeof event> => Boolean(event));
+    return { ok: true, events };
   } catch (error) {
-    return {
-      ok: false,
-      reason: error instanceof Error ? error.message : "SENAPRED live fetch failed",
-    };
+    return { ok: false, reason: error instanceof Error ? error.message : "SENAPRED persisted read failed" };
   }
 }
 
-/**
- * Real SENAPRED events are the primary source for this endpoint; the
- * hand-curated `demoArgusEvents` (`@/data/demoArgusEvents`) is used only as
- * an explicit fallback — either because the live source failed/returned
- * nothing, or because `ARGUS_EVENTS_DEMO_MODE=true` forces demo data (e.g.
- * for screenshots/demos where a stable dataset is wanted). The filter
- * contract (country/eventType/severity/status/sourceType/confidence/bbox) is
- * unchanged either way, so `ArgusEventLayer` never needs to know which
- * source produced the data.
- */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const country = searchParams.get("country");
@@ -116,7 +107,7 @@ export async function GET(request: NextRequest) {
   const demoModeForced = process.env.ARGUS_EVENTS_DEMO_MODE === "true";
   const demoAllowed = isDemoDataAllowed();
 
-  let source: "senapred_live" | "senapred_live_cached" | "curated_demo" = "curated_demo";
+  let source: "senapred_persisted" | "curated_demo" = "curated_demo";
   let events: ArgusEvent[] = demoAllowed ? demoArgusEvents : [];
   let fallbackReason: string | null = demoModeForced
     ? demoAllowed
@@ -125,27 +116,37 @@ export async function GET(request: NextRequest) {
     : null;
 
   if (demoModeForced && !demoAllowed) {
-    source = "senapred_live";
+    source = "senapred_persisted";
   } else if (!demoModeForced) {
-    const outcome = await loadSenapredEvents();
+    const outcome = await loadPersistedSenapredEvents();
     if (outcome.ok) {
-      source = outcome.cached ? "senapred_live_cached" : "senapred_live";
+      // Empty is a legitimate "no active official alerts right now" —
+      // never treated as a failure requiring the demo fallback (Prompt 14
+      // §23: "sin alertas oficiales ≠ fallo al consultar").
+      source = "senapred_persisted";
       events = outcome.events;
       fallbackReason = null;
     } else {
       fallbackReason = outcome.reason;
       if (!demoAllowed) {
-        source = "senapred_live";
+        source = "senapred_persisted";
         events = [];
       }
     }
   }
 
+  const now = new Date();
   const filtered = events.filter((event) => {
     if (country && event.country.toUpperCase() !== country.toUpperCase()) return false;
     if (eventType && event.eventType !== eventType) return false;
     if (severity && event.severity !== severity) return false;
-    if (status && event.status !== status) return false;
+    if (status) {
+      // `?status=` explícito es una consulta puntual/histórica intencional
+      // (Prompt 10 §15) — no se le aplica el filtro de vigencia por defecto.
+      if (event.status !== status) return false;
+    } else if (!isIncidentOperationallyActive({ lifecycle: event.status, expiresAt: event.validUntil ?? null, now })) {
+      return false;
+    }
     if (sourceType && event.sourceType !== sourceType) return false;
     if (confidence && event.confidence !== confidence) return false;
     if (bbox) {

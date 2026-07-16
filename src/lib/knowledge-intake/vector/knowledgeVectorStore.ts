@@ -1,36 +1,11 @@
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getKnowledgeIncidents } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
 import type { ArgusIncidentKnowledge } from "@/types/knowledgeIntake";
-
-type EmbeddingRecordInput = {
-  documentId?: string;
-  chunkId?: string;
-  incidentId?: string;
-  embeddingProvider?: string;
-  embeddingModel?: string;
-  vectorRef?: string;
-  metadataJson?: Prisma.InputJsonValue;
-};
 
 function scoreText(query: string, text: string) {
   const terms = query.toLowerCase().split(/\W+/).filter((term) => term.length > 2);
   const haystack = text.toLowerCase();
   return terms.reduce((score, term) => score + (haystack.includes(term) ? 10 : 0), 0);
-}
-
-export async function upsertEmbeddingRecord(record: EmbeddingRecordInput) {
-  return prisma.knowledgeEmbeddingRecord.create({
-    data: {
-      documentId: record.documentId,
-      chunkId: record.chunkId,
-      incidentId: record.incidentId,
-      embeddingProvider: record.embeddingProvider ?? "textual_fallback",
-      embeddingModel: record.embeddingModel ?? "no_embedding_pgvector_planned",
-      vectorRef: record.vectorRef,
-      metadataJson: record.metadataJson,
-    },
-  });
 }
 
 export async function searchSimilarChunks(query: string, limit = 5) {

@@ -8,6 +8,10 @@ import { auditCustosAction } from "@/modules/custos/custosAudit";
 import { validateCustosOperationalReason } from "@/modules/custos/custosOperationalReason";
 import { performCustosSearch } from "@/modules/custos/custosSearch";
 import type { CustosOperationalReason, CustosSearchResponse, CustosSearchType } from "@/modules/custos/types";
+import { getModuleById } from "@/data/argusModules";
+import ModuleMaturityBadge from "@/components/modules/ModuleMaturityBadge";
+
+const custosModule = getModuleById("argus-custos");
 
 function Panel({ title, children, danger = false }: { title: string; children: React.ReactNode; danger?: boolean }) {
   return (
@@ -80,7 +84,10 @@ export default function CustosDashboard() {
       </header>
 
       <main className="grid gap-4 px-4 py-5 sm:px-6">
-        <div className="border border-amber-300/25 bg-amber-400/10 p-3 text-sm text-amber-100">Modo demo / datos protegidos de prueba. No hay bases reales de identidad, ubicaciones exactas ni datos medicos.</div>
+        <div className="flex flex-wrap items-center gap-2 border border-amber-300/25 bg-amber-400/10 p-3 text-sm text-amber-100">
+          {custosModule?.maturity && <ModuleMaturityBadge maturity={custosModule.maturity} />}
+          <span>Datos protegidos de prueba. No hay bases reales de identidad, ubicaciones exactas ni datos medicos.</span>
+        </div>
 
         {!legalAccepted ? (
           <Panel title="Acceso restringido institucional" danger>

@@ -1,5 +1,28 @@
 # ARGUS Public Changelog
 
+## 2026-07-11 - pending-d802556 - ARGUS v1.0.3.2 - GDACS Green Severity Canonicalization
+
+**Archivos modificados:** 9
+
+**Resumen publico:**  
+Se actualizaron 9 archivos relacionados con Dependencias internas y Eventos y fuentes externas.
+
+**Cambios principales:**
+- Se mejoro la lectura y gestion de reportes.
+- Se actualizaron eventos o fuentes externas.
+- Se actualizaron dependencias o scripts internos.
+- Se actualizaron servicios internos usados por ARGUS.
+
+**Modulos afectados:**
+- Dependencias internas
+- Eventos y fuentes externas
+- Reportes ciudadanos
+
+**En simple:**  
+Esta actualizacion ayuda a que los reportes sean mas claros, ordenados y faciles de revisar.
+
+---
+
 ## 2026-07-11 - pending-60af873 - ARGUS v1.0.3.1 - Operational Stabilization Gate
 
 **Archivos modificados:** 62

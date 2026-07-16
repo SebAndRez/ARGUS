@@ -9,4 +9,6 @@ export interface ArgusRoute {
   status?: string;
   confidence?: number;
   description?: string;
+  /** Explicit structural demo marker — see src/lib/security/demoDataGuard.ts. */
+  isDemo?: boolean;
 }

@@ -23,9 +23,16 @@ export default function HermesRouteCard({ route, onSelect }: Props) {
     >
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm font-semibold text-white">{route.name}</p>
-        <span className={`shrink-0 border px-1.5 py-0.5 text-[0.55rem] font-bold uppercase ${hermesRouteStatusTone[route.status]}`}>
-          {hermesRouteStatusLabel[route.status]}
-        </span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {route.isDemo && (
+            <span className="border border-amber-300/30 bg-amber-400/10 px-1.5 py-0.5 text-[0.55rem] font-bold uppercase text-amber-200">
+              Simulada
+            </span>
+          )}
+          <span className={`border px-1.5 py-0.5 text-[0.55rem] font-bold uppercase ${hermesRouteStatusTone[route.status]}`}>
+            {hermesRouteStatusLabel[route.status]}
+          </span>
+        </div>
       </div>
       <p className="mt-1 text-xs text-slate-400">
         {hermesPurposeLabel[route.purpose]} · {hermesMobilityModeLabel[route.mobilityMode]}

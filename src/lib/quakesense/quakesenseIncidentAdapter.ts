@@ -57,6 +57,12 @@ export function buildIncidentFromQuakeSenseCluster(
     updatedAt: now,
     lastEvidenceAt: cluster.lastDetectedAt,
     isDemo: cluster.isDemo,
+    // Backed entirely by src/lib/quakesense/quakesenseMemoryStore.ts, a
+    // `globalThis` store — never persisted, reset on every restart/cold
+    // start, so this is a runtime placeholder regardless of `cluster.isDemo`.
+    dataMode: "runtime_placeholder",
+    persistent: false,
+    severityMode: "simulated",
     evidence: [evidence],
     timeline: [
       {

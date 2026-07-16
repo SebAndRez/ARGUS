@@ -2,9 +2,12 @@
 
 import type { ArgusNotification } from "@/types/notificationCenter";
 import {
+  getNotificationCategoryClasses,
   getNotificationSeverityClasses,
+  notificationCategoryLabels,
   notificationTypeLabels,
   severityLabels,
+  verificationStatusLabels,
 } from "@/lib/notifications/notificationVisuals";
 
 interface NotificationItemProps {
@@ -53,6 +56,20 @@ export default function NotificationItem({
             <span className="border border-current/20 bg-slate-950/35 px-1.5 py-0.5 text-[0.56rem] font-bold uppercase">
               {severityLabels[notification.severity]}
             </span>
+            {/*
+              Category badge — the primary "what is this" signal (Prompt 11
+              §14-§16). Distinct from severity (color, badge above) and from
+              verification (border-only indicator below): text-based so it
+              never depends on color alone, and never shares a label with a
+              different category.
+            */}
+            <span
+              className={`border bg-slate-950/35 px-1.5 py-0.5 text-[0.56rem] font-bold uppercase ${getNotificationCategoryClasses(
+                notification.category
+              )}`}
+            >
+              {notificationCategoryLabels[notification.category]}
+            </span>
             <span className="border border-white/10 bg-slate-950/35 px-1.5 py-0.5 text-[0.56rem] font-bold uppercase text-slate-300">
               {notification.scope}
             </span>
@@ -63,6 +80,11 @@ export default function NotificationItem({
               <span className="h-1.5 w-1.5 rounded-full bg-cyan-300" aria-label="No leida" />
             )}
           </div>
+          {notification.verificationStatus && (
+            <p className="mt-1 border-l-2 border-current/30 pl-1.5 text-[0.58rem] font-semibold uppercase tracking-[0.06em] text-slate-500">
+              {verificationStatusLabels[notification.verificationStatus]}
+            </p>
+          )}
           <h3 className="mt-2 line-clamp-2 text-sm font-bold leading-5 text-white">
             {notification.title}
           </h3>

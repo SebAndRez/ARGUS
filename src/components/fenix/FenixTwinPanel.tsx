@@ -177,10 +177,15 @@ export default function FenixTwinPanel() {
             </p>
             <h1 className="mt-2 text-2xl font-semibold">{t("fenix.subtitle")}</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-              Demo operativo: genera un curso de crisis estimado, no una instrucción oficial.
+              Simulación / escenario proyectado — predicción ARGUS, no un incidente confirmado ni una instrucción oficial.
             </p>
           </div>
-          <FenixAccessBadge accessLevel={effectiveAccessLevel} />
+          <div className="flex shrink-0 flex-col items-end gap-1.5">
+            <span className="rounded-full border border-amber-300/25 bg-amber-400/10 px-2 py-1 text-[0.58rem] font-bold uppercase text-amber-100">
+              Predicción ARGUS
+            </span>
+            <FenixAccessBadge accessLevel={effectiveAccessLevel} />
+          </div>
         </div>
       </header>
 

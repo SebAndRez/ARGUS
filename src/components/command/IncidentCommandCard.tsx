@@ -3,7 +3,20 @@ import IncidentPriorityBadge from "@/components/command/IncidentPriorityBadge";
 import IncidentStatusBadge from "@/components/command/IncidentStatusBadge";
 import IncidentTimeline from "@/components/command/IncidentTimeline";
 import RecommendedActionsList from "@/components/command/RecommendedActionsList";
-import type { IncidentCommandView } from "@/types/incident";
+import type { IncidentCommandView, IncidentDataMode } from "@/types/incident";
+
+/**
+ * Neutral, non-misleading label per data mode — never "Incidente operativo"
+ * unless a real, persisted, validated source is connected (dataMode ===
+ * "operational", which nothing in this codebase produces today). See
+ * docs/product/ARGUS_COMMAND_CENTER_STATUS.md.
+ */
+function labelForDataMode(dataMode: IncidentDataMode): string {
+  if (dataMode === "operational") return "Incidente operativo";
+  if (dataMode === "demo") return "Incidente de demostración";
+  if (dataMode === "runtime_placeholder") return "Señal preliminar (no persistente)";
+  return "Incidente sintético";
+}
 
 export default function IncidentCommandCard({
   incident,
@@ -15,7 +28,7 @@ export default function IncidentCommandCard({
       <header className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[0.6rem] font-bold uppercase tracking-[0.16em] text-cyan-300/80">
-            Incidente operativo
+            {labelForDataMode(incident.dataMode)}
           </p>
           <h3 className="mt-1 text-sm font-semibold text-white">{incident.title}</h3>
         </div>

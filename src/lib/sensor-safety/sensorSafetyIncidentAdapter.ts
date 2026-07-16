@@ -65,6 +65,11 @@ export function buildIncidentFromSensorSafetyDetection(
     updatedAt: now,
     lastEvidenceAt: detection.detectedAt,
     isDemo: detection.isDemo,
+    // Backed by src/lib/sensor-safety/sensorSafetyStore.ts's in-memory
+    // store — never persisted, runtime-only.
+    dataMode: "runtime_placeholder",
+    persistent: false,
+    severityMode: "simulated",
     evidence: [
       {
         id: `evidence-${detection.id}`,

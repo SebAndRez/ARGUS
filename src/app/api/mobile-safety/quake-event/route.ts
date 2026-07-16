@@ -4,10 +4,21 @@ import {
   createSafetyCheck,
   getMobileSafetySettings,
 } from "@/lib/mobile-safety/mobileSafetyService";
+import { rejectOversizedPayload } from "@/lib/security/payloadSizeGuard";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 
 export const dynamic = "force-dynamic";
 
+const MAX_SIGNAL_PAYLOAD_BYTES = 32 * 1024; // 32 KB — small telemetry payload, no free text expected.
+
 export async function POST(request: NextRequest) {
+  const oversized = rejectOversizedPayload(request, MAX_SIGNAL_PAYLOAD_BYTES);
+  if (oversized) return oversized;
+
+  const rateLimitOutcome = await enforceRateLimit({ policy: "mobile_safety_signal", request });
+  const rateLimitedResponse = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   const body = await request.json().catch(() => ({}));
   const settings = getMobileSafetySettings();
 

@@ -181,10 +181,14 @@ records into `/api/events`.
 `knowledgeVectorStore.ts` exposes a pgvector-ready interface with textual
 fallback:
 
-- `upsertEmbeddingRecord(record)`
 - `searchSimilarChunks(query)`
 - `searchSimilarIncidents(input)`
 - `getContextForIncident(incident)`
+
+(`upsertEmbeddingRecord(record)` was retired in the Prompt 20 cleanup — it had
+zero callers anywhere in the repo, so `KnowledgeEmbeddingRecord` rows are
+currently never written by anything. The Prisma model itself is untouched;
+a real writer would need to be added if this capability is needed again.)
 
 No real embeddings are generated yet.
 

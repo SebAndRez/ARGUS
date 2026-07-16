@@ -67,6 +67,11 @@ export function buildIncidentFromSafetyCheck(
     updatedAt: check.respondedAt ?? check.escalationAt ?? check.createdAt,
     lastEvidenceAt: check.respondedAt ?? check.escalationAt ?? check.createdAt,
     isDemo: true,
+    // Backed by src/lib/mobile-safety/mobileSafetyService.ts's in-memory
+    // store — never persisted, runtime-only.
+    dataMode: "runtime_placeholder",
+    persistent: false,
+    severityMode: "simulated",
     evidence: [
       {
         id: `evidence-${check.id}`,

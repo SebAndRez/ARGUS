@@ -4,9 +4,13 @@ import {
   getSafetyChecks,
   respondToSafetyCheck,
 } from "@/lib/mobile-safety/mobileSafetyService";
+import { rejectOversizedPayload } from "@/lib/security/payloadSizeGuard";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 import type { SafetyCheckResponse } from "@/types/mobileSafety";
 
 export const dynamic = "force-dynamic";
+
+const MAX_SIGNAL_PAYLOAD_BYTES = 32 * 1024;
 
 const validResponses: SafetyCheckResponse[] = [
   "I_AM_SAFE",
@@ -28,6 +32,13 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const oversized = rejectOversizedPayload(request, MAX_SIGNAL_PAYLOAD_BYTES);
+  if (oversized) return oversized;
+
+  const rateLimitOutcome = await enforceRateLimit({ policy: "mobile_safety_signal", request });
+  const rateLimitedResponse = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   const body = await request.json().catch(() => ({}));
   const check = createSafetyCheck({
     triggerEventId: body.triggerEventId,

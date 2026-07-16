@@ -18,12 +18,35 @@ jobs:
     steps:
       - name: Trigger /api/jobs/run-chile-alerts
         run: |
-          curl -fsS -X POST \
+          # Stable across curl's own --retry (same step execution = same
+          # github.run_id/run_attempt); a new scheduled/dispatched run always
+          # gets a fresh github.run_id, so it never collides with a prior
+          # run's idempotency key (Prompt 13 §8).
+          idempotency_key="argus-run-chile-alerts-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          http_code=$(curl -sS -o /tmp/response.json -w "%{http_code}" -X POST \
             "${ARGUS_PROD_URL}/api/jobs/run-chile-alerts" \
             -H "Authorization: Bearer ${ARGUS_CRON_SECRET}" \
+            -H "X-Argus-Run-Id: ${idempotency_key}" \
             -H "User-Agent: argus-github-actions-cron" \
             --retry 2 \
-            --retry-delay 10
+            --retry-delay 10)
+          echo "HTTP status: ${http_code}"
+          cat /tmp/response.json
+          echo ""
+          if [ "$http_code" = "409" ]; then
+            # Prompt 13 §13: another legitimate run (cron or manual) already
+            # holds the pipeline lock — neutral outcome, not a workflow
+            # failure, and never retried aggressively (curl's own --retry
+            # only retries 408/429/500/502/503/504, never 409).
+            echo "Chile Alerts pipeline already running elsewhere — treating as neutral, no action needed."
+            exit 0
+          fi
+          if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+            echo "Chile Alerts job completed (status ${http_code})."
+            exit 0
+          fi
+          echo "Chile Alerts job failed with status ${http_code}."
+          exit 1
         env:
           ARGUS_PROD_URL: ${{ secrets.ARGUS_PROD_URL }}
           ARGUS_CRON_SECRET: ${{ secrets.ARGUS_CRON_SECRET }}

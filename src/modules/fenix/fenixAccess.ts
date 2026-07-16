@@ -9,6 +9,7 @@ export function resolveFenixRole(user?: SessionUser | null): ArgusRole {
   return mapSessionUserToArgusRole(user);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for API parity with sibling modules' canUseXFeature(role, feature) signature; FENIX gates coarsely (no per-feature distinction yet).
 export function canUseFenixFeature(userOrRole: SessionUser | ArgusRole | null | undefined, _feature: FenixFeature) {
   const role = typeof userOrRole === "string" ? userOrRole : resolveFenixRole(userOrRole);
   return allowed.includes(role);

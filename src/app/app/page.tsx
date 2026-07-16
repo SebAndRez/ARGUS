@@ -133,8 +133,6 @@ const OperationalMap = dynamic(
   }
 );
 
-const initialLayers = getDefaultLayerState();
-
 const initialEventState: CrisisEvent[] = [];
 const defaultVisibleWidgets = {
   hud: true,
@@ -862,7 +860,7 @@ export default function AppPage() {
     []
   );
 
-  const toggleLayer = (key: keyof typeof initialLayers) => {
+  const toggleLayer = (key: keyof ReturnType<typeof getDefaultLayerState>) => {
     if (
       key === "usgsEarthquakes" &&
       layerSettings.usgsEarthquakes &&
@@ -1191,7 +1189,7 @@ export default function AppPage() {
     []
   );
   const layerMeta = useMemo<
-    Partial<Record<keyof typeof initialLayers, LayerDisplayMeta>>
+    Partial<Record<keyof ReturnType<typeof getDefaultLayerState>, LayerDisplayMeta>>
   >(
     () => ({
       reports: {
@@ -1694,7 +1692,7 @@ export default function AppPage() {
           return enrichEventLifecycle(event, { expiredDemo });
         });
         setEvents(enrichedEvents);
-      } catch (error) {
+      } catch {
         setErrorMessage("Error al cargar eventos. Usando datos locales.");
       }
     }

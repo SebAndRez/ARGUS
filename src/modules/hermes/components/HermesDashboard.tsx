@@ -19,6 +19,10 @@ import {
 } from "@/modules/hermes/hermesAccess";
 import { auditHermesAction } from "@/modules/hermes/hermesAudit";
 import { formatHermesRelativeTime } from "@/modules/hermes/utils";
+import { getModuleById } from "@/data/argusModules";
+import ModuleMaturityBadge from "@/components/modules/ModuleMaturityBadge";
+
+const hermesModule = getModuleById("argus-hermes");
 
 import HermesHeader from "@/modules/hermes/components/HermesHeader";
 import HermesKpiGrid from "@/modules/hermes/components/HermesKpiGrid";
@@ -175,9 +179,7 @@ export default function HermesDashboard() {
       <HermesKpiGrid kpis={kpis} />
 
       <div className="mx-4 mb-3 flex flex-wrap items-center gap-2 border border-amber-300/25 bg-amber-400/8 px-4 py-2 text-[0.7rem] text-amber-100 sm:mx-6">
-        <span className="rounded-full border border-amber-300/40 bg-amber-400/15 px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-amber-200">
-          Demo
-        </span>
+        {hermesModule?.maturity && <ModuleMaturityBadge maturity={hermesModule.maturity} />}
         <span>
           Ruta simulada — HERMES aún no calcula rutas reales de navegación. No usar como navegación real.
         </span>

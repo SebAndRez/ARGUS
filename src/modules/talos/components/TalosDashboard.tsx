@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useSession } from "@/hooks/useSession";
+import TalosCanonicalIncidentPanel from "@/modules/talos/components/TalosCanonicalIncidentPanel";
 import type { CrisisEvent } from "@/types/crisis";
 import type { TalosRiskAssessment } from "@/modules/talos/types";
 import { talosDemoAssessments } from "@/modules/talos/data";
@@ -26,6 +28,10 @@ import TalosAccessDenied from "@/modules/talos/components/TalosAccessDenied";
 
 export default function TalosDashboard() {
   const { user: sessionUser, loading: sessionLoading } = useSession();
+  const searchParams = useSearchParams();
+  const [selectedCanonicalIncidentId, setSelectedCanonicalIncidentId] = useState<string | null>(
+    searchParams.get("incidentId")
+  );
 
   const [apiAssessments, setApiAssessments] = useState<TalosRiskAssessment[]>([]);
   const [apiLoaded, setApiLoaded] = useState(false);
@@ -193,6 +199,10 @@ export default function TalosDashboard() {
 
       <main className="grid gap-4 px-4 pb-8 sm:px-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="grid gap-4 min-w-0">
+          <TalosCanonicalIncidentPanel
+            selectedIncidentId={selectedCanonicalIncidentId}
+            onSelect={setSelectedCanonicalIncidentId}
+          />
           <TalosRiskMatrixPanel assessments={assessments} />
           <TalosPriorityQueue assessments={assessments} onSelect={handleSelect} />
           <TalosIncidentRiskFeed assessments={assessments} onSelect={handleSelect} />

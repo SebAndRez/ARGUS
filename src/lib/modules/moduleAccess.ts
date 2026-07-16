@@ -11,6 +11,57 @@ import { argusModules } from "@/data/argusModules";
 /** localStorage key used by the `/modules` role switcher to preview visibility. */
 export const DEMO_ROLE_STORAGE_KEY = "argus-demo-module-role";
 
+/**
+ * ARGUS v1.0.3.4 — fail-closed gate for the demo role selector/localStorage
+ * override. This NEVER grants real authorization; it only controls whether
+ * a client-stored role label is allowed to influence *presentation* while a
+ * developer previews module visibility. Absent variable, any value other
+ * than the exact string "true", or a production build: always disabled.
+ * Mirrors the same fail-closed shape as `isDemoDataAllowed()`
+ * (src/lib/security/productionGuard.ts) and `assertSafeDatabaseForSeed()`
+ * (scripts/lib/databaseSafety.ts) — no bypass by NODE_ENV alone, no bypass
+ * by a truthy-looking string, no bypass by absence of the check.
+ */
+export function isDemoRoleOverrideAllowed(): boolean {
+  if (typeof process === "undefined") return false;
+  if (process.env.NODE_ENV === "production") return false;
+  return process.env.NEXT_PUBLIC_ARGUS_ENABLE_DEMO_ROLES === "true";
+}
+
+/**
+ * Removes any previously-stored demo role so it can never resurface later
+ * (a different browser tab, a future session, a value carried over from a
+ * preview deployment into production). Must be called by every consumer of
+ * `DEMO_ROLE_STORAGE_KEY` whenever `isDemoRoleOverrideAllowed()` is false —
+ * not just by `ModulesMenu`, since a user can land directly on a module
+ * route without ever visiting the menu first. No-op outside the browser.
+ */
+export function clearDemoRoleOverride() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(DEMO_ROLE_STORAGE_KEY);
+  } catch {
+    // localStorage unavailable (private mode, disabled storage, etc.) — ignore.
+  }
+}
+
+/**
+ * The single choke point deciding which role `canAccessModule` actually
+ * sees. `demoRole` (read from `localStorage`, a query param, or any other
+ * client-controlled source) is honored ONLY when
+ * `isDemoRoleOverrideAllowed()` is true — otherwise the real,
+ * session-derived role is always used, with no exception. This is the
+ * "sessionRole vs. demoPresentationRole" split: `demoRole` can change what
+ * a developer previews, it can never stand in for a verified session role.
+ */
+export function resolveEffectiveModuleRole(
+  sessionRole: ArgusRole,
+  demoRole: ArgusRole | null | undefined
+): ArgusRole {
+  if (demoRole && isDemoRoleOverrideAllowed()) return demoRole;
+  return sessionRole;
+}
+
 function hasAdminOverride(role: ArgusRole) {
   return role === "ADMIN" || role === "SUPER_ADMIN";
 }

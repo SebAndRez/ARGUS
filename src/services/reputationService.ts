@@ -8,6 +8,7 @@ export async function adjustTrustScore(userId: string, change: number) {
   return user;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- `reason` is part of the public contract (callers already pass it) but isn't persisted yet; no strike-reason column exists in Prisma today. See docs/maintenance/ARGUS_REMAINING_TECHNICAL_DEBT.md.
 export async function applyStrike(userId: string, reason: string) {
   const user = await prisma.user.update({
     where: { id: userId },

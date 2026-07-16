@@ -4,6 +4,7 @@ import {
   getSensorSafetyCheckIns,
   respondToSensorSafetyCheck,
 } from "@/lib/sensor-safety/sensorSafetyStore";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 import type { SensorSafetyResponse } from "@/types/sensorSafety";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +14,11 @@ export async function GET() {
   return NextResponse.json({ count: checkIns.length, checkIns });
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  const rateLimitOutcome = await enforceRateLimit({ policy: "sensor_safety_signal", request });
+  const rateLimitedResponse = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   const { checkIn, detection } = createDemoSensorSafetyScenario("road_crash");
   return NextResponse.json({ created: true, detection, checkIn });
 }

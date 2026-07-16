@@ -1,7 +1,55 @@
 import type {
   ArgusNotificationSeverity,
   ArgusNotificationType,
+  NotificationCategory,
+  VerificationStatus,
 } from "@/types/notificationCenter";
+
+/**
+ * Prompt 11 §14: text label for the category badge — always rendered as
+ * visible text, never color-only, and never sharing a label with a
+ * different category (so a prediction can never read as an official alert).
+ */
+export const notificationCategoryLabels: Record<NotificationCategory, string> = {
+  official_alert: "Alerta oficial",
+  confirmed_incident: "Confirmado",
+  candidate_signal: "Candidato",
+  citizen_report: "Reporte ciudadano",
+  argus_analysis: "Analisis ARGUS",
+  prediction: "Prediccion ARGUS",
+  recommendation: "Recomendacion ARGUS",
+  source_health: "Sistema",
+  preparedness_reminder: "Recordatorio",
+  system_notice: "Sistema",
+  demo: "Demo",
+};
+
+/**
+ * Secondary, smaller verification indicator (Prompt 11 §15: "borde/icono
+ * secundario = verificación"). Absent for categories where verification
+ * doesn't apply — `NotificationItem` skips rendering it in that case rather
+ * than showing a placeholder value.
+ */
+export const verificationStatusLabels: Record<VerificationStatus, string> = {
+  unverified: "No verificado",
+  candidate: "En validacion",
+  corroborated: "Corroborado",
+  official: "Fuente oficial",
+  model_generated: "Generado por modelo",
+  rejected: "Descartado",
+};
+
+export function getNotificationCategoryClasses(category: NotificationCategory) {
+  if (category === "official_alert") return "border-red-300/40 text-red-100";
+  if (category === "confirmed_incident") return "border-orange-300/35 text-orange-100";
+  if (category === "candidate_signal") return "border-amber-300/35 text-amber-100";
+  if (category === "citizen_report") return "border-sky-300/30 text-sky-100";
+  if (category === "prediction" || category === "argus_analysis" || category === "recommendation") {
+    return "border-purple-300/30 text-purple-100";
+  }
+  if (category === "demo") return "border-fuchsia-300/35 text-fuchsia-100";
+  return "border-slate-400/25 text-slate-300";
+}
 
 export const severityLabels: Record<ArgusNotificationSeverity, string> = {
   P0_CRITICAL: "Critica",

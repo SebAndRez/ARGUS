@@ -1,9 +1,24 @@
-import { prisma } from "../src/lib/prisma";
-import { formatPublicAlias, generateGovernmentIdHash } from "../src/services/govIdentity/govIdentityProvider";
+import { assertSafeDatabaseForSeed } from "../scripts/lib/databaseSafety";
 
-type SeedUser = Awaited<ReturnType<typeof prisma.user.create>>;
+// El guard debe ser la primera cosa que hace este archivo, y debe ejecutarse
+// antes de que se importe `src/lib/prisma` (que instancia `PrismaClient` al
+// cargarse). Por eso el resto de las dependencias reales del seed se cargan
+// con `import()` dinamico dentro de `run()`, despues del guard, en vez de
+// como imports estaticos en el encabezado del archivo.
+type PrismaClientModule = typeof import("../src/lib/prisma");
+let loadedPrisma: PrismaClientModule["prisma"] | null = null;
 
-async function main() {
+async function run() {
+  assertSafeDatabaseForSeed();
+
+  const { prisma } = await import("../src/lib/prisma");
+  loadedPrisma = prisma;
+  const { formatPublicAlias, generateGovernmentIdHash } = await import(
+    "../src/services/govIdentity/govIdentityProvider"
+  );
+
+  type SeedUser = Awaited<ReturnType<typeof prisma.user.create>>;
+
   const users = [
     { name: "Ciudadano Activo", email: "ciudadano.activo@demo.cl", role: "CITIZEN", accountStatus: "ACTIVE", governmentId: "11111111-1" },
     { name: "Ciudadano Observado", email: "ciudadano.observado@demo.cl", role: "CITIZEN", accountStatus: "WATCHED", governmentId: "22222222-2" },
@@ -130,11 +145,16 @@ async function main() {
   }
 }
 
-main()
+run()
   .catch((error) => {
     console.error(error);
     process.exit(1);
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    // Solo desconectar si el guard permitio que `prisma/lib` llegara a
+    // importarse — si el guard bloqueo la ejecucion, `loadedPrisma` nunca
+    // se asigna y no hay ningun PrismaClient que cerrar.
+    if (loadedPrisma) {
+      await loadedPrisma.$disconnect();
+    }
   });

@@ -5,6 +5,13 @@ import {
   buildRecommendedActions,
 } from "@/lib/command/recommendedActions";
 import { buildIncidentTimeline } from "@/lib/command/incidentTimelineService";
+import { buildIncidentFromSafetyCheck } from "@/lib/mobile-safety/mobileSafetyIncidentAdapter";
+import { getSafetyChecks } from "@/lib/mobile-safety/mobileSafetyService";
+import { buildIncidentFromQuakeSenseCluster } from "@/lib/quakesense/quakesenseIncidentAdapter";
+import { getQuakeSenseClusters } from "@/lib/quakesense/quakesenseMemoryStore";
+import { buildIncidentFromSensorSafetyDetection } from "@/lib/sensor-safety/sensorSafetyIncidentAdapter";
+import { getSensorSafetyDetections } from "@/lib/sensor-safety/sensorSafetyStore";
+import { isDemoDataAllowed } from "@/lib/security/productionGuard";
 import type {
   Incident,
   IncidentCommandView,
@@ -72,6 +79,9 @@ export function buildIncidentFromCitizenReport(
     updatedAt: now,
     lastEvidenceAt: event.createdAt,
     isDemo: true,
+    dataMode: "demo",
+    persistent: false,
+    severityMode: "simulated",
   };
   const links: IncidentLink[] = [
     {
@@ -118,4 +128,64 @@ export function buildDemoIncidents(events: IncidentInputEvent[] = []) {
           sourceName: "ARGUS demo",
         }),
       ];
+}
+
+const isIncidentView = (
+  incident: IncidentCommandView | null
+): incident is IncidentCommandView => Boolean(incident);
+
+export type CommandCenterMode = "demo" | "demo-disabled";
+
+export interface CommandCenterIncidentResult {
+  /** "demo-disabled" whenever `isDemoDataAllowed()` is false — never "demo" in that case, regardless of what internal builders would otherwise produce. */
+  mode: CommandCenterMode;
+  /**
+   * Always `false`. Nothing behind this endpoint is a persisted, validated,
+   * canonical incident source yet (no Prisma, no `KnowledgeIncident`, no
+   * Global Watch) — see docs/product/ARGUS_COMMAND_CENTER_STATUS.md. This
+   * field exists so no consumer can misreport this data as operational.
+   */
+  operational: false;
+  incidents: IncidentCommandView[];
+  message: string;
+}
+
+/**
+ * ARGUS v1.0.3.4 — single, fail-closed choke point for every consumer of
+ * the synthetic/volatile "Command Center" incident sources (QuakeSense
+ * clusters, Mobile Safety checks, Sensor Safety detections, and the
+ * hardcoded demo fallback). Reuses `isDemoDataAllowed()`
+ * (src/lib/security/productionGuard.ts) — the same variable already used
+ * to gate Global Watch/Chile alerts seed mode — rather than introducing a
+ * second demo flag. In production without explicit authorization, this
+ * returns an empty, valid result instead of ever calling the synthetic
+ * builders: `buildDemoIncidents()`/the memory-store readers are not even
+ * invoked, so there is no risk of their output leaking through a filter
+ * bug downstream.
+ */
+export function getCommandCenterIncidents(): CommandCenterIncidentResult {
+  if (!isDemoDataAllowed()) {
+    return {
+      mode: "demo-disabled",
+      operational: false,
+      incidents: [],
+      message: "No operational incident source is connected to this endpoint.",
+    };
+  }
+
+  const incidents = [
+    ...getQuakeSenseClusters().map(buildIncidentFromQuakeSenseCluster),
+    ...getSafetyChecks().map(buildIncidentFromSafetyCheck).filter(isIncidentView),
+    ...getSensorSafetyDetections()
+      .map(buildIncidentFromSensorSafetyDetection)
+      .filter(isIncidentView),
+    ...buildDemoIncidents(),
+  ];
+
+  return {
+    mode: "demo",
+    operational: false,
+    incidents,
+    message: "Demo/synthetic incidents only — no operational source is connected.",
+  };
 }

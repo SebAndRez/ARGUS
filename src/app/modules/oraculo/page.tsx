@@ -1,5 +1,10 @@
+import { Suspense } from "react";
 import OraculoDashboard from "@/modules/oraculo/components/OraculoDashboard";
 
 export default function OraculoModulePage() {
-  return <OraculoDashboard />;
+  return (
+    <Suspense fallback={null}>
+      <OraculoDashboard />
+    </Suspense>
+  );
 }

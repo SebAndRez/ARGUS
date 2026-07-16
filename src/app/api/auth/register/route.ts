@@ -11,8 +11,13 @@ import {
 } from "@/lib/identity/countryDocumentRules";
 import { createLoginResponse } from "@/services/authService";
 import { logAuditEvent } from "@/services/auditService";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 
 export async function POST(req: Request) {
+  const rateLimitOutcome = await enforceRateLimit({ policy: "auth_register_ip", request: req });
+  const rateLimitedResponse = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   const body = await req.json();
   const name = String(body.name || "").trim();
   const email = String(body.email || "").trim().toLowerCase();

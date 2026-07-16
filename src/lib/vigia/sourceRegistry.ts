@@ -38,6 +38,17 @@ export type VigiaSourceDefinition = {
   /** Env var that must be present for the source to run, if any. */
   requiresEnvVar?: string;
   enabled: boolean;
+  /**
+   * Prompt 14 — ownership annotation for sources whose ingestion is
+   * consolidated behind a single scheduled job rather than triggered
+   * directly by Global Watch's own per-source loop (e.g. `senapred_eventos`
+   * is fetched/persisted exclusively via `promoteChileOfficialAlerts`,
+   * scheduled by `/api/jobs/run-chile-alerts`; Global Watch's own
+   * `senapred_eventos` step delegates to that same function under the
+   * shared `senapred-ingestion` lock instead of running a second fetch).
+   * Absent for sources Global Watch fetches directly.
+   */
+  managedByJob?: string;
 };
 
 export const VIGIA_SOURCE_REGISTRY: VigiaSourceDefinition[] = [
@@ -140,6 +151,7 @@ export const VIGIA_SOURCE_REGISTRY: VigiaSourceDefinition[] = [
     endpoint: "https://senapred.cl (scraper oficial vía fetchChileOfficialAlertsRaw)",
     role: "incident",
     enabled: true,
+    managedByJob: "chile-alerts",
   },
   {
     id: "dmc_meteochile_mention",
@@ -220,6 +232,8 @@ export type VigiaSourceHealth = {
   incidentsCreated: number;
   incidentsPersistedTotal: number;
   nextRunEstimate: string | null;
+  /** See `VigiaSourceDefinition.managedByJob`. */
+  managedByJob?: string;
 };
 
 function resolveStatus(
@@ -302,6 +316,7 @@ export async function getVigiaSourceHealth(): Promise<VigiaSourceHealth[]> {
         lastRunAt && source.enabled && isVigiaSourceConfigured(source)
           ? new Date(lastRunAt.getTime() + source.refreshIntervalMinutes * 60_000).toISOString()
           : null,
+      managedByJob: source.managedByJob,
     };
   });
 }

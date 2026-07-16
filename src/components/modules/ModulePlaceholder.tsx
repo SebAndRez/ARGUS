@@ -1,6 +1,7 @@
 import type { ArgusModuleDefinition } from "@/types/argusModule";
 import ModuleBadge from "@/components/modules/ModuleBadge";
 import ModuleIcon from "@/components/modules/ModuleIcon";
+import ModuleMaturityBadge from "@/components/modules/ModuleMaturityBadge";
 
 const statusLabel: Record<ArgusModuleDefinition["status"], string> = {
   active: "Activo",
@@ -83,6 +84,21 @@ export default function ModulePlaceholder({ module }: Props) {
             {statusLabel[module.status]}. Base modular creada. Pendiente
             implementación funcional completa.
           </p>
+          {module.maturity && (
+            <div className="mt-3 flex flex-wrap items-start gap-3">
+              <ModuleMaturityBadge maturity={module.maturity} />
+              {module.maturityNotes && module.maturityNotes.length > 0 && (
+                <ul className="grid gap-1 text-[0.7rem] text-slate-400">
+                  {module.maturityNotes.map((note) => (
+                    <li key={note} className="flex gap-2">
+                      <span className="text-cyan-400">-</span>
+                      {note}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
           <dl className="mt-3 grid grid-cols-2 gap-2 text-[0.7rem] text-slate-500 sm:grid-cols-4">
             <div>
               <dt className="uppercase tracking-[0.1em]">Categoría</dt>

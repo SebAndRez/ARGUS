@@ -6,6 +6,7 @@ import NotificationFilters, {
   type NotificationFilterState,
 } from "@/components/notifications/NotificationFilters";
 import NotificationItem from "@/components/notifications/NotificationItem";
+import { buildNotificationSummary } from "@/lib/notifications/notificationCenterEngine";
 import type {
   ArgusNotification,
   ArgusNotificationSummary,
@@ -44,20 +45,6 @@ function writeStoredIds(ids: string[]) {
   } catch {
     // localStorage can be unavailable in private mode.
   }
-}
-
-function summarize(notifications: ArgusNotification[]): ArgusNotificationSummary {
-  return {
-    total: notifications.length,
-    unread: notifications.filter((item) => !item.isRead).length,
-    critical: notifications.filter((item) => item.severity === "P0_CRITICAL").length,
-    high: notifications.filter((item) => item.severity === "P1_HIGH").length,
-    local: notifications.filter((item) => item.scope === "LOCAL").length,
-    national: notifications.filter((item) => item.scope === "NATIONAL").length,
-    international: notifications.filter((item) => item.scope === "INTERNATIONAL").length,
-    global: notifications.filter((item) => item.scope === "GLOBAL").length,
-    latestAt: notifications[0]?.eventTime ?? null,
-  };
 }
 
 export default function NotificationCenterPanel({
@@ -101,7 +88,7 @@ export default function NotificationCenterPanel({
       const nextNotifications = (data.notifications ?? []) as ArgusNotification[];
       setNotifications(nextNotifications);
       setLastUpdatedAt(Date.now());
-      onSummaryChange?.(summarize(nextNotifications));
+      onSummaryChange?.(buildNotificationSummary(nextNotifications));
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "No se pudieron cargar alertas.");
     } finally {
@@ -172,7 +159,7 @@ export default function NotificationCenterPanel({
         const next = current.map((notification) =>
           ids.includes(notification.id) ? { ...notification, isRead: true } : notification
         );
-        onSummaryChange?.(summarize(next));
+        onSummaryChange?.(buildNotificationSummary(next));
         return next;
       });
     },

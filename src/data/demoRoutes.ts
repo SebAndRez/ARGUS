@@ -14,6 +14,7 @@ export const demoRoutes: ArgusRoute[] = [
     status: "Operativa demo",
     confidence: 82,
     description: "Ruta terrestre de referencia para logística y respuesta urbana.",
+    isDemo: true,
   },
   {
     id: "route-air-santiago-demo",
@@ -28,6 +29,7 @@ export const demoRoutes: ArgusRoute[] = [
     status: "Planificada demo",
     confidence: 68,
     description: "Trayectoria visual aproximada; no representa tráfico aéreo real.",
+    isDemo: true,
   },
   {
     id: "route-maritime-valparaiso-demo",
@@ -42,5 +44,6 @@ export const demoRoutes: ArgusRoute[] = [
     status: "Referencia demo",
     confidence: 73,
     description: "Corredor marítimo ilustrativo cercano al puerto de Valparaíso.",
+    isDemo: true,
   },
 ];

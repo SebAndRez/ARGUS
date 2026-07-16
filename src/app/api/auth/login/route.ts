@@ -4,8 +4,20 @@ import { requiresProfileCompletion } from "@/lib/identity/accountIdentityPolicy"
 import { prisma } from "@/lib/prisma";
 import { createLoginResponse } from "@/services/authService";
 import { logAuditEvent } from "@/services/auditService";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
+import { logOperationalEvent } from "@/lib/observability/operationalEvents";
 
+/**
+ * Order follows Prompt 12 §14 exactly: rate limit (IP layer) runs before
+ * even parsing the body, then minimal validation, then the account-layer
+ * rate limit (needs the email to key on), and only then password
+ * verification — the costliest step never runs for an over-quota client.
+ */
 export async function POST(req: Request) {
+  const ipRateLimit = await enforceRateLimit({ policy: "auth_login_ip", request: req });
+  const ipBlocked = rateLimitResponseForOutcome(ipRateLimit);
+  if (ipBlocked) return ipBlocked;
+
   const body = await req.json();
   const email = String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
@@ -17,8 +29,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Contraseña requerida." }, { status: 400 });
   }
 
+  const accountRateLimit = await enforceRateLimit({
+    policy: "auth_login_account",
+    request: req,
+    identity: { accountIdentifier: email },
+  });
+  const accountBlocked = rateLimitResponseForOutcome(accountRateLimit);
+  if (accountBlocked) return accountBlocked;
+
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
+    logOperationalEvent({ event: "auth_login_failed", level: "warn", component: "security", errorCode: "UNKNOWN_ACCOUNT" });
     return NextResponse.json({ error: "Credenciales inválidas." }, { status: 401 });
   }
   if (!user.passwordHash) {
@@ -28,6 +49,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 409 });
   }
   if (!verifyPassword(password, user.passwordHash)) {
+    logOperationalEvent({ event: "auth_login_failed", level: "warn", component: "security", errorCode: "BAD_PASSWORD" });
     return NextResponse.json({ error: "Credenciales inválidas." }, { status: 401 });
   }
 

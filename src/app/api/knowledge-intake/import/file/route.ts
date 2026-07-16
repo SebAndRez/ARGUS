@@ -12,13 +12,34 @@ import {
 } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
 import { calculateEvidenceConfidenceScore } from "@/lib/knowledge-intake/scoring/evidenceScoring";
 import { buildDocumentChunks } from "@/lib/knowledge-intake/vector/documentChunker";
+import { requireOperator } from "@/lib/security/apiGuards";
+import { rejectOversizedPayload } from "@/lib/security/payloadSizeGuard";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 import type { ArgusKnowledgeInputEnvelope, ArgusKnowledgeInputType } from "@/types/knowledgeIntake";
 
 export const dynamic = "force-dynamic";
 
 const supportedTypes: ArgusKnowledgeInputType[] = ["pdf", "txt_markdown", "csv", "json", "docx", "xlsx"];
 
+/** Larger than the manual-text cap — this preview path accepts file-shaped rawText (base64/extracted text). */
+const MAX_FILE_IMPORT_BYTES = 8 * 1024 * 1024; // 8 MB
+
 export async function POST(request: Request) {
+  const { user, response: authResponse } = await requireOperator();
+  if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
+
+  const oversized = rejectOversizedPayload(request, MAX_FILE_IMPORT_BYTES);
+  if (oversized) return oversized;
+
+  // Rate limit runs before any parsing/normalization/persistence below.
+  const rateLimitOutcome = await enforceRateLimit({
+    policy: "knowledge_import_file",
+    request,
+    identity: { userId: user.id },
+  });
+  const rateLimitedResponse = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   const contentType = request.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
     const body = (await request.json()) as Partial<ArgusKnowledgeInputEnvelope>;

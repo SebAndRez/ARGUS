@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchSenapredAlerts } from "@/lib/adapters/senapred/senapredEventosAdapter";
+import { acquireJobLock, responseForJobLockResult } from "@/lib/jobs/jobLock";
+import { generateRunId } from "@/lib/jobs/runIdentity";
 
 export const dynamic = "force-dynamic";
 
@@ -11,14 +13,26 @@ function splitList(value: string | null) {
  * Manual/ops testing endpoint for the live SENAPRED eventos adapter — signs
  * anonymous-identity AppSync requests the same way the public
  * senapred.cl/eventos/ page does. Exposes raw signals/warnings/errors for
- * debugging; the operational map's live data path is
- * `/api/argus/events` (`src/app/api/argus/events/route.ts`), which calls the
- * same adapter with caching and falls back to `demoArgusEvents` only if the
- * live fetch fails or returns nothing.
+ * debugging. The operational map's live data path is `/api/argus/events`,
+ * which (Prompt 14) reads the persisted canonical `KnowledgeIncident` rows
+ * instead of live-fetching, so this debug route is the only remaining live
+ * consumer of `fetchSenapredAlerts()` — which itself now delegates to the
+ * single canonical fetch (`fetchChileOfficialAlertsRaw`), never a second
+ * independent AppSync pagination loop (Prompt 14 §8).
+ *
+ * Guarded by the shared `senapred-ingestion` lock (Prompt 13/14 §17): if the
+ * scheduled Chile Alerts/Global Watch ingestion is mid-run, this debug
+ * fetch is deferred rather than adding a third concurrent AppSync
+ * consultation — acceptable for a manual diagnostic tool given the lock's
+ * TTL (≤5 min) and that the same data will be visible moments later either
+ * way.
  */
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const daysBack = Number(params.get("daysBack") ?? "30");
+
+  const lock = await acquireJobLock({ name: "senapred-ingestion", runId: generateRunId() });
+  if (!lock.acquired) return responseForJobLockResult(lock)!;
 
   try {
     const result = await fetchSenapredAlerts({
@@ -52,5 +66,7 @@ export async function GET(request: NextRequest) {
       },
       { status: 502 }
     );
+  } finally {
+    await lock.release();
   }
 }

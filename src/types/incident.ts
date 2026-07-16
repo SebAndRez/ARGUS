@@ -60,6 +60,22 @@ export type EvidenceKind =
   | "USER_SAFE"
   | "STATUS_UPDATE";
 
+/**
+ * ARGUS v1.0.3.4 — structural classification for every incident this API
+ * surface can return (see docs/product/ARGUS_COMMAND_CENTER_STATUS.md).
+ * `/api/incidents` and `/api/command/overview` have no real operational
+ * source connected today (no Prisma, no KnowledgeIncident, no Global
+ * Watch) — every value they can produce is one of the other three.
+ * `"operational"` exists as a forward-looking value for when a real,
+ * persisted, validated source is eventually connected; nothing in this
+ * codebase constructs it today.
+ */
+export type IncidentDataMode =
+  | "operational"
+  | "synthetic"
+  | "demo"
+  | "runtime_placeholder";
+
 export type Incident = {
   id: string;
   title: string;
@@ -68,6 +84,12 @@ export type Incident = {
   status: IncidentStatus;
   priority: IncidentPriority;
   severity: IncidentSeverity;
+  /**
+   * Whether `severity`/`priority` above reflect a real operational
+   * assessment or a simulated/demo value shown for presentation only.
+   * Never "operational" while `dataMode !== "operational"`.
+   */
+  severityMode: "operational" | "simulated";
   confidence: number;
   locationLat: number;
   locationLng: number;
@@ -83,6 +105,14 @@ export type Incident = {
   lastEvidenceAt?: string;
   closedAt?: string;
   isDemo?: boolean;
+  /** Structural classification — see `IncidentDataMode` above. */
+  dataMode: IncidentDataMode;
+  /**
+   * False for anything backed only by an in-memory/`globalThis` store or a
+   * hardcoded demo fixture — true only once a real persisted source exists.
+   * Always false today.
+   */
+  persistent: boolean;
 };
 
 export type IncidentEvidence = {

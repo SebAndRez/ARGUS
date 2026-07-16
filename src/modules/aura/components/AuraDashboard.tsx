@@ -13,6 +13,10 @@ import { calculateAuraMedicalCapacityStatus } from "@/modules/aura/auraCapacity"
 import { getAuraProfileCompleteness } from "@/modules/aura/auraMedicalProfile";
 import { sanitizeAuraMedicalProfileForRole } from "@/modules/aura/auraPrivacy";
 import AuraMedicalRoutePanel from "@/components/aura/AuraMedicalRoutePanel";
+import { getModuleById } from "@/data/argusModules";
+import ModuleMaturityBadge from "@/components/modules/ModuleMaturityBadge";
+
+const auraModule = getModuleById("argus-aura");
 
 function Panel({ title, children, tone = "cyan" }: { title: string; children: React.ReactNode; tone?: "cyan" | "rose" | "amber" | "emerald" }) {
   const color = {
@@ -87,7 +91,8 @@ export default function AuraDashboard() {
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="border border-rose-300/25 bg-rose-400/10 px-3 py-1.5 text-xs font-bold uppercase text-rose-100">Publico / Medico profesional</span>
-            <span className="border border-amber-300/30 bg-amber-400/10 px-3 py-1.5 text-xs text-amber-100">Modo demo / datos medicos de prueba</span>
+            {auraModule?.maturity && <ModuleMaturityBadge maturity={auraModule.maturity} />}
+            <span className="border border-amber-300/30 bg-amber-400/10 px-3 py-1.5 text-xs text-amber-100">Datos medicos de prueba</span>
             <span className="border border-cyan-300/25 bg-cyan-400/10 px-3 py-1.5 text-xs text-cyan-100">Rol: {role}</span>
             <a href="/modules" className="border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-slate-300">Volver a modulos</a>
           </div>
@@ -136,7 +141,12 @@ export default function AuraDashboard() {
                         <span className="border border-cyan-300/20 px-2 py-1 text-[0.6rem] uppercase text-cyan-100">{point.status}</span>
                       </div>
                       <p className="mt-2 text-xs text-slate-400">{point.publicNotes}</p>
-                      <p className="mt-2 text-xs text-slate-300">Capacidad: {calculateAuraMedicalCapacityStatus(point)}</p>
+                      <p className="mt-2 text-xs text-slate-300">
+                        Capacidad: {calculateAuraMedicalCapacityStatus(point)}
+                        {point.capacity?.isEstimated && (
+                          <span className="ml-1 text-amber-300/80">(estimada, no confirmada)</span>
+                        )}
+                      </p>
                       <p className="mt-1 text-xs text-slate-500">Confianza: {point.confidence}</p>
                     </button>
                   );

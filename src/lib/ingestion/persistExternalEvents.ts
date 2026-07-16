@@ -1,6 +1,5 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import type { ArgusCorrelatedIncident } from "@/types/correlation";
 import type {
   ArgusExternalSourceId,
   ArgusNormalizedEvent,
@@ -156,39 +155,4 @@ export async function persistFreshIngestion(
     persistedCount: persistence.persistedCount,
     ingestionRunId: run?.id ?? null,
   };
-}
-
-export async function persistCorrelations(
-  correlations: ArgusCorrelatedIncident[]
-) {
-  if (correlations.length === 0) {
-    return { persistedCount: 0, error: null };
-  }
-
-  try {
-    await prisma.externalEventCorrelation.createMany({
-      data: correlations.map((correlation) => ({
-        kind: correlation.kind,
-        confidence: correlation.confidence,
-        explanation: correlation.explanation,
-        sourceIds: asJson(correlation.sourceIds),
-        eventIds: asJson([
-          correlation.primaryEvent.id,
-          ...correlation.relatedEvents.map((event) => event.id),
-        ]),
-        metadata: asJson({
-          title: correlation.title,
-          severity: correlation.severity,
-          recommendedAction: correlation.recommendedAction,
-        }),
-      })),
-    });
-    return { persistedCount: correlations.length, error: null };
-  } catch (error) {
-    return {
-      persistedCount: 0,
-      error:
-        error instanceof Error ? error.message : "Correlation persistence failed.",
-    };
-  }
 }

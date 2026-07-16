@@ -6,13 +6,18 @@ import { fetchReliefWebReports } from "@/lib/knowledge-intake/adapters/reliefweb
 import { fetchEffisWildfires } from "@/lib/vigia/adapters/effisAdapter";
 import { fetchCopernicusEmsActivations } from "@/lib/vigia/adapters/copernicusEmsAdapter";
 import { fetchChileOfficialAlertsRaw } from "@/lib/sources/chile/senapredProvider";
-import { promoteChileOfficialAlerts } from "@/lib/incidents/alertPromotionEngine";
+import { promoteChileOfficialAlerts } from "@/lib/incidents/chileAlertPromotionEngine";
 import { chileAlertsSeed } from "@/data/chileAlertsSeed";
 import { globalWatchSeedIncidents } from "@/data/globalWatchSeed";
 import { isDemoDataAllowed } from "@/lib/security/productionGuard";
+import { acquireJobLock } from "@/lib/jobs/jobLock";
+import { generateRunId } from "@/lib/jobs/runIdentity";
 import {
+  attachWildfireEvidenceToExistingIncident,
   createIngestionRun,
   finishIngestionRun,
+  findWildfireCorrelationCandidates,
+  getRecentIngestionRunsBySource,
   saveKnowledgeEvidenceIfNew,
   upsertKnowledgeIncidentByExternalId,
 } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
@@ -20,16 +25,24 @@ import {
   evaluateIncidentPromotion,
   mergeCorroboratingEvents,
   type PromotedEvent,
-} from "@/lib/vigia/alertPromotionEngine";
+} from "@/lib/vigia/globalAlertPromotionEngine";
 import { clusterFirmsIncidents, firmsClusterToIncident } from "@/lib/vigia/firmsClusterer";
 import { sweepIncidentLifecycles, type LifecycleSweepSummary } from "@/lib/vigia/incidentLifecycle";
 import { classifyGlobalThreat } from "@/lib/vigia/threatClassifier";
+import { correlateWildfireEvents, logWildfireEvent } from "@/lib/vigia/wildfireCorrelationEngine";
+import {
+  evaluateWildfireCorrelation,
+  WILDFIRE_CORRELATION_PROFILE,
+  type WildfireCorrelationCandidate,
+} from "@/lib/vigia/wildfireCorrelationPolicy";
 import {
   VIGIA_SOURCE_REGISTRY,
   getVigiaSource,
   isVigiaSourceConfigured,
   type VigiaSourceDefinition,
 } from "@/lib/vigia/sourceRegistry";
+import { getSourceDefinition } from "@/lib/vigia/sourceOperationsRegistry";
+import { acquireSourceLock, runWithTimeout, shouldRunSource } from "@/lib/vigia/sourceScheduler";
 import type {
   ArgusEvidenceConfidenceScore,
   ArgusIncidentKnowledge,
@@ -53,6 +66,13 @@ export type GlobalWatchRunOptions = {
   seedMode?: boolean;
   /** Limita la corrida a estas fuentes (ids del registry VIGÍA). */
   onlySources?: string[];
+  /**
+   * Identidad de la corrida (Prompt 13 §7) — provista por el endpoint
+   * (cron/manual), nunca generada aquí. Solo se usa para logging/
+   * correlación y se propaga al resumen; no afecta ninguna lógica de
+   * negocio del motor.
+   */
+  runId?: string;
 };
 
 export type GlobalWatchSourceSummary = {
@@ -74,6 +94,8 @@ export type GlobalWatchSourceSummary = {
 
 export type GlobalWatchSummary = {
   status: "success" | "partial" | "failed";
+  /** Ausente cuando el llamador no proveyó una identidad de corrida. */
+  runId?: string;
   seedMode: boolean;
   startedAt: string;
   finishedAt: string;
@@ -230,13 +252,66 @@ function emptySourceSummary(source: VigiaSourceDefinition): GlobalWatchSourceSum
 }
 
 /**
+ * Prompt 16 — reduce el historial reciente de `KnowledgeIngestionRun` de una
+ * fuente (más reciente primero) a la señal que `shouldRunSource()` necesita:
+ * último intento, último éxito y fallos consecutivos. Solo `status ===
+ * "failed"` cuenta como fallo para el backoff — `partial` ya produjo datos
+ * útiles y cuenta como éxito para efectos de cadencia; `skipped`/
+ * `requiresConfiguration`/`requiresApiKey` son neutros (no rompen ni
+ * extienden una racha de fallos, se ignoran al buscar el último éxito).
+ */
+function summarizeRunHistory(
+  runs: Array<{ status: string; startedAt: Date }> | undefined
+): { lastAttemptAt: Date | null; lastSuccessAt: Date | null; consecutiveFailures: number } {
+  const list = runs ?? [];
+  const lastAttemptAt = list[0]?.startedAt ?? null;
+  let lastSuccessAt: Date | null = null;
+  let consecutiveFailures = 0;
+  for (const run of list) {
+    if (run.status === "failed") {
+      consecutiveFailures += 1;
+      continue;
+    }
+    if (run.status === "success" || run.status === "partial") {
+      lastSuccessAt = run.startedAt;
+      break;
+    }
+    // Neutro: sigue buscando el último éxito sin afectar la racha de fallos.
+  }
+  return { lastAttemptAt, lastSuccessAt, consecutiveFailures };
+}
+
+/**
  * SENAPRED tiene su propio pipeline probado (clasificador de clima severo +
  * geometría administrativa + evidencia DMC) — se reutiliza intacto en lugar
  * de duplicarlo aquí.
+ *
+ * `promoteChileOfficialAlerts()` es el MISMO camino de escritura que
+ * `/api/chile-alerts/run` usa de forma independiente — ambos pipelines
+ * pueden correr simultáneamente (locks independientes, Prompt 13 §20
+ * Opción B), pero esta sección crítica específica está protegida además por
+ * el lock compartido `senapred-ingestion` para que nunca escriban los mismos
+ * `KnowledgeIncident` de SENAPRED al mismo tiempo. Si el lock no se puede
+ * adquirir (Chile Alerts ya está procesando SENAPRED), esta fuente se marca
+ * `skipped` en vez de fallar la corrida completa de Global Watch — las demás
+ * fuentes (USGS, GDACS, FIRMS, ...) siguen procesándose normalmente.
  */
-async function runSenapredSource(source: VigiaSourceDefinition, seedMode: boolean): Promise<GlobalWatchSourceSummary> {
+async function runSenapredSource(source: VigiaSourceDefinition, seedMode: boolean, runId?: string): Promise<GlobalWatchSourceSummary> {
   const startedAt = Date.now();
   const summary = emptySourceSummary(source);
+
+  const senapredLock = await acquireJobLock({ name: "senapred-ingestion", runId: runId ?? generateRunId() });
+  if (!senapredLock.acquired) {
+    summary.status = "skipped";
+    summary.warnings = [
+      senapredLock.reason === "backend_unavailable"
+        ? "SENAPRED ingestion lock backend unavailable."
+        : "SENAPRED ingestion already running (Chile Alerts pipeline holds the shared lock).",
+    ];
+    summary.durationMs = Date.now() - startedAt;
+    return summary;
+  }
+
   try {
     const { alerts, warnings, errors } = seedMode
       ? { alerts: chileAlertsSeed, warnings: [] as string[], errors: [] as string[] }
@@ -255,6 +330,8 @@ async function runSenapredSource(source: VigiaSourceDefinition, seedMode: boolea
   } catch (error) {
     summary.status = "failed";
     summary.errors = [error instanceof Error ? error.message : "SENAPRED pipeline failed"];
+  } finally {
+    await senapredLock.release();
   }
   summary.durationMs = Date.now() - startedAt;
   return summary;
@@ -263,6 +340,9 @@ async function runSenapredSource(source: VigiaSourceDefinition, seedMode: boolea
 export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promise<GlobalWatchSummary> {
   const startedAt = new Date();
   const seedMode = options.seedMode ?? false;
+  if (options.runId) {
+    console.info(`[argus:job] global-watch run started runId=${options.runId}`);
+  }
   if (seedMode && !isDemoDataAllowed()) {
     throw new Error("seedMode no esta permitido en produccion.");
   }
@@ -280,6 +360,15 @@ export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promi
   const promotedBySource = new Map<string, PromotedEvent[]>();
   const runIdBySource = new Map<string, string | null>();
 
+  // Prompt 16 — vencimiento real por fuente: una sola consulta acotada de
+  // historial reciente (nunca una por fuente), usada para decidir si cada
+  // fuente ya cumplió su `refreshIntervalMinutes` en vez de fetchear todas
+  // en cada corrida de cron sin importar su cadencia real (§12-13). SENAPRED
+  // queda fuera de esta consulta: tiene su propio lock/cadencia dedicados
+  // (`runSenapredSource`), sin cambios en esta tarea.
+  const schedulableSourceIds = sourcesToRun.filter((source) => source.id !== "senapred_eventos").map((source) => source.id);
+  const runHistoryBySource = await getRecentIngestionRunsBySource(schedulableSourceIds, 30);
+
   // 1-2. Fetch + normalización + promoción por fuente (en paralelo).
   await Promise.all(
     sourcesToRun.map(async (source) => {
@@ -296,7 +385,37 @@ export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promi
       }
 
       if (source.id === "senapred_eventos") {
-        sourceSummaries.push(await runSenapredSource(source, seedMode));
+        sourceSummaries.push(await runSenapredSource(source, seedMode, options.runId));
+        return;
+      }
+
+      const { lastAttemptAt, lastSuccessAt, consecutiveFailures } = summarizeRunHistory(runHistoryBySource.get(source.id));
+      const verdict = shouldRunSource({
+        lastAttemptAt,
+        lastSuccessAt,
+        intervalMinutes: source.refreshIntervalMinutes,
+        now: startedAt,
+        consecutiveFailures,
+      });
+      if (!verdict.shouldRun) {
+        const summary = emptySourceSummary(source);
+        summary.status = "skipped";
+        summary.warnings = [`No vencida todavía (${verdict.reason}); próxima ejecución en ~${verdict.minutesUntilDue} min.`];
+        sourceSummaries.push(summary);
+        return;
+      }
+
+      const sourceRunId = options.runId ?? generateRunId();
+      const sourceLock = await acquireSourceLock(source.id, sourceRunId);
+      if (!sourceLock.acquired) {
+        const summary = emptySourceSummary(source);
+        summary.status = "skipped";
+        summary.warnings = [
+          sourceLock.reason === "backend_unavailable"
+            ? "Backend de lock de fuente no disponible."
+            : "Fuente ya en ejecución (lock por fuente activo — cron/manual solapados).",
+        ];
+        sourceSummaries.push(summary);
         return;
       }
 
@@ -316,7 +435,8 @@ export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promi
       runIdBySource.set(source.id, runId);
 
       try {
-        const result = await runSourceFetch(source, seedMode);
+        const timeoutMs = getSourceDefinition(source.id)?.timeoutMs ?? 20_000;
+        const result = await runWithTimeout(source.id, timeoutMs, () => runSourceFetch(source, seedMode));
         summary.fetched = result.fetched;
         summary.warnings.push(...result.warnings);
         summary.errors.push(...result.errors);
@@ -329,6 +449,8 @@ export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promi
         summary.status = "failed";
         summary.errors.push(error instanceof Error ? error.message : `Fuente ${source.id} falló.`);
         promotedBySource.set(source.id, []);
+      } finally {
+        await sourceLock.release();
       }
       summary.durationMs = Date.now() - sourceStart;
       sourceSummaries.push(summary);
@@ -336,9 +458,14 @@ export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promi
   );
 
   // 3. Fusión cross-fuente: mismo evento visto por varias fuentes se
-  //    consolida y sube confianza en lugar de duplicarse.
+  //    consolida y sube confianza en lugar de duplicarse. WILDFIRE usa el
+  //    perfil de correlación específico de incendios (Prompt 15) — geometría
+  //    real + reglas por par de fuentes — en vez de la clave geo-temporal
+  //    genérica; el resto de las amenazas sigue con el merge genérico.
   const allPromoted = [...promotedBySource.values()].flat();
-  const mergedEvents = mergeCorroboratingEvents(allPromoted);
+  const wildfirePromoted = allPromoted.filter((event) => event.threat === "WILDFIRE");
+  const otherPromoted = allPromoted.filter((event) => event.threat !== "WILDFIRE");
+  const mergedEvents = [...mergeCorroboratingEvents(otherPromoted), ...correlateWildfireEvents(wildfirePromoted)];
 
   // 4. Persistencia: incidentes/candidatos → KnowledgeIncident + evidencias.
   //    En lotes concurrentes acotados: la BD es remota y cada evento cuesta
@@ -358,6 +485,96 @@ export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promi
       return;
     }
     try {
+      // Correlación cross-corrida específica de incendios (Prompt 15): antes
+      // de crear/actualizar por externalId, busca un KnowledgeIncident de
+      // incendio ya persistido (de una corrida anterior) que geométrica y
+      // temporalmente corresponda al mismo fuego real. Si lo encuentra,
+      // adjunta evidencia al incidente existente en vez de crear una fila
+      // nueva — preserva la identidad canónica entre corridas (Prompt 15
+      // §13, Caso 10: crecimiento del incendio).
+      if (
+        event.threat === "WILDFIRE" &&
+        typeof event.incident.latitude === "number" &&
+        typeof event.incident.longitude === "number"
+      ) {
+        const sinceIso = new Date(Date.now() - WILDFIRE_CORRELATION_PROFILE.temporalWindowHours * 3 * 60 * 60 * 1000).toISOString();
+        const dbCandidates = await findWildfireCorrelationCandidates({
+          centroid: { lat: event.incident.latitude, lng: event.incident.longitude },
+          sinceIso,
+          country: event.incident.country ?? null,
+        });
+        let bestMatchId: string | null = null;
+        let bestScore = -1;
+        for (const candidate of dbCandidates) {
+          const lifecycle = (candidate.technicalFactorsJson as { lifecycle?: string } | null)?.lifecycle ?? null;
+          const result = evaluateWildfireCorrelation(
+            {
+              id: event.incident.id,
+              sourceId: event.incident.sourceIds[0] ?? "unknown",
+              threat: "WILDFIRE",
+              country: event.incident.country,
+              region: event.incident.region,
+              geometry: event.incident.geometry,
+              latitude: event.incident.latitude,
+              longitude: event.incident.longitude,
+              occurredAt: event.incident.occurredAt,
+              detectedAt: event.incident.detectedAt,
+            },
+            {
+              id: candidate.id,
+              sourceId: candidate.sourceId,
+              threat: "WILDFIRE",
+              country: candidate.country,
+              region: candidate.region,
+              geometry: (candidate.geometryJson ?? undefined) as WildfireCorrelationCandidate["geometry"],
+              latitude: candidate.latitude,
+              longitude: candidate.longitude,
+              occurredAt: candidate.occurredAt?.toISOString() ?? null,
+              detectedAt: candidate.detectedAt?.toISOString() ?? null,
+              lifecycle,
+            }
+          );
+          if (result.decision === "merge" && result.score > bestScore) {
+            bestScore = result.score;
+            bestMatchId = candidate.id;
+          }
+        }
+
+        if (bestMatchId) {
+          const attachResult = await attachWildfireEvidenceToExistingIncident(bestMatchId, event.incident);
+          if (attachResult) {
+            logWildfireEvent("wildfire_evidence_attached", {
+              existingIncidentId: bestMatchId,
+              incomingSource: event.incident.sourceIds[0],
+              crossRun: true,
+              score: bestScore,
+            });
+            if (summary) {
+              summary.incidentsUpdated += 1;
+              if (event.generatesNotification && attachResult.severityRaised) summary.notificationsGenerated += 1;
+            }
+            for (const sourceId of event.incident.sourceIds) {
+              const sourceDefinition = getVigiaSource(sourceId);
+              const evidenceResult = await saveKnowledgeEvidenceIfNew({
+                id: `evidence-${event.incident.id}-${sourceId}`,
+                incidentId: bestMatchId,
+                sourceId,
+                sourceName: sourceDefinition?.name ?? sourceId,
+                title: event.incident.title,
+                url: event.incident.rawEvidenceRefs[0],
+                summary: event.incident.summary.slice(0, 500),
+                confidenceScore: buildEvidenceConfidence(sourceDefinition?.reliabilityScore ?? 60),
+                locationConfidence: typeof event.incident.latitude === "number" ? 80 : 40,
+                timestampConfidence: event.incident.occurredAt ? 85 : 50,
+                extractedAt: new Date().toISOString(),
+              });
+              if (summary && evidenceResult.action === "inserted") summary.evidenceCreated += 1;
+            }
+            return;
+          }
+        }
+      }
+
       const saved = await upsertKnowledgeIncidentByExternalId(event.incident);
       if (summary) {
         if (saved.action === "inserted") summary.incidentsCreated += 1;
@@ -443,6 +660,7 @@ export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promi
 
   return {
     status: allFailed ? "failed" : anyFailure || Object.keys(errorsBySource).length > 0 ? "partial" : "success",
+    runId: options.runId,
     seedMode,
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),

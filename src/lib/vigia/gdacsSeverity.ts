@@ -4,11 +4,11 @@ import { detectCriticalImpactSignals } from "@/lib/vigia/threatClassifier";
 /**
  * ARGUS v1.0.3.2 — single source of truth for "what severity should this
  * GDACS incident carry". Used by the adapter (fresh ingestion), the
- * read-time mappers (`vigiaIncidentToArgusEvent`, `notificationCenterEngine`
- * — so already-persisted stale rows render correctly without a DB write),
- * and the `repair:gdacs-green` script (historical backfill). Any GDACS
- * severity rule change belongs here, not duplicated across those call
- * sites.
+ * read-time canonical mapper (`canonicalKnowledgeIncidentToArgusEvent`,
+ * `notificationCenterEngine` — so already-persisted stale rows render
+ * correctly without a DB write), and the `repair:gdacs-green` script
+ * (historical backfill). Any GDACS severity rule change belongs here, not
+ * duplicated across those call sites.
  *
  * Root cause this exists to prevent recurring: GDACS Green flood alerts
  * routinely read "The flood caused 0 deaths and 1000 displaced" — matching

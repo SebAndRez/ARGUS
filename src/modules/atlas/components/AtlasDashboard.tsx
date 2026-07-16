@@ -1,7 +1,11 @@
 "use client";
 
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import DashboardCommandPanel from "@/components/dashboard/DashboardCommandPanel";
+import CanonicalIncidentPanel from "@/components/modules/CanonicalIncidentPanel";
+import { useCanonicalModuleIncidents } from "@/hooks/useCanonicalModuleIncidents";
 import CommandCenterPanel from "@/components/command/CommandCenterPanel";
 import EventDetailPanel from "@/components/map/EventDetailPanel";
 import VisualSourcePopup from "@/components/map/VisualSourcePopup";
@@ -107,6 +111,15 @@ const SANCTION_TYPES = ["WARNING", "LIMITATION", "SUSPENSION", "BAN", "RESTORE"]
 export default function AtlasDashboard() {
   const { user: sessionUser, loading: sessionLoading } = useSession();
   const location = useUserLocation();
+  const searchParams = useSearchParams();
+
+  // Prompt 17 §10 — identidad de incidente canónico compartida entre
+  // módulos: si se llega desde otro módulo con `?incidentId=`, queda
+  // preseleccionado; nunca se serializa el incidente completo en la URL.
+  const [selectedCanonicalIncidentId, setSelectedCanonicalIncidentId] = useState<string | null>(
+    searchParams.get("incidentId")
+  );
+  const canonicalIncidents = useCanonicalModuleIncidents("argus-atlas", {});
 
   const [events, setEvents] = useState<CrisisEvent[]>([]);
   const [eventsLoaded, setEventsLoaded] = useState(false);
@@ -264,6 +277,25 @@ export default function AtlasDashboard() {
     [effectiveEvents]
   );
 
+  /**
+   * Prompt 17 §11 — entregable mínimo de ATLAS sobre datos canónicos:
+   * activos, críticos activos, confirmados, candidatos, países afectados.
+   * Nunca cuenta una evidencia/Source Health como amenaza territorial —
+   * este resumen solo lee `ModuleIncidentSummary[]` del gateway canónico.
+   */
+  const canonicalIncidentSummary = useMemo(() => {
+    if (!("data" in canonicalIncidents)) return null;
+    const summaries = canonicalIncidents.data.summaries;
+    const countries = new Set(summaries.map((s) => s.location.countryCode).filter((code): code is string => Boolean(code)));
+    return {
+      active: summaries.length,
+      critical: summaries.filter((s) => s.severity === "critical").length,
+      confirmed: summaries.filter((s) => s.verificationStatus === "official" || s.verificationStatus === "corroborated").length,
+      candidates: summaries.filter((s) => s.verificationStatus === "candidate" || s.verificationStatus === "unverified").length,
+      countries: countries.size,
+    };
+  }, [canonicalIncidents]);
+
   const layerMeta = useMemo<Partial<Record<keyof MapLayerState, LayerDisplayMeta>>>(
     () => ({
       reports: { count: effectiveEvents.filter((e) => e.type === "REPORT").length, detail: "Reportes ciudadanos" },
@@ -363,6 +395,23 @@ export default function AtlasDashboard() {
 
       <AtlasKpiGrid kpis={kpis} />
 
+      {canonicalIncidentSummary && (
+        <div className="mx-4 mb-3 grid grid-cols-2 gap-2 sm:mx-6 sm:grid-cols-5">
+          {[
+            { label: "Incidentes activos (canónico)", value: canonicalIncidentSummary.active },
+            { label: "Críticos activos", value: canonicalIncidentSummary.critical },
+            { label: "Confirmados", value: canonicalIncidentSummary.confirmed },
+            { label: "Candidatos", value: canonicalIncidentSummary.candidates },
+            { label: "Países afectados", value: canonicalIncidentSummary.countries },
+          ].map((item) => (
+            <div key={item.label} className="border border-white/10 bg-slate-950/85 px-3 py-2">
+              <p className="text-lg font-semibold text-white">{item.value}</p>
+              <p className="text-[0.6rem] uppercase tracking-wide text-slate-500">{item.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
       {statusMessage && (
         <div className="mx-4 mb-3 border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100 sm:mx-6">
           {statusMessage}
@@ -393,6 +442,22 @@ export default function AtlasDashboard() {
         </div>
 
         <div className="grid min-w-0 auto-rows-max gap-4">
+          <div className="grid gap-2">
+            <CanonicalIncidentPanel
+              moduleId="argus-atlas"
+              title="Incidentes canónicos (Global Watch/SENAPRED)"
+              selectedIncidentId={selectedCanonicalIncidentId}
+              onSelect={setSelectedCanonicalIncidentId}
+            />
+            {selectedCanonicalIncidentId && (
+              <Link
+                href={`/modules/vigia?incidentId=${encodeURIComponent(selectedCanonicalIncidentId)}`}
+                className="text-[0.65rem] font-semibold uppercase tracking-wide text-cyan-300 hover:text-cyan-200"
+              >
+                Ver en VIGÍA →
+              </Link>
+            )}
+          </div>
           <AtlasIncidentFeed incidents={incidentFeed} onSelect={(incident) => incident.sourceEvent && selectEvent(incident.sourceEvent)} />
           <AtlasAlertQueue alerts={alertQueue} />
           <EventDetailPanel event={selectedEvent} onCenter={setSelectedEvent} />

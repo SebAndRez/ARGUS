@@ -46,14 +46,14 @@ export default function FenixTwinModulePanel({ onOpenFenix }: Props) {
         </p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <a
-            href="/dashboard/fenix"
+            href="/modules/fenix"
             onClick={onOpenFenix}
             className="border border-cyan-300/25 bg-cyan-400/12 px-3 py-2 text-center text-xs font-bold uppercase text-cyan-100"
           >
             Abrir Fenix
           </a>
           <a
-            href="/dashboard/fenix"
+            href="/modules/fenix"
             className="border border-white/10 bg-white/[0.03] px-3 py-2 text-center text-xs font-bold uppercase text-slate-200"
           >
             Ver demo

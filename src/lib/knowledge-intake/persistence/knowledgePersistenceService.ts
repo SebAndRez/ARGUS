@@ -496,6 +496,70 @@ export async function saveKnowledgeDocumentChunks(
   });
 }
 
+/**
+ * ARGUS Prompt 15 — preselección acotada de incidentes de incendio ya
+ * persistidos, candidatos a correlación cross-corrida (un incendio visto por
+ * EFFIS hace 3 días y por un nuevo cluster FIRMS en esta corrida). Nunca
+ * carga el historial completo: filtra por dominio wildfire, una ventana
+ * temporal (`sinceIso`, el máximo de las reglas de `wildfireCorrelationPolicy`
+ * es 240h) y un bbox generoso de 1° (~110 km) alrededor del centroide —el
+ * bbox es solo preselección (Prompt 15 §10); la decisión real de fusión la
+ * toma `evaluateWildfireCorrelation` con geometría/distancia exacta sobre
+ * cada candidato devuelto aquí. `take` acota el costo por corrida.
+ */
+export async function findWildfireCorrelationCandidates(input: {
+  centroid: { lat: number; lng: number };
+  sinceIso: string;
+  country?: string | null;
+  limit?: number;
+}) {
+  const BBOX_MARGIN_DEGREES = 1;
+  return prisma.knowledgeIncident.findMany({
+    where: {
+      domain: "wildfire",
+      updatedAt: { gte: new Date(input.sinceIso) },
+      latitude: { gte: input.centroid.lat - BBOX_MARGIN_DEGREES, lte: input.centroid.lat + BBOX_MARGIN_DEGREES },
+      longitude: { gte: input.centroid.lng - BBOX_MARGIN_DEGREES, lte: input.centroid.lng + BBOX_MARGIN_DEGREES },
+      ...(input.country ? { country: input.country } : {}),
+    },
+    orderBy: { updatedAt: "desc" },
+    take: Math.min(Math.max(input.limit ?? 20, 1), 50),
+  });
+}
+
+/**
+ * Adjunta evidencia de una fuente adicional a un `KnowledgeIncident` de
+ * incendio ya persistido (encontrado por `findWildfireCorrelationCandidates`
+ * + `evaluateWildfireCorrelation`), sin crear una fila nueva — preserva la
+ * identidad canónica del incidente (Prompt 15 §13). Solo actualiza
+ * severidad/confianza/evidenceCount cuando la nueva señal realmente los
+ * supera (nunca degrada un valor existente), igual que
+ * `shouldUpdateExistingIncident` para el resto del pipeline.
+ */
+export async function attachWildfireEvidenceToExistingIncident(
+  existingId: string,
+  incoming: ArgusIncidentKnowledge
+) {
+  const existing = await prisma.knowledgeIncident.findUnique({ where: { id: existingId } });
+  if (!existing) return null;
+
+  const severityRank: Record<string, number> = { unknown: 0, low: 1, medium: 2, high: 3, critical: 4 };
+  const shouldRaiseSeverity = (severityRank[incoming.severity] ?? 0) > (severityRank[existing.severity] ?? 0);
+  const shouldRaiseConfidence = incoming.confidenceScore > existing.confidenceScore;
+
+  const updated = shouldRaiseSeverity || shouldRaiseConfidence
+    ? await prisma.knowledgeIncident.update({
+        where: { id: existingId },
+        data: {
+          ...(shouldRaiseSeverity ? { severity: incoming.severity } : {}),
+          ...(shouldRaiseConfidence ? { confidenceScore: incoming.confidenceScore } : {}),
+        },
+      })
+    : existing;
+
+  return { incident: updated, severityRaised: shouldRaiseSeverity };
+}
+
 export async function getKnowledgeIncidents(filters: {
   domain?: string;
   sourceId?: string;
@@ -536,6 +600,32 @@ export async function getLatestIngestionRuns(limit = 10) {
     orderBy: { startedAt: "desc" },
     take: Math.min(Math.max(limit, 1), 50),
   });
+}
+
+/**
+ * ARGUS Prompt 16 — ventana acotada de corridas recientes, agrupadas por
+ * `sourceId`, para calcular salud dinámica (últimas N por fuente: éxito,
+ * fallos consecutivos, duración). `KnowledgeIngestionRun.sourceId` ya es una
+ * columna libre usada genéricamente por cualquier fuente (Global Watch,
+ * Chile Alerts, o cualquier job manual de knowledge-intake que llame
+ * `createIngestionRun`/`finishIngestionRun`) — no requiere cambio de
+ * esquema. Una sola consulta acotada (`take: windowSize`), nunca una por
+ * fuente, y nunca sin filtro de `sourceId` (Prompt 16 §23/§27).
+ */
+export async function getRecentIngestionRunsBySource(sourceIds: string[], windowSize = 400) {
+  const map = new Map<string, Awaited<ReturnType<typeof prisma.knowledgeIngestionRun.findMany>>>();
+  if (sourceIds.length === 0) return map;
+  const rows = await prisma.knowledgeIngestionRun.findMany({
+    where: { sourceId: { in: sourceIds } },
+    orderBy: { startedAt: "desc" },
+    take: Math.min(Math.max(windowSize, 1), 1000),
+  });
+  for (const row of rows) {
+    const list = map.get(row.sourceId) ?? [];
+    list.push(row);
+    map.set(row.sourceId, list);
+  }
+  return map;
 }
 
 export async function getKnowledgeHealthFromDb() {

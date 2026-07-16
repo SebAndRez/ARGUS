@@ -530,7 +530,8 @@ export type VolcanoNoticeEvidence = {
   raw?: Record<string, unknown>;
 };
 
-export type WeatherSeverity = "Extreme" | "Severe" | "Moderate" | "Minor" | "Unknown";
+/** @deprecated Value-identical to `NwsSeverity` (`@/lib/knowledge-intake/adapters/nwsAdapter`) — use that directly in new code. Kept as an alias (Prompt 20 cleanup); has no external consumers of its own. */
+export type WeatherSeverity = import("@/lib/knowledge-intake/adapters/nwsAdapter").NwsSeverity;
 
 export type WeatherUrgency = "Immediate" | "Expected" | "Future" | "Past" | "Unknown";
 

@@ -12,9 +12,15 @@ import {
 } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
 import { calculateEvidenceConfidenceScore } from "@/lib/knowledge-intake/scoring/evidenceScoring";
 import { buildDocumentChunks } from "@/lib/knowledge-intake/vector/documentChunker";
+import { requireOperator } from "@/lib/security/apiGuards";
+import { rejectOversizedPayload } from "@/lib/security/payloadSizeGuard";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 import type { ArgusKnowledgeInputEnvelope } from "@/types/knowledgeIntake";
 
 export const dynamic = "force-dynamic";
+
+/** Generous cap for a manual text submission — normalizer/extractor cost scales with text size. */
+const MAX_MANUAL_IMPORT_BYTES = 2 * 1024 * 1024; // 2 MB
 
 type ManualImportBody = {
   rawText?: string;
@@ -33,6 +39,22 @@ type ManualImportBody = {
 };
 
 export async function POST(request: Request) {
+  const { user, response: authResponse } = await requireOperator();
+  if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
+
+  const oversized = rejectOversizedPayload(request, MAX_MANUAL_IMPORT_BYTES);
+  if (oversized) return oversized;
+
+  // Rate limit runs before parsing the body — an over-quota operator never
+  // pays the cost of JSON parsing, entity extraction or persistence.
+  const rateLimitOutcome = await enforceRateLimit({
+    policy: "knowledge_import_manual",
+    request,
+    identity: { userId: user.id },
+  });
+  const rateLimitedResponse = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   const body = (await request.json()) as ManualImportBody;
   if (!body.rawText?.trim()) {
     return NextResponse.json({ error: "rawText es requerido para carga manual." }, { status: 400 });

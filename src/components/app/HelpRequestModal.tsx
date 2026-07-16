@@ -56,7 +56,7 @@ export default function HelpRequestModal({ open, onClose, onSubmit, session, loc
       setTitle("");
       setDescription("");
       onClose();
-    } catch (err) {
+    } catch {
       setError("No se pudo enviar la solicitud SOS. Intenta nuevamente.");
     } finally {
       setLoading(false);

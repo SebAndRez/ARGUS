@@ -1,12 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSession } from "@/hooks/useSession";
 import { getSortedModules } from "@/data/argusModules";
 import {
   DEMO_ROLE_STORAGE_KEY,
   canAccessModule,
+  clearDemoRoleOverride,
+  isDemoRoleOverrideAllowed,
   mapSessionUserToArgusRole,
+  resolveEffectiveModuleRole,
 } from "@/lib/modules/moduleAccess";
 import type { ArgusRole } from "@/types/rbac";
 import ModuleCard from "@/components/modules/ModuleCard";
@@ -30,8 +33,9 @@ const modules = getSortedModules();
 
 export default function ModulesMenu() {
   const { user, loading } = useSession();
+  const allowOverride = isDemoRoleOverrideAllowed();
   const [override, setOverride] = useState<ArgusRole | "">(() => {
-    if (typeof window === "undefined") return "";
+    if (typeof window === "undefined" || !allowOverride) return "";
     try {
       return (window.localStorage.getItem(DEMO_ROLE_STORAGE_KEY) as ArgusRole) || "";
     } catch {
@@ -39,7 +43,16 @@ export default function ModulesMenu() {
     }
   });
 
+  // Defense in depth: whenever the override isn't allowed (production, or
+  // the flag unset/ambiguous), any value left over from a previous session
+  // or a preview deployment is wiped so it can never resurface later — this
+  // runs independently of whatever `useState` above returned.
+  useEffect(() => {
+    if (!allowOverride) clearDemoRoleOverride();
+  }, [allowOverride]);
+
   function updateOverride(role: ArgusRole | "") {
+    if (!allowOverride) return;
     setOverride(role);
     try {
       if (role) {
@@ -53,7 +66,10 @@ export default function ModulesMenu() {
   }
 
   const sessionRole = mapSessionUserToArgusRole(user);
-  const effectiveRole = override || sessionRole;
+  // The client can only ever influence what it PREVIEWS here, never what it
+  // is actually authorized to enter — `resolveEffectiveModuleRole` ignores
+  // `override` entirely unless `allowOverride` is true (dev-only, opt-in).
+  const effectiveRole = resolveEffectiveModuleRole(sessionRole, override || null);
   const visibleModules = modules.filter(
     (module) => canAccessModule(effectiveRole, module).canView
   );
@@ -78,8 +94,9 @@ export default function ModulesMenu() {
             Rol de prueba (solo para validar visibilidad):
             <select
               value={override}
+              disabled={!allowOverride}
               onChange={(event) => updateOverride(event.target.value as ArgusRole | "")}
-              className="border border-white/10 bg-slate-900/80 px-2 py-1.5 text-xs text-white"
+              className="border border-white/10 bg-slate-900/80 px-2 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
               <option value="">
                 {loading ? "Cargando sesión..." : `Usar mi sesión (${sessionRole})`}
@@ -94,6 +111,11 @@ export default function ModulesMenu() {
           <span className="text-[0.65rem] text-slate-500">
             Rol efectivo actual: <strong className="text-cyan-200">{effectiveRole}</strong>
           </span>
+          {!allowOverride && (
+            <span className="text-[0.6rem] uppercase tracking-[0.14em] text-slate-600">
+              Vista previa de rol no disponible en este entorno.
+            </span>
+          )}
         </div>
 
         <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

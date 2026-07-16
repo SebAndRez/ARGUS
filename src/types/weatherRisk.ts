@@ -1,3 +1,5 @@
+import type { ArgusIngestionSeverity } from "@/types/ingestion";
+
 export type WeatherSourceType =
   | "demo"
   | "external_forecast"
@@ -88,7 +90,8 @@ export type HazardKind =
   | "wildfire"
   | "unknown_hazard";
 
-export type HazardSeverity = "low" | "medium" | "high" | "critical";
+/** @deprecated Value-identical to `ArgusIngestionSeverity` (`@/types/ingestion`) — use that directly in new code. Kept as an alias (Prompt 20 cleanup); has no external consumers of its own. */
+export type HazardSeverity = ArgusIngestionSeverity;
 
 export interface HazardOrigin {
   id: string;

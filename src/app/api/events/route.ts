@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-const severityMap = {
-  LOW: "LOW",
-  MEDIUM: "MEDIUM",
-  HIGH: "HIGH",
-  CRITICAL: "CRITICAL",
-};
+type EventSeverityKey = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
 export async function GET() {
   const reports = await prisma.report.findMany({
@@ -50,7 +45,7 @@ export async function GET() {
       latitude: request.latitude,
       longitude: request.longitude,
       locationText: request.locationText,
-      severity: request.priority as keyof typeof severityMap,
+      severity: request.priority as EventSeverityKey,
       priority: request.priority,
       type: "SOS",
       status: request.status,

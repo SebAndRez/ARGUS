@@ -1,10 +1,14 @@
+import type { ModuleMaturity } from "@/types/argusModule";
+import ModuleMaturityBadge from "@/components/modules/ModuleMaturityBadge";
+
 interface Props {
   isDemoData: boolean;
   saturatedCount: number;
   userRole: string;
+  maturity?: ModuleMaturity;
 }
 
-export default function ArcaHeader({ isDemoData, saturatedCount, userRole }: Props) {
+export default function ArcaHeader({ isDemoData, saturatedCount, userRole, maturity }: Props) {
   return (
     <header className="border-b border-white/10 bg-slate-950/95 px-4 py-4 backdrop-blur-xl sm:px-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -28,9 +32,10 @@ export default function ArcaHeader({ isDemoData, saturatedCount, userRole }: Pro
           >
             {saturatedCount > 0 ? `${saturatedCount} refugio(s) saturado(s)` : "Sin refugios saturados"}
           </span>
+          {maturity && <ModuleMaturityBadge maturity={maturity} />}
           {isDemoData && (
             <span className="inline-flex items-center border border-amber-300/30 bg-amber-400/10 px-3 py-1.5 text-xs font-semibold text-amber-100">
-              Modo demo / refugios de prueba
+              Refugios de prueba
             </span>
           )}
           <span className="inline-flex items-center border border-cyan-300/25 bg-cyan-400/10 px-3 py-1.5 text-xs font-semibold text-cyan-100">

@@ -1,5 +1,25 @@
 [
   {
+    "changeId": "d802556f4767",
+    "date": "2026-07-11",
+    "commit": "pending-d802556",
+    "title": "ARGUS v1.0.3.2 - GDACS Green Severity Canonicalization",
+    "fileCount": 9,
+    "summary": "Se actualizaron 9 archivos relacionados con Dependencias internas y Eventos y fuentes externas.",
+    "changes": [
+      "Se mejoro la lectura y gestion de reportes.",
+      "Se actualizaron eventos o fuentes externas.",
+      "Se actualizaron dependencias o scripts internos.",
+      "Se actualizaron servicios internos usados por ARGUS."
+    ],
+    "affectedModules": [
+      "Dependencias internas",
+      "Eventos y fuentes externas",
+      "Reportes ciudadanos"
+    ],
+    "simpleExplanation": "Esta actualizacion ayuda a que los reportes sean mas claros, ordenados y faciles de revisar."
+  },
+  {
     "changeId": "60af873bf4db",
     "date": "2026-07-11",
     "commit": "pending-60af873",
