@@ -1,5 +1,29 @@
 [
   {
+    "changeId": "8551a81d784e",
+    "date": "2026-07-16",
+    "commit": "pending-8551a81",
+    "title": "ARGUS 1.0.3.0",
+    "fileCount": 328,
+    "summary": "Se actualizaron 328 archivos relacionados con Documentacion y Dependencias internas.",
+    "changes": [
+      "Se actualizaron componentes del mapa operativo.",
+      "Se mejoro la lectura y gestion de reportes.",
+      "Se actualizaron eventos o fuentes externas.",
+      "Se ajustaron vistas y elementos de interfaz.",
+      "Se agregaron cambios de documentacion publica o interna."
+    ],
+    "affectedModules": [
+      "Documentacion",
+      "Dependencias internas",
+      "Base de datos interna",
+      "Eventos y fuentes externas",
+      "Acceso y sesion",
+      "Reportes ciudadanos"
+    ],
+    "simpleExplanation": "Esta actualizacion ayuda a que los reportes sean mas claros, ordenados y faciles de revisar."
+  },
+  {
     "changeId": "d802556f4767",
     "date": "2026-07-11",
     "commit": "pending-d802556",
