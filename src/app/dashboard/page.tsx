@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import AtlasDashboard from "@/modules/atlas/components/AtlasDashboard";
 
 /**
@@ -6,5 +7,9 @@ import AtlasDashboard from "@/modules/atlas/components/AtlasDashboard";
  * reutiliza para no romper enlaces/bookmarks existentes.
  */
 export default function DashboardPage() {
-  return <AtlasDashboard />;
+  return (
+    <Suspense fallback={null}>
+      <AtlasDashboard />
+    </Suspense>
+  );
 }
