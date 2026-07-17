@@ -37,9 +37,10 @@ import type { ShelterMapFilterState } from "@/lib/criticalPoi/shelterMapFilters"
 import type { GeoPoint, RouteResult } from "@/lib/routing/routingService";
 import {
   createArgusDivIcon,
+  getArgusMarkerColor,
+  normalizeArgusMapSeverity,
   type ArgusMapConfidence,
   type ArgusMapEventKind,
-  type ArgusMapSeverity,
 } from "@/lib/mapSymbols/argusMapSymbols";
 import { getBaseMapStyle } from "@/lib/map/baseMapStyles";
 
@@ -181,14 +182,10 @@ const isEventVisible = (event: CrisisEvent, layers: MapLayerSettings) => {
   return true;
 };
 
-const toMapSeverity = (value: string | null | undefined): ArgusMapSeverity => {
-  const normalized = value?.toLowerCase();
-  if (normalized === "critical") return "critical";
-  if (normalized === "high") return "high";
-  if (normalized === "medium") return "medium";
-  if (normalized === "low") return "low";
-  return "info";
-};
+// Alias kept for call-site readability inside this file; the normalization
+// logic itself lives once in argusMapSymbols.ts so Leaflet and Orbit can
+// never resolve the same raw severity string to a different bucket.
+const toMapSeverity = normalizeArgusMapSeverity;
 
 const getInternalEventKind = (event: CrisisEvent): ArgusMapEventKind => {
   const category = event.category?.toLowerCase() ?? "";
@@ -822,15 +819,8 @@ export default function OperationalMap({
     newsEvidenceLayer?.clearLayers();
     userLayer?.clearLayers();
 
-    const riskColor: Record<string, string> = {
-      low: "#22d3ee",
-      medium: "#facc15",
-      high: "#fb923c",
-      critical: "#ef4444",
-    };
-
     visibleConflictZones.forEach((zone) => {
-      const color = riskColor[zone.riskLevel] ?? "#fb923c";
+      const color = getArgusMarkerColor(toMapSeverity(zone.riskLevel));
       let layer: import("leaflet").Layer | null = null;
 
       if (zone.geometryType === "bbox" && isBboxCoordinates(zone.coordinates)) {

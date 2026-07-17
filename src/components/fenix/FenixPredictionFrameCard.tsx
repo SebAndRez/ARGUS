@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FenixPredictionFrame } from "@/types/fenixSimulation";
+import {
+  getArgusMarkerColor,
+  normalizeArgusMapSeverity,
+} from "@/lib/mapSymbols/argusMapSymbols";
 
 type Props = {
   frame: FenixPredictionFrame;
@@ -73,14 +77,9 @@ export default function FenixPredictionFrameCard({ frame }: Props) {
       const layer = L.featureGroup().addTo(map);
       overlayRef.current = layer;
 
-      const severityColor =
-        frame.severity === "critical"
-          ? "#ef4444"
-          : frame.severity === "high"
-            ? "#f97316"
-            : frame.severity === "medium"
-              ? "#f59e0b"
-              : "#22d3ee";
+      const severityColor = getArgusMarkerColor(
+        normalizeArgusMapSeverity(frame.severity)
+      );
 
       L.circle(center, {
         radius: Math.max(250, frame.radiusKm * 1000),

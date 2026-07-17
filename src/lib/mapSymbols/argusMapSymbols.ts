@@ -59,6 +59,21 @@ const severityColor: Record<ArgusMapSeverity, string> = {
   critical: "#ef4444",
 };
 
+/** Ascending importance order, shared by any runtime that must rank/truncate a mixed severity collection (e.g. Orbit's entity limit) instead of cutting by arrival order. */
+const severityRankOrder: ArgusMapSeverity[] = [
+  "inactive",
+  "info",
+  "low",
+  "medium",
+  "high",
+  "critical",
+];
+
+export function getArgusMarkerSeverityRank(severity: ArgusMapSeverity) {
+  const rank = severityRankOrder.indexOf(severity);
+  return rank === -1 ? severityRankOrder.indexOf("info") : rank;
+}
+
 const severityGlow: Record<ArgusMapSeverity, string> = {
   inactive: "rgba(100,116,139,0.18)",
   info: "rgba(56,189,248,0.28)",
@@ -106,6 +121,39 @@ export function getArgusMarkerColor(severity: ArgusMapSeverity) {
 
 export function getArgusMarkerSize(severity: ArgusMapSeverity) {
   return sizeBySeverity[severity] ?? sizeBySeverity.info;
+}
+
+/**
+ * Ratio of a severity's canonical marker size against `critical` (the largest
+ * bucket), 0-1. Runtimes that render markers in a unit space incompatible
+ * with the 2D DOM pixel sizes above (e.g. Three.js world units in Orbit)
+ * derive their own scale from this ratio instead of hand-rolling a second
+ * severity->size table.
+ */
+export function getArgusMarkerSizeRatio(severity: ArgusMapSeverity) {
+  return getArgusMarkerSize(severity) / sizeBySeverity.critical;
+}
+
+/**
+ * Single normalization path from a raw/unknown severity string to the
+ * canonical `ArgusMapSeverity` bucket. Every runtime (Leaflet layers, Orbit)
+ * must use this instead of keeping its own copy, so an unrecognized value
+ * resolves to the same bucket (and therefore the same color/size) everywhere.
+ * Unknown/missing values fall back to "info" rather than "low": a genuinely
+ * low-severity event and an event ARGUS has no severity signal for are not
+ * the same thing, and collapsing the latter into a reassuring green low
+ * marker would misrepresent it.
+ */
+export function normalizeArgusMapSeverity(
+  value: string | null | undefined
+): ArgusMapSeverity {
+  const normalized = value?.toLowerCase();
+  if (normalized === "critical") return "critical";
+  if (normalized === "high") return "high";
+  if (normalized === "medium") return "medium";
+  if (normalized === "low") return "low";
+  if (normalized === "inactive") return "inactive";
+  return "info";
 }
 
 export function getArgusMarkerBorder(confidence: ArgusMapConfidence) {

@@ -5,20 +5,29 @@ import * as THREE from "three";
 import type { CrisisEvent } from "@/types/crisis";
 import type { ArgusEvent } from "@/types/argusEvent";
 import type { ArgusNormalizedEvent } from "@/types/ingestion";
-import type { ArgusMapEventKind } from "@/lib/mapSymbols/argusMapSymbols";
+import {
+  getArgusMarkerColor,
+  getArgusMarkerSeverityRank,
+  getArgusMarkerSizeRatio,
+  normalizeArgusMapSeverity,
+  type ArgusMapEventKind,
+  type ArgusMapSeverity,
+} from "@/lib/mapSymbols/argusMapSymbols";
 
 type GlobeEvent =
   | { kind: "internal"; event: CrisisEvent }
   | { kind: "external"; event: ArgusNormalizedEvent }
   | { kind: "argus"; event: ArgusEvent };
 
-interface GlobeMarker {
+export interface GlobeMarker {
   id: string;
   title: string;
   latitude: number;
   longitude: number;
-  severity: "low" | "medium" | "high" | "critical";
+  severity: ArgusMapSeverity;
   kind: ArgusMapEventKind;
+  /** Epoch ms used only to rank markers when the entity limit truncates the collection; 0 when the source event carries no usable timestamp. */
+  recencyTimestamp: number;
   payload: GlobeEvent;
 }
 
@@ -46,30 +55,13 @@ interface Props {
 const GLOBE_RADIUS = 2.45;
 const EARTH_TEXTURE_PATH = "/textures/earth/earth_atmos_2048.jpg";
 const CLOUD_TEXTURE_PATH = "/textures/earth/earth_clouds_1024.png";
+/** Entity cap for the globe scene; when the combined collection exceeds this, markers are ranked by severity then recency (see buildMarkers) rather than cut by arrival order. */
+const GLOBE_ENTITY_LIMIT = 650;
+/** World-unit anchor for the largest ("critical") marker. Other severities scale down from this via the shared severity->size ratio instead of a second size table. */
+const GLOBE_MARKER_CRITICAL_WORLD_SIZE = 0.078;
 
-const severityColors: Record<GlobeMarker["severity"], number> = {
-  low: 0x34d399,
-  medium: 0xfacc15,
-  high: 0xfb923c,
-  critical: 0xf43f5e,
-};
-
-const markerSize: Record<GlobeMarker["severity"], number> = {
-  low: 0.04,
-  medium: 0.052,
-  high: 0.064,
-  critical: 0.078,
-};
-
-const normalizeSeverity = (
-  value: string | null | undefined
-): GlobeMarker["severity"] => {
-  const normalized = value?.toLowerCase();
-  if (normalized === "critical") return "critical";
-  if (normalized === "high") return "high";
-  if (normalized === "medium") return "medium";
-  return "low";
-};
+const getGlobeMarkerWorldSize = (severity: ArgusMapSeverity) =>
+  GLOBE_MARKER_CRITICAL_WORLD_SIZE * getArgusMarkerSizeRatio(severity);
 
 const toFiniteCoordinate = (value: number | null | undefined) => {
   const parsed = Number(value);
@@ -216,7 +208,7 @@ const createTacticalGrid = () => {
 };
 
 const createMarkerGeometry = (marker: GlobeMarker) => {
-  const size = markerSize[marker.severity];
+  const size = getGlobeMarkerWorldSize(marker.severity);
   switch (marker.kind) {
     case "earthquake":
       return new THREE.OctahedronGeometry(size * 1.15, 0);
@@ -235,12 +227,23 @@ const createMarkerGeometry = (marker: GlobeMarker) => {
   }
 };
 
-const buildMarkers = (
+const toRecencyTimestamp = (value: string | null | undefined) => {
+  const parsed = value ? Date.parse(value) : NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+export interface GlobeMarkerBuildResult {
+  markers: GlobeMarker[];
+  /** Entities dropped by the explicit severity+recency ranking below GLOBE_ENTITY_LIMIT, never by arrival order. */
+  omittedCount: number;
+}
+
+export const buildMarkers = (
   events: CrisisEvent[],
   demoEvents: CrisisEvent[],
   externalEvents: ArgusNormalizedEvent[],
   argusEvents: ArgusEvent[]
-) => {
+): GlobeMarkerBuildResult => {
   const internalMarkers = [...events, ...demoEvents]
     .map<GlobeMarker | null>((event) => {
       const latitude = toFiniteCoordinate(event.latitude);
@@ -252,8 +255,9 @@ const buildMarkers = (
         title: event.title,
         latitude,
         longitude,
-        severity: normalizeSeverity(event.severity),
+        severity: normalizeArgusMapSeverity(event.severity),
         kind: getInternalKind(event),
+        recencyTimestamp: toRecencyTimestamp(event.updatedAt ?? event.createdAt),
         payload: { kind: "internal", event },
       };
     })
@@ -270,15 +274,15 @@ const buildMarkers = (
         title: event.title,
         latitude,
         longitude,
-        severity: normalizeSeverity(event.severity),
+        severity: normalizeArgusMapSeverity(event.severity),
         kind: getExternalKind(event),
+        recencyTimestamp: toRecencyTimestamp(event.updatedAt ?? event.occurredAt),
         payload: { kind: "external", event },
       };
     })
     .filter(Boolean) as GlobeMarker[];
 
   const argusMarkers = argusEvents
-    .filter((event) => event.severity === "critical" || event.severity === "high")
     .map<GlobeMarker | null>((event) => {
       const coordinates = argusCoordinates(event);
       if (!coordinates) return null;
@@ -291,14 +295,26 @@ const buildMarkers = (
         title: event.title,
         latitude,
         longitude,
-        severity: normalizeSeverity(event.severity),
+        severity: normalizeArgusMapSeverity(event.severity),
         kind: getArgusKind(event),
+        recencyTimestamp: toRecencyTimestamp(event.detectedAt),
         payload: { kind: "argus", event },
       };
     })
     .filter(Boolean) as GlobeMarker[];
 
-  return [...argusMarkers, ...internalMarkers, ...externalMarkers].slice(0, 650);
+  // Explicit truncation policy (severity rank desc, then recency desc) instead
+  // of cutting the combined collection by concatenation/arrival order.
+  const ranked = [...argusMarkers, ...internalMarkers, ...externalMarkers].sort(
+    (a, b) =>
+      getArgusMarkerSeverityRank(b.severity) - getArgusMarkerSeverityRank(a.severity) ||
+      b.recencyTimestamp - a.recencyTimestamp
+  );
+
+  return {
+    markers: ranked.slice(0, GLOBE_ENTITY_LIMIT),
+    omittedCount: Math.max(0, ranked.length - GLOBE_ENTITY_LIMIT),
+  };
 };
 
 export default function GlobeView({
@@ -317,7 +333,7 @@ export default function GlobeView({
   onExitGlobe,
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const markers = useMemo(
+  const { markers, omittedCount } = useMemo(
     () => buildMarkers(events, demoEvents, externalEvents, argusEvents),
     [argusEvents, demoEvents, events, externalEvents]
   );
@@ -330,9 +346,12 @@ export default function GlobeView({
   const visibleCenterRef = useRef<GlobeCenter>(
     isValidCenter(initialCenter) ? initialCenter : { lat: 0, lng: 0 }
   );
+  /** Set by the scene-mount effect below; lets marker updates apply incrementally (by canonical ID) without tearing down and recreating the whole Three.js scene. */
+  const applyMarkerUpdateRef = useRef<((markers: GlobeMarker[]) => void) | null>(null);
 
   useEffect(() => {
     markersRef.current = markers;
+    applyMarkerUpdateRef.current?.(markers);
   }, [markers]);
 
   useEffect(() => {
@@ -475,53 +494,82 @@ export default function GlobeView({
       return nextCenter;
     };
 
-    const syncMarkers = () => {
-      markerGroup.children.forEach((child) => {
-        const mesh = child as THREE.Mesh;
-        mesh.geometry?.dispose();
-        const material = mesh.material as THREE.Material | undefined;
-        material?.dispose();
-      });
-      markerGroup.clear();
-      markerMeshes.length = 0;
+    // Incremental marker sync keyed by canonical ID: only entities that are
+    // new, removed, or visually changed (kind/severity/position) touch the
+    // scene graph. Previously this rebuilt every mesh unconditionally every
+    // 750ms regardless of whether the data had changed at all.
+    type MarkerMeshEntry = { mesh: THREE.Mesh; glow: THREE.Mesh; visualKey: string };
+    const meshIndex = new Map<string, MarkerMeshEntry>();
 
-      markersRef.current.forEach((marker) => {
-        const color = severityColors[marker.severity];
-        const position = latLngToVector(
-          marker.latitude,
-          marker.longitude,
-          GLOBE_RADIUS + 0.045
-        );
-        const markerMesh = new THREE.Mesh(
-          createMarkerGeometry(marker),
-          new THREE.MeshBasicMaterial({
-            color,
-            transparent: true,
-            opacity: 0.96,
-          })
-        );
-        markerMesh.position.copy(position);
-        markerMesh.userData.marker = marker;
-        markerGroup.add(markerMesh);
-        markerMeshes.push(markerMesh);
+    const markerVisualKey = (marker: GlobeMarker) =>
+      `${marker.kind}|${marker.severity}|${marker.latitude.toFixed(4)}|${marker.longitude.toFixed(4)}`;
 
-        const glow = new THREE.Mesh(
-          new THREE.SphereGeometry(
-            marker.severity === "critical" ? 0.15 : 0.105,
-            18,
-            18
-          ),
-          new THREE.MeshBasicMaterial({
-            color,
-            transparent: true,
-            opacity: marker.severity === "critical" ? 0.18 : 0.11,
-            depthWrite: false,
-          })
-        );
-        glow.position.copy(position);
-        markerGroup.add(glow);
-      });
+    const disposeEntry = (entry: MarkerMeshEntry) => {
+      markerGroup.remove(entry.mesh, entry.glow);
+      entry.mesh.geometry.dispose();
+      (entry.mesh.material as THREE.Material).dispose();
+      entry.glow.geometry.dispose();
+      (entry.glow.material as THREE.Material).dispose();
     };
+
+    const createEntry = (marker: GlobeMarker): MarkerMeshEntry => {
+      const color = getArgusMarkerColor(marker.severity);
+      const position = latLngToVector(
+        marker.latitude,
+        marker.longitude,
+        GLOBE_RADIUS + 0.045
+      );
+
+      const mesh = new THREE.Mesh(
+        createMarkerGeometry(marker),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.96 })
+      );
+      mesh.position.copy(position);
+      mesh.userData.marker = marker;
+
+      const glow = new THREE.Mesh(
+        new THREE.SphereGeometry(marker.severity === "critical" ? 0.15 : 0.105, 18, 18),
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: marker.severity === "critical" ? 0.18 : 0.11,
+          depthWrite: false,
+        })
+      );
+      glow.position.copy(position);
+
+      markerGroup.add(mesh, glow);
+      return { mesh, glow, visualKey: markerVisualKey(marker) };
+    };
+
+    const applyMarkerUpdate = (nextMarkers: GlobeMarker[]) => {
+      const nextIds = new Set(nextMarkers.map((marker) => marker.id));
+
+      meshIndex.forEach((entry, id) => {
+        if (!nextIds.has(id)) {
+          disposeEntry(entry);
+          meshIndex.delete(id);
+        }
+      });
+
+      nextMarkers.forEach((marker) => {
+        const visualKey = markerVisualKey(marker);
+        const existing = meshIndex.get(marker.id);
+        if (existing && existing.visualKey === visualKey) {
+          // Unchanged position/kind/severity: reuse the mesh, only refresh
+          // the payload reference (title/detail may still have changed).
+          existing.mesh.userData.marker = marker;
+          return;
+        }
+        if (existing) disposeEntry(existing);
+        meshIndex.set(marker.id, createEntry(marker));
+      });
+
+      markerMeshes.length = 0;
+      meshIndex.forEach((entry) => markerMeshes.push(entry.mesh));
+    };
+
+    applyMarkerUpdateRef.current = applyMarkerUpdate;
 
     const resize = () => {
       const { clientWidth, clientHeight } = host;
@@ -593,7 +641,7 @@ export default function GlobeView({
       frameId = window.requestAnimationFrame(render);
     };
 
-    syncMarkers();
+    applyMarkerUpdate(markersRef.current);
     resize();
     updateVisibleCenter(true);
     render();
@@ -604,11 +652,9 @@ export default function GlobeView({
     renderer.domElement.addEventListener("pointercancel", handlePointerUp);
     window.addEventListener("resize", resize);
 
-    const markerInterval = window.setInterval(syncMarkers, 750);
-
     return () => {
+      applyMarkerUpdateRef.current = null;
       window.cancelAnimationFrame(frameId);
-      window.clearInterval(markerInterval);
       window.removeEventListener("resize", resize);
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
       renderer.domElement.removeEventListener("pointermove", handlePointerMove);
@@ -631,12 +677,8 @@ export default function GlobeView({
       (atmosphere.material as THREE.Material).dispose();
       starsGeometry.dispose();
       (stars.material as THREE.Material).dispose();
-      markerGroup.children.forEach((child) => {
-        const mesh = child as THREE.Mesh;
-        mesh.geometry?.dispose();
-        const material = mesh.material as THREE.Material | undefined;
-        material?.dispose();
-      });
+      meshIndex.forEach((entry) => disposeEntry(entry));
+      meshIndex.clear();
       renderer.dispose();
       renderer.domElement.remove();
     };
@@ -654,7 +696,11 @@ export default function GlobeView({
           Vista global 3D
         </h2>
         <p className="mt-1 text-xs text-slate-300">
-          {markers.length} eventos georreferenciados · arrastre para girar
+          {markers.length} eventos georreferenciados
+          {omittedCount > 0
+            ? ` · ${omittedCount} omitidos por límite de vista (prioridad: severidad, luego recencia)`
+            : ""}{" "}
+          · arrastre para girar
         </p>
       </div>
       <div className="argus-orbit-zoom-panel orbit-global-zoom-card pointer-events-auto absolute flex flex-col gap-2 border border-white/10 bg-slate-950/82 px-3 py-3 text-xs text-slate-200 shadow-xl shadow-black/35 backdrop-blur-xl">
@@ -663,7 +709,7 @@ export default function GlobeView({
             Global zoom
           </span>
           <span className="text-slate-400">
-            Marcadores: bajo / medio / alto / critico
+            Marcadores: info / bajo / medio / alto / critico
           </span>
         </div>
         <button

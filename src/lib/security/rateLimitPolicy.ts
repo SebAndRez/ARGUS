@@ -54,7 +54,10 @@ export type RateLimitPolicyName =
   | "public_incident_read"
   | "knowledge_intake_job_manual_run"
   | "codigo_azul_shelters_manual_run"
-  | "routing_directions_public";
+  | "routing_directions_public"
+  | "incident_impact_read"
+  | "territorial_dossier_read"
+  | "operational_briefing_read";
 
 export interface RateLimitRule {
   name: RateLimitPolicyName;
@@ -227,6 +230,36 @@ export const rateLimitRules: Record<RateLimitPolicyName, RateLimitRule> = {
     failureMode: "fail_open_local",
     notes:
       "Ruteo a pie/vehículo/evacuación debe seguir disponible para cualquier ciudadano sin cuenta — mismo criterio de disponibilidad que mobile_safety_signal/quakesense_signal (fail-open en memoria: un bloqueo total ante falla del backend distribuido no debe impedir obtener una ruta durante una emergencia real). Esto NO exime de costo: cada solicitud gasta cupo real de GOOGLE_DIRECTIONS_API_KEY, así que el límite por IP existe específicamente para acotar ese gasto, no solo abuso genérico.",
+  },
+  incident_impact_read: {
+    name: "incident_impact_read",
+    description: "Cálculo de análisis de impacto geoespacial de un incidente canónico (operador)",
+    windowSeconds: 60,
+    maxRequests: 30,
+    keyStrategy: "user",
+    failureMode: "fail_closed",
+    notes:
+      "Cada solicitud ejecuta una consulta real a CriticalPoi (getCriticalInfrastructureNearIncident) — no es gratis, pero es una lectura, no una escritura, por lo que el límite es más alto que los jobs de sincronización/ingesta y fail-closed porque solo operadores autenticados lo alcanzan (sin el perfil de disponibilidad-ante-todo de las señales públicas de emergencia).",
+  },
+  territorial_dossier_read: {
+    name: "territorial_dossier_read",
+    description: "Cálculo del expediente territorial de un incidente canónico (operador)",
+    windowSeconds: 60,
+    maxRequests: 20,
+    keyStrategy: "user",
+    failureMode: "fail_closed",
+    notes:
+      "Compone el análisis de impacto (que ya ejecuta una consulta CriticalPoi) más una consulta a refugios reales y una consulta de incidentes por región — más costoso que incident_impact_read por sí solo, de ahí el límite más bajo (20 vs 30 por minuto). Fail-closed y solo operadores, mismo criterio que incident_impact_read.",
+  },
+  operational_briefing_read: {
+    name: "operational_briefing_read",
+    description: "Composición del briefing operacional determinista de un incidente canónico (operador)",
+    windowSeconds: 60,
+    maxRequests: 15,
+    keyStrategy: "user",
+    failureMode: "fail_closed",
+    notes:
+      "Internamente compone impacto (Prompt 6) + expediente territorial (Prompt 7), cada uno con su propio costo ya acotado por sus propias políticas — este es el endpoint más costoso de los tres, de ahí el límite más bajo (15/min). No invoca ningún proveedor generativo (ninguno está habilitado en este pase), por lo que no hay coste de tokens que limitar todavía.",
   },
 };
 

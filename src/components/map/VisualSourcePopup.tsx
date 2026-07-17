@@ -1,6 +1,7 @@
 "use client";
 
 import SourceTypeBadge from "@/components/ui/SourceTypeBadge";
+import { isSafeExternalUrl } from "@/lib/security/sanitizers";
 import type { VisualSource } from "@/types/visualSource";
 
 interface Props {
@@ -58,7 +59,8 @@ export default function VisualSourcePopup({ source, onClose }: Props) {
   if (!source) return null;
 
   const status = statusPresentation[source.status];
-  const canEmbed = source.embedAllowed && Boolean(source.embedUrl);
+  const canEmbed = source.embedAllowed && isSafeExternalUrl(source.embedUrl);
+  const hasSafeSourceUrl = isSafeExternalUrl(source.sourceUrl);
   const confidence = Math.max(0, Math.min(100, Math.round(source.locationConfidence)));
 
   return (
@@ -138,14 +140,23 @@ export default function VisualSourcePopup({ source, onClose }: Props) {
               {source.lastUpdatedLabel && <p className="mt-1 text-xs text-slate-500">{source.lastUpdatedLabel}</p>}
             </div>
 
-            <a
-              href={source.sourceUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex min-h-11 items-center justify-center rounded-md border border-cyan-300/30 bg-cyan-400 px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-200/80 focus:ring-offset-2 focus:ring-offset-slate-950"
-            >
-              {canEmbed ? "Abrir fuente original para audio" : "Abrir fuente original"}
-            </a>
+            {hasSafeSourceUrl ? (
+              <a
+                href={source.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex min-h-11 items-center justify-center rounded-md border border-cyan-300/30 bg-cyan-400 px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-200/80 focus:ring-offset-2 focus:ring-offset-slate-950"
+              >
+                {canEmbed ? "Abrir fuente original para audio" : "Abrir fuente original"}
+              </a>
+            ) : (
+              <span
+                className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm font-bold text-slate-500"
+                title="Enlace de origen no disponible o no verificado"
+              >
+                Enlace no disponible
+              </span>
+            )}
           </div>
 
           {source.description && (

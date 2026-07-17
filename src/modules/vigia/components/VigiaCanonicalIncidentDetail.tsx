@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useCanonicalModuleIncidentById } from "@/hooks/useCanonicalModuleIncidents";
 import IncidentShelterOperationalSection from "@/components/modules/IncidentShelterOperationalSection";
 import TelecomConnectivitySection from "@/components/modules/TelecomConnectivitySection";
+import IncidentImpactSection from "@/components/modules/IncidentImpactSection";
+import TerritorialDossierSection from "@/components/modules/TerritorialDossierSection";
+import OperationalBriefingSection from "@/components/modules/OperationalBriefingSection";
 
 /**
  * ARGUS Prompt 17 §12 — vista de detalle de VIGÍA sobre un incidente
@@ -98,6 +101,12 @@ export default function VigiaCanonicalIncidentDetail({ incidentId, canViewSource
             longitude={result.data.location.longitude}
             region={result.data.location.regionCode}
           />
+
+          <IncidentImpactSection incidentId={result.data.id} moduleId="argus-vigia" />
+
+          <TerritorialDossierSection incidentId={result.data.id} moduleId="argus-vigia" />
+
+          <OperationalBriefingSection incidentId={result.data.id} moduleId="argus-vigia" />
         </div>
       )}
 

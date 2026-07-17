@@ -1,5 +1,23 @@
 type AnyRecord = Record<string, unknown>;
 
+const SAFE_EXTERNAL_URL_PROTOCOLS = new Set(["http:", "https:"]);
+
+/**
+ * True only for absolute http(s) URLs. Use before rendering any `href` or
+ * `iframe src` built from external/community-sourced data (e.g. a visual
+ * source's link or embed URL) — React escapes text content but does not
+ * validate URL protocols, so an unguarded `javascript:` value would still
+ * execute on click/load.
+ */
+export function isSafeExternalUrl(value: string | null | undefined): boolean {
+  if (!value) return false;
+  try {
+    return SAFE_EXTERNAL_URL_PROTOCOLS.has(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
+
 export function maskEmail(email: string | null | undefined) {
   if (!email) return null;
   const [name, domain] = email.split("@");
