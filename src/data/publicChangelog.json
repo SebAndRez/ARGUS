@@ -1,5 +1,27 @@
 [
   {
+    "changeId": "00caba03eb22",
+    "date": "2026-07-17",
+    "commit": "pending-00caba0",
+    "title": "ARGUS 1.0.6.5 Mejoras de rendimiento y funcionamiento interno",
+    "fileCount": 35,
+    "summary": "Se actualizaron 35 archivos relacionados con Documentacion y Reportes ciudadanos.",
+    "changes": [
+      "Se actualizaron componentes del mapa operativo.",
+      "Se ajusto la vista global ARGUS Orbit.",
+      "Se mejoro la lectura y gestion de reportes.",
+      "Se actualizaron eventos o fuentes externas.",
+      "Se ajustaron vistas y elementos de interfaz."
+    ],
+    "affectedModules": [
+      "Documentacion",
+      "Reportes ciudadanos",
+      "Mapa operativo",
+      "ARGUS Orbit"
+    ],
+    "simpleExplanation": "Esta actualizacion mejora la experiencia del mapa y la vista global para que ARGUS sea mas claro al explorar una situacion."
+  },
+  {
     "changeId": "48f30b913cac",
     "date": "2026-07-17",
     "commit": "pending-48f30b9",

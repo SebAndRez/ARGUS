@@ -27,16 +27,25 @@ import type {
 const GENERATIVE_BRIEFING_ENV_FLAG = "ARGUS_GENERATIVE_BRIEFING_ENABLED";
 
 /**
- * Siempre `false` en este pase — no existe ningún proveedor aprobado que
- * pueda activarse detrás de esta bandera todavía. La bandera se lee de
- * `process.env` (mismo patrón sin módulo central de flags que el resto del
- * repo, ver `ARGUS_CANONICAL_READ_LAYER_IMPLEMENTATION.md` §4) para que una
- * futura sesión con aprobación explícita solo necesite activar la variable
- * de entorno y registrar un `BriefingLanguageProvider` real — nunca cambiar
- * la forma del contrato.
+ * Ningún proveedor real está registrado en este pase (ver
+ * `nullBriefingLanguageProvider` abajo) — esta constante existe para que esa
+ * ausencia sea la razón explícita por la que `isGenerativeBriefingEnabled()`
+ * nunca puede devolver `true` todavía, en vez de un literal `&& false` sin
+ * contexto. Una futura sesión con un proveedor real aprobado cambia esto a
+ * `true` en el mismo lugar donde registra ese proveedor.
+ */
+const GENERATIVE_BRIEFING_PROVIDER_APPROVED: boolean = false;
+
+/**
+ * La bandera se lee de `process.env` (mismo patrón sin módulo central de
+ * flags que el resto del repo, ver
+ * `ARGUS_CANONICAL_READ_LAYER_IMPLEMENTATION.md` §4) para que una futura
+ * sesión con aprobación explícita solo necesite activar la variable de
+ * entorno — pero permanece `false` hasta que
+ * `GENERATIVE_BRIEFING_PROVIDER_APPROVED` también sea `true`, nunca antes.
  */
 export function isGenerativeBriefingEnabled(): boolean {
-  return process.env[GENERATIVE_BRIEFING_ENV_FLAG] === "true" && false; // eslint-disable-line no-constant-condition -- intencional: ver docstring del módulo, nunca se activa sin una implementación de proveedor real aprobada.
+  return GENERATIVE_BRIEFING_PROVIDER_APPROVED && process.env[GENERATIVE_BRIEFING_ENV_FLAG] === "true";
 }
 
 /**

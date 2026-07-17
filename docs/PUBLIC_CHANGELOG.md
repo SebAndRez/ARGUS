@@ -1,5 +1,30 @@
 # ARGUS Public Changelog
 
+## 2026-07-17 - pending-00caba0 - ARGUS 1.0.6.5 Mejoras de rendimiento y funcionamiento interno
+
+**Archivos modificados:** 35
+
+**Resumen publico:**  
+Se actualizaron 35 archivos relacionados con Documentacion y Reportes ciudadanos.
+
+**Cambios principales:**
+- Se actualizaron componentes del mapa operativo.
+- Se ajusto la vista global ARGUS Orbit.
+- Se mejoro la lectura y gestion de reportes.
+- Se actualizaron eventos o fuentes externas.
+- Se ajustaron vistas y elementos de interfaz.
+
+**Modulos afectados:**
+- Documentacion
+- Reportes ciudadanos
+- Mapa operativo
+- ARGUS Orbit
+
+**En simple:**  
+Esta actualizacion mejora la experiencia del mapa y la vista global para que ARGUS sea mas claro al explorar una situacion.
+
+---
+
 ## 2026-07-17 - pending-48f30b9 - ARGUS 1.0.6.0 Se mejoran varios puntos internos
 
 **Archivos modificados:** 59
