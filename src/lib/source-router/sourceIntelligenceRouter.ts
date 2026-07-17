@@ -3,6 +3,7 @@ import {
   getSourceGovernancePolicy,
   hasRequiredContext,
 } from "@/lib/source-governance/sourceGovernanceRegistry";
+import { checkOperationalAvailability } from "@/lib/source-governance/sourceOperationalBridge";
 import type { SourceGovernancePolicy, SourceContextState, SourceRole, UserMode } from "@/lib/source-governance/sourceRoles";
 
 export type RouterPurpose =
@@ -97,7 +98,18 @@ function planSource(
   const reasons: string[] = [];
   let action: SourceRouterPlanItem["action"] = "query";
 
-  if (source.requiresConfiguration) {
+  // Prompt 4 Fase I: la disponibilidad real (¿existe adaptador implementado?
+  // ¿está deshabilitado? ¿faltan credenciales hoy?) se consulta contra el
+  // registro operacional (`ARGUS_SOURCE_OPERATIONS_REGISTRY`), no solo el
+  // flag estático `requiresConfiguration` escrito a mano en la política de
+  // gobernanza — esto puede bloquear una fuente que gobernanza no marcó
+  // como bloqueada, nunca al revés (el puente es fail-open, ver
+  // `sourceOperationalBridge.ts`).
+  const operationalVerdict = checkOperationalAvailability(source.sourceId);
+  if (!operationalVerdict.available) {
+    action = "requires_configuration";
+    reasons.push(operationalVerdict.reason);
+  } else if (source.requiresConfiguration) {
     action = "requires_configuration";
     reasons.push("Source requires configuration; do not expose env values.");
   }

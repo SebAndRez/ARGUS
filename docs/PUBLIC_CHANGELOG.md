@@ -1,5 +1,32 @@
 # ARGUS Public Changelog
 
+## 2026-07-17 - pending-6fa5d8a - ARGUS 1.0.5.0
+
+**Archivos modificados:** 108
+
+**Resumen publico:**  
+Se actualizaron 108 archivos relacionados con Documentacion y Dependencias internas.
+
+**Cambios principales:**
+- Se actualizaron componentes del mapa operativo.
+- Se mejoro la lectura y gestion de reportes.
+- Se actualizaron eventos o fuentes externas.
+- Se ajustaron vistas y elementos de interfaz.
+- Se agregaron cambios de documentacion publica o interna.
+
+**Modulos afectados:**
+- Documentacion
+- Dependencias internas
+- Base de datos interna
+- Eventos y fuentes externas
+- Reportes ciudadanos
+- Mapa operativo
+
+**En simple:**  
+Esta actualizacion ayuda a que los reportes sean mas claros, ordenados y faciles de revisar.
+
+---
+
 ## 2026-07-16 - pending-03c1cb2 - ARGUS 1.0.4.0
 
 **Archivos modificados:** 2

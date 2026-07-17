@@ -48,6 +48,9 @@ const categoryGlyph: Record<CriticalPoi["category"], string> = {
   stadium: "🏟️",
   logistics_center: "📦",
   supply_center: "📦",
+  telecom_mobile_unit: "📡",
+  telecom_emergency_wifi: "📶",
+  telecom_charging_point: "🔌",
 };
 
 const priorityColor: Record<CriticalPriority, string> = {

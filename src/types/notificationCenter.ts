@@ -29,6 +29,7 @@ export type ArgusNotificationType =
   | "SOURCE_UPDATE"
   | "REMINDER"
   | "SHELTER"
+  | "CONNECTIVITY"
   | "SYSTEM";
 
 export type ArgusNotificationStatus =

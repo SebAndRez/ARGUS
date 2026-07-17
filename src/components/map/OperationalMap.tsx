@@ -31,6 +31,7 @@ import NavigationRouteOverlay from "@/components/map/NavigationRouteOverlay";
 import PoiLayer from "@/components/map/PoiLayer";
 import type { PoiEntity } from "@/lib/pois/poiTypes";
 import CriticalPoiLayer from "@/components/map/CriticalPoiLayer";
+import TelecomConnectivityLayer from "@/components/map/TelecomConnectivityLayer";
 import type { CriticalPoi } from "@/lib/criticalPoi/criticalPoiTypes";
 import type { ShelterMapFilterState } from "@/lib/criticalPoi/shelterMapFilters";
 import type { GeoPoint, RouteResult } from "@/lib/routing/routingService";
@@ -82,6 +83,7 @@ interface MapLayerSettings {
   liveCameras?: boolean;
   medicalPoints?: boolean;
   shelters?: boolean;
+  telecomConnectivity?: boolean;
   urbanPois?: boolean;
   criticalPois?: boolean;
   quakeSense?: boolean;
@@ -1497,6 +1499,11 @@ export default function OperationalMap({
               selectedPoiId={selectedCriticalPoiId}
               onPoiSelect={onCriticalPoiSelect}
               shelterFilter={shelterFilter}
+              map={mapReady ? mapInstance : null}
+              leaflet={mapReady ? leafletInstance : null}
+            />
+            <TelecomConnectivityLayer
+              visible={layerSettings.telecomConnectivity === true}
               map={mapReady ? mapInstance : null}
               leaflet={mapReady ? leafletInstance : null}
             />

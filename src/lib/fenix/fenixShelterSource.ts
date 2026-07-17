@@ -2,6 +2,7 @@ import { getCriticalPoisNear } from "@/lib/criticalPoi/criticalPoiPersistenceSer
 import { getOperationalStatusesByPoiIds } from "@/lib/criticalPoi/shelterOperationalStatusService";
 import type { ShelterOperationalStatus } from "@/lib/criticalPoi/shelterOperationalStatusTypes";
 import type { FenixShelter, FenixShelterRecommendationTier } from "@/types/fenix";
+import { findNearestConnectivityPoint } from "@/lib/fenix/fenixConnectivityRecommendation";
 
 /**
  * Puente entre `CriticalPoi` (categoria "shelter" + `CriticalPoiOperationalStatus`,
@@ -46,9 +47,13 @@ export async function getRealFenixShelters(point: { lat: number; lng: number }, 
 
   const statusByPoiId = await getOperationalStatusesByPoiIds(pois.map((poi) => poi.id));
 
-  return pois.map((poi): FenixShelter => {
+  return Promise.all(pois.map(async (poi): Promise<FenixShelter> => {
     const status = statusByPoiId.get(poi.id);
     const locationAccuracy = poi.tags?.locationAccuracy as FenixShelter["locationAccuracy"] | undefined;
+    const nearestConnectivityPoint =
+      status?.hasConnectivity === false
+        ? (await findNearestConnectivityPoint({ lat: poi.lat, lng: poi.lng })) ?? undefined
+        : undefined;
     return {
       id: poi.id,
       name: poi.name,
@@ -83,6 +88,7 @@ export async function getRealFenixShelters(point: { lat: number; lng: number }, 
       publicationStatus: status?.publicationStatus,
       locationAccuracy,
       fenixRecommendationTier: deriveFenixRecommendationTier(status, locationAccuracy),
+      nearestConnectivityPoint,
     };
-  });
+  }));
 }

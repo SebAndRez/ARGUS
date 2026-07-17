@@ -70,6 +70,13 @@ export const criticalPoiCategoryRegistry: CriticalPoiCategoryDefinition[] = [
   { id: "stadium", label: "Estadio", priority: "P3", tags: [{ key: "leisure", value: "stadium" }], moduleUse: ["FENIX", "ARCA"], wellMappedInOsm: true },
   { id: "logistics_center", label: "Centro logístico", priority: "P3", tags: [{ key: "building", value: "warehouse" }, { key: "industrial", value: "warehouse" }], moduleUse: ["ARCA", "NEXUS"], wellMappedInOsm: false },
   { id: "supply_center", label: "Centro de acopio", priority: "P3", tags: [{ key: "social_facility", value: "food_bank" }, { key: "amenity", value: "marketplace" }], moduleUse: ["ARCA", "FENIX"], wellMappedInOsm: false },
+  // Puntos de conectividad de emergencia (carro movil, wifi publico, punto de
+  // carga): en la practica siempre entran por ingreso manual/argus, no OSM -
+  // los tags aca son el analogo mas cercano existente en OSM, no una fuente
+  // de ingesta real para esta categoria.
+  { id: "telecom_mobile_unit", label: "Carro móvil de telecomunicaciones", priority: "P3", tags: [{ key: "man_made", value: "mast" }], moduleUse: ["FENIX", "NEXUS"], wellMappedInOsm: false },
+  { id: "telecom_emergency_wifi", label: "Wi-Fi de emergencia", priority: "P3", tags: [{ key: "internet_access", value: "wlan" }], moduleUse: ["FENIX", "NEXUS"], wellMappedInOsm: false },
+  { id: "telecom_charging_point", label: "Punto de carga", priority: "P3", tags: [{ key: "amenity", value: "charging_station" }], moduleUse: ["FENIX", "NEXUS"], wellMappedInOsm: false },
 ];
 
 export function getCriticalPoiCategory(id: string): CriticalPoiCategoryDefinition | null {

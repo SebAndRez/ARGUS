@@ -29,6 +29,8 @@ Principio rector: **ninguna fase es un "big bang"**. Cada fase es individualment
 > - Unifica `vigiaIncidentToArgusEvent.ts` y `knowledgeIncidentToArgusEvent.ts` (ambos ahora wrappers deprecados de una línea). **No** incluye la construcción directa de `argusCorrelationEngine.correlateSignals()` (`/api/argus/events`) — ese endpoint no consume `KnowledgeIncident`, quedó fuera de alcance y sigue pendiente como se planificó originalmente.
 > - `/api/vigia/events` y `/api/chile-alerts` se migraron directamente al mapeador canónico (sin flag `CANONICAL_MAPPER_ENABLED` — se optó por migración directa + wrappers legacy retenidos como red de seguridad, en vez de un flag en runtime, dado que el reconocimiento de consumidores no encontró ningún import fuera de esos dos endpoints).
 > - Los puntos 1 (tipos `Incident`/`IncidentEvidence`/`IncidentSource`/`IncidentRelation`/`IncidentAssessment`/`IncidentTransition` como módulo de dominio propio), 2 (enums canónicos completos de lifecycle/severidad/confianza) y 4 (consolidación de los tres registros de fuente en un `IncidentSource` único) **siguen sin implementarse** — el mapeador reutiliza `src/lib/vigia/sourceRegistry.ts` tal como está, sin tocarlo.
+>
+> **Actualización (2026-07-17)**: los puntos 1, 2 y 4 fueron implementados — ver `docs/architecture/ARGUS_CANONICAL_READ_LAYER_IMPLEMENTATION.md`. Corrección al inventario original: no son tres registros de fuente sino **cuatro**; solo `src/lib/vigia/sourceRegistry.ts` produce `KnowledgeIncident`, así que la consolidación se limitó a ese, sin fusionar los otros tres (propósitos no relacionados con el incidente canónico). `sourceTypeFor` (antes duplicado dentro del mapeador) ahora delega en `src/lib/canonical/incidentSourceRegistry.ts`.
 > - Validación: 32 tests nuevos (15 casos unitarios obligatorios + variantes, más pruebas de integración de los dos endpoints), sustituyendo el "snapshot test contra producción" aquí descrito por fixtures deterministas — no se ejecutó contra datos reales de producción en esta fase.
 
 **Trabajo**:
@@ -65,6 +67,17 @@ Principio rector: **ninguna fase es un "big bang"**. Cada fase es individualment
 ---
 
 ## 2. Fase B — Capa canónica de lectura
+
+> **Estado de implementación (2026-07-17)**: implementada — ver
+> `docs/architecture/ARGUS_CANONICAL_READ_LAYER_IMPLEMENTATION.md`. Alcance
+> real: `buildCanonicalIncidentPreview()` (`src/lib/canonical/canonicalReadLayer.ts`)
+> combina `KnowledgeIncident` (vía el mapeador de Fase A) con `Report`/
+> `HelpRequest` correlacionados en tiempo de lectura por proximidad (≤500m) +
+> ventana (≤6h), expuesto en `GET /api/incidents-canonical-preview`
+> (interno, `OPERATOR+`, detrás de `CANONICAL_READ_LAYER_ENABLED` — por
+> defecto deshabilitado). **No** se validó todavía contra tráfico real de
+> staging (punto 3 de "Trabajo" abajo) — eso requiere un entorno con tráfico
+> real, fuera de alcance de una sesión de implementación.
 
 **Objetivo**: producir una vista unificada de "todos los incidentes conocidos" sin escribir todavía en una tabla nueva.
 

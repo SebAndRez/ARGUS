@@ -34,7 +34,7 @@ export async function GET() {
   }>();
 
   try {
-    const [counts, runs, codigoAzulCount] = await Promise.all([
+    const [counts, runs, codigoAzulCount, telecomConnectivityCount] = await Promise.all([
       prisma.externalEvent.groupBy({ by: ["sourceId"], _count: { _all: true } }),
       prisma.ingestionRun.findMany({
         orderBy: { fetchedAt: "desc" },
@@ -52,9 +52,13 @@ export async function GET() {
       // Código Azul persiste en CriticalPoi, no ExternalEvent — mismo
       // per-source special-casing que getCacheForSource() de abajo.
       prisma.criticalPoi.count({ where: { source: "official_open_data" } }),
+      // Conectividad de emergencia persiste en TelecomConnectivityStatus, no
+      // ExternalEvent — mismo patron de special-casing que Código Azul.
+      prisma.telecomConnectivityStatus.count(),
     ]);
     persistedCounts = new Map(counts.map((item) => [item.sourceId, item._count._all]));
     persistedCounts.set("codigo_azul", codigoAzulCount);
+    persistedCounts.set("telecom_connectivity_manual", telecomConnectivityCount);
     runs.forEach((run) => {
       if (!latestRuns.has(run.sourceId)) latestRuns.set(run.sourceId, run);
     });

@@ -152,6 +152,18 @@ export const ARGUS_SOURCE_REGISTRY: ArgusSourceRegistryEntry[] = [
     notes:
       "Listado oficial de albergues/hospederías del programa Código Azul (sitio Laravel server-rendered, sin API pública — extracción HTML controlada). \"Cupos\" publicado se normaliza como capacityDeclared, nunca como disponibilidad confirmada.",
   },
+  {
+    id: "telecom_connectivity_manual",
+    name: "Conectividad de Emergencia — Comunicados oficiales (SUBTEL/operadoras/SENAPRED)",
+    category: "geospatial",
+    tier: 1,
+    priority: 75,
+    status: "active",
+    reliabilityScore: 65,
+    accessType: "manual_reference",
+    notes:
+      "SUBTEL y las operadoras (Entel/Movistar/WOM/ClaroVTR) publican activaciones de roaming de emergencia y cortes de red solo como comunicados de prensa — sin API/RSS/CAP público confirmado. Ingesta exclusivamente manual/validada vía /api/admin/telecom-connectivity, citando la fuente oficial; nunca scraping automatizado esta pasada.",
+  },
   { id: "copernicus_glofas", name: "Copernicus GloFAS / GFM", category: "flood", tier: 2, priority: 80, status: "planned", reliabilityScore: 91, accessType: "free_with_terms", notes: "Inundaciones y caudales." },
   { id: "hdx_hapi", name: "HDX HAPI", category: "humanitarian", tier: 2, priority: 70, status: "planned", reliabilityScore: 82, accessType: "free_with_terms", notes: "Datasets humanitarios normalizados." },
   {

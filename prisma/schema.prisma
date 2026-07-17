@@ -592,9 +592,9 @@ model CriticalPoi {
 /// linkedIncidentId es solo un hint opcional del ultimo incidente que la
 /// origino. No inventar capacidad/ocupacion: los campos ausentes quedan null.
 model CriticalPoiOperationalStatus {
-  id     String      @id @default(cuid())
-  poiId  String      @unique
-  poi    CriticalPoi @relation(fields: [poiId], references: [id])
+  id    String      @id @default(cuid())
+  poiId String      @unique
+  poi   CriticalPoi @relation(fields: [poiId], references: [id])
 
   shelterStatus  String @default("unknown") // available|near_capacity|full|closed|compromised|unknown
   capacityStatus String @default("unknown") // ok|near_capacity|full|unknown (derivado, no ingresado directo)
@@ -620,23 +620,23 @@ model CriticalPoiOperationalStatus {
   allowsPets      Boolean?
   hasConnectivity Boolean?
 
-  operatorName String?
-  contactPhone String?
-  contactNotes String?
+  operatorName   String?
+  contactPhone   String?
+  contactNotes   String?
   /// Horario de operacion publicado tal cual (p.ej. "24 Horas"). Nunca
   /// interpretar como disponibilidad actual -- ver capacityDeclared.
   operatingHours String?
 
   routeStatus String? // open|congested|blocked|unknown - hacia el acceso conocido mas cercano
 
-  sourceType        String // senapred|municipality|media|manual_operator|osm|argus_estimate
-  sourceName        String
-  sourceUrl         String?
-  sourcePublishedAt DateTime?
-  confidence        Int       @default(50)
-  verificationStatus String   @default("unverified") // unverified|candidate|corroborated|official|rejected
+  sourceType         String // senapred|municipality|media|manual_operator|osm|argus_estimate
+  sourceName         String
+  sourceUrl          String?
+  sourcePublishedAt  DateTime?
+  confidence         Int       @default(50)
+  verificationStatus String    @default("unverified") // unverified|candidate|corroborated|official|rejected
 
-  lastUpdatedAt DateTime  @updatedAt
+  lastUpdatedAt  DateTime  @updatedAt
   lastVerifiedAt DateTime?
   isStale        Boolean   @default(false)
 
@@ -663,8 +663,8 @@ model CriticalPoiOperationalStatus {
 /// historial auditable exigido por el modulo operacional - no se agrega una
 /// tercera tabla de historial.
 model CriticalPoiStatusEvidence {
-  id     String @id @default(cuid())
-  poiId  String
+  id    String @id @default(cuid())
+  poiId String
 
   eventType String // created|enabled|capacity_updated|occupancy_updated|full|closed|route_blocked|route_restored|service_recovered|source_updated|marked_stale|conflict_detected
 
@@ -678,6 +678,95 @@ model CriticalPoiStatusEvidence {
 
   createdAt DateTime @default(now())
 
+  @@index([poiId])
+  @@index([eventType])
+}
+
+/// Estado regional/comunal de conectividad de emergencia (roaming automatico
+/// nacional, roaming de emergencia, degradacion/interrupcion de red movil).
+/// A diferencia de CriticalPoiOperationalStatus, NO esta anclado a un poiId:
+/// el fenomeno que describe (una activacion de roaming, un corte de red) es
+/// regional/comunal, no puntual. Historial por fuente vive en
+/// TelecomConnectivityEvidence. linkedIncidentId es un hint de proximidad de
+/// lectura, no una FK real (mismo patron que
+/// CriticalPoiOperationalStatus.linkedIncidentId). No inventar cobertura:
+/// los campos ausentes quedan null.
+model TelecomConnectivityStatus {
+  id           String  @id @default(cuid())
+  countryCode  String  @default("CL")
+  adminLevel1  String // region
+  adminLevel2  String? // comuna - opcional, muchos comunicados solo informan la region
+  carrierScope String  @default("all_carriers") // all_carriers|entel|movistar|wom|claro|other
+
+  /// Roaming Automatico Nacional (mecanismo regulatorio general) vs Roaming
+  /// de Emergencia (activacion operacional puntual para una contingencia).
+  /// "roaming_internacional" (uso de red fuera de Chile) NUNCA es un valor
+  /// valido en este campo - es un concepto comercial distinto y no debe
+  /// presentarse como instruccion de emergencia nacional. Rechazado en la
+  /// capa de API si se intenta escribir.
+  roamingType String @default("none") // none|roaming_automatico_nacional|roaming_emergencia
+
+  /// Eje independiente de roamingType: una region puede tener roaming de
+  /// emergencia activo con red en estado normal, o viceversa.
+  networkState String @default("unknown") // normal|degraded|outage|restored|unknown
+
+  /// Alcance publicado tal cual por la fuente (p.ej. "comunas costeras de la
+  /// Region de Valparaiso"). Nunca inferido ni convertido a poligono.
+  activationScope   String?
+  centroidLatitude  Float?
+  centroidLongitude Float?
+
+  startedAt DateTime?
+  endedAt   DateTime?
+
+  sourceType         String // senapred|subtel_communique|carrier_communique|municipality|media|manual_operator|argus_estimate
+  sourceName         String
+  sourceUrl          String?
+  sourcePublishedAt  DateTime?
+  confidence         Int       @default(50)
+  verificationStatus String    @default("unverified") // unverified|candidate|corroborated|official|rejected
+
+  lastUpdatedAt  DateTime  @updatedAt
+  lastVerifiedAt DateTime?
+  isStale        Boolean   @default(false)
+
+  linkedIncidentId String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([countryCode, adminLevel1, adminLevel2, carrierScope])
+  @@index([adminLevel1])
+  @@index([roamingType])
+  @@index([networkState])
+  @@index([isStale])
+}
+
+/// Bitacora append-only de evidencia para conectividad de emergencia. Cubre
+/// tanto el estado regional/comunal (subjectType="region", identificado por
+/// regionKey) como los puntos de conectividad temporal (subjectType="poi",
+/// CriticalPoi.id de una unidad movil/wifi/punto de carga) - un solo
+/// mecanismo de evidencia en vez de uno por subtipo, siguiendo el mismo
+/// patron que CriticalPoiStatusEvidence.
+model TelecomConnectivityEvidence {
+  id String @id @default(cuid())
+
+  subjectType String // region|poi
+  regionKey   String? // `${countryCode}:${adminLevel1}:${adminLevel2 ?? ""}:${carrierScope}` - si subjectType="region"
+  poiId       String? // CriticalPoi.id - si subjectType="poi"
+
+  eventType String // activated|expanded|reduced|ended|degraded|restored|point_added|point_updated|point_removed|source_updated|marked_stale|conflict_detected
+
+  sourceType        String
+  sourceName        String
+  sourceUrl         String?
+  sourcePublishedAt DateTime?
+  confidenceScore   Int
+
+  payloadJson Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([regionKey])
   @@index([poiId])
   @@index([eventType])
 }

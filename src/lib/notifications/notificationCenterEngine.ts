@@ -85,6 +85,31 @@ export type ShelterOperationalAlertItem = {
   lastUpdatedAt: Date | string;
 };
 
+/**
+ * Transicion de conectividad de emergencia (ARGUS v1.0.3.6 §16) que amerita
+ * notificacion — el caller (`/api/notifications`) deriva `alertReason` a
+ * partir del `eventType` mas reciente en `TelecomConnectivityEvidence` para
+ * la region, mismo split de responsabilidad que `ShelterOperationalAlertItem`
+ * (este tipo solo describe la forma minima para renderizar la notificacion).
+ */
+export type ConnectivityAlertItem = {
+  regionKey: string;
+  adminLevel1: string;
+  adminLevel2?: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  countryCode?: string | null;
+  roamingType: string;
+  networkState: string;
+  isStale: boolean;
+  verificationStatus: string;
+  sourceType: string;
+  sourceName: string;
+  confidence: number;
+  lastUpdatedAt: Date | string;
+  alertReason: "activated" | "expanded" | "ended" | "degraded" | "outage" | "restored" | "point_added" | "marked_stale";
+};
+
 type SourceHealthItem = {
   id?: string;
   sourceId?: string;
@@ -121,6 +146,7 @@ export interface BuildNotificationInput {
    */
   knowledgeIncidents?: KnowledgeIncidentItem[];
   shelterAlerts?: ShelterOperationalAlertItem[];
+  connectivityAlerts?: ConnectivityAlertItem[];
   readIds?: string[];
   userLocation?: { lat: number; lng: number; countryCode?: string | null };
 }
@@ -779,6 +805,113 @@ function shelterAlertToNotification(alert: ShelterOperationalAlertItem, readIds:
   );
 }
 
+/**
+ * Mapeo severidad/titulo por `alertReason` (spec ARGUS v1.0.3.6 §16):
+ * activacion/degradacion son P1, expansion/fin son P2, restablecimiento y
+ * nuevo punto de conectividad son P3, dato desactualizado es P4. `category`
+ * distingue "official_alert" (verificationStatus oficial) de
+ * "candidate_signal" (aun sin confirmar) para activaciones — nunca se marca
+ * como alerta oficial algo que no lo es.
+ */
+function connectivityAlertToNotification(
+  alert: ConnectivityAlertItem,
+  readIds: Set<string>,
+  userLocation?: BuildNotificationInput["userLocation"]
+) {
+  const lat = toFiniteNumber(alert.latitude);
+  const lng = toFiniteNumber(alert.longitude);
+  const time = toIso(alert.lastUpdatedAt);
+  const distanceKm = userLocation && lat !== null && lng !== null ? calculateDistanceKm(userLocation, { lat, lng }) : null;
+  const locationLabel = alert.adminLevel2 ? `${alert.adminLevel2}, ${alert.adminLevel1}` : alert.adminLevel1;
+  const isOfficial = alert.verificationStatus === "official";
+
+  let severity: ArgusNotificationSeverity;
+  let title: string;
+  let description: string;
+  let category: NotificationCategory;
+  switch (alert.alertReason) {
+    case "activated":
+      severity = "P1_HIGH";
+      title = `Roaming de emergencia activado en ${locationLabel}`;
+      description = "Se reporto la activacion de roaming de emergencia para esta zona.";
+      category = isOfficial ? "official_alert" : "candidate_signal";
+      break;
+    case "expanded":
+      severity = "P2_MEDIUM";
+      title = `Roaming de emergencia ampliado a ${locationLabel}`;
+      description = "La activacion de roaming de emergencia se extendio a esta region/comuna.";
+      category = isOfficial ? "official_alert" : "candidate_signal";
+      break;
+    case "ended":
+      severity = "P2_MEDIUM";
+      title = `Roaming de emergencia finalizado en ${locationLabel}`;
+      description = "La activacion de roaming de emergencia para esta zona fue reportada como finalizada.";
+      category = "system_notice";
+      break;
+    case "degraded":
+    case "outage":
+      severity = "P1_HIGH";
+      title = `Red movil degradada en ${locationLabel}`;
+      description = "Se reporto degradacion o interrupcion de la red movil en esta zona.";
+      category = isOfficial ? "official_alert" : "candidate_signal";
+      break;
+    case "restored":
+      severity = "P3_LOW";
+      title = `Red movil restablecida en ${locationLabel}`;
+      description = "Se reporto el restablecimiento de la red movil en esta zona.";
+      category = "system_notice";
+      break;
+    case "point_added":
+      severity = "P3_LOW";
+      title = `Nuevo punto de conectividad cerca de ${locationLabel}`;
+      description = "Se registro un carro movil, wifi de emergencia o punto de carga en esta zona.";
+      category = "recommendation";
+      break;
+    case "marked_stale":
+    default:
+      severity = "P4_INFO";
+      title = `Dato de conectividad desactualizado: ${locationLabel}`;
+      description = "El estado de conectividad de emergencia de esta zona no se ha confirmado dentro de la ventana de vigencia esperada.";
+      category = "system_notice";
+      break;
+  }
+
+  return finalize(
+    {
+      id: `connectivity-alert-${encodeURIComponent(alert.regionKey)}-${alert.alertReason}`,
+      title,
+      description,
+      type: "CONNECTIVITY",
+      severity,
+      scope: scopeForLocation(lat, lng, alert.countryCode ?? null, userLocation),
+      status: "MONITORING",
+      createdAt: time,
+      updatedAt: time,
+      eventTime: time,
+      sourceType: isOfficial ? "OFFICIAL" : "OPEN_DATA",
+      category,
+      verificationStatus: alert.verificationStatus as VerificationStatus,
+      isOfficial,
+      sourceName: alert.sourceName,
+      confidence: Math.max(0, Math.min(100, alert.confidence)),
+      lat,
+      lng,
+      countryCode: alert.countryCode ?? null,
+      region: alert.adminLevel1,
+      city: alert.adminLevel2 ?? null,
+      distanceKm,
+      relatedEventId: null,
+      relatedReportId: null,
+      relatedIncidentId: null,
+      relatedFenixScenarioId: null,
+      relatedRouteId: null,
+      actionUrl: lat !== null && lng !== null ? `/app?lat=${lat}&lng=${lng}&telecomRegion=${encodeURIComponent(alert.adminLevel1)}` : `/app?telecomRegion=${encodeURIComponent(alert.adminLevel1)}`,
+      sourceUrl: null,
+    },
+    readIds
+  );
+}
+
 function knowledgeIncidentToNotification(
   incident: KnowledgeIncidentItem,
   readIds: Set<string>,
@@ -933,6 +1066,7 @@ export function buildArgusNotifications(input: BuildNotificationInput) {
     ...(input.sourceHealth ?? []).map((source) => sourceToNotification(source, readIds)),
     ...(input.reminders ?? []).map((reminder) => reminderToNotification(reminder, readIds)),
     ...(input.shelterAlerts ?? []).map((alert) => shelterAlertToNotification(alert, readIds, input.userLocation)),
+    ...(input.connectivityAlerts ?? []).map((alert) => connectivityAlertToNotification(alert, readIds, input.userLocation)),
   ];
 
   return notifications.sort((a, b) => {

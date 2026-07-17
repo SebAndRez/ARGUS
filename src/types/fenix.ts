@@ -131,6 +131,14 @@ export type FenixShelter = {
   /** Precision de la ubicacion — ver `locationAccuracy` en `CriticalPoi.tagsJson`. Ausente en refugios demo (siempre precisos). */
   locationAccuracy?: "precise" | "approximate" | "commune_centroid" | "unresolved";
   fenixRecommendationTier?: FenixShelterRecommendationTier;
+  /** Solo poblado cuando `hasConnectivity` es `false` confirmado (spec ARGUS v1.0.3.6 §14) — punto de conectividad real mas cercano, nunca inventado. */
+  nearestConnectivityPoint?: {
+    id: string;
+    name: string;
+    category: string;
+    distanceKm: number;
+    coordinates: [number, number];
+  };
 };
 
 export type FenixPopulationExposure = {

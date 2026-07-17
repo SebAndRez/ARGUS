@@ -396,6 +396,12 @@ export function scoreShelterCandidate(shelter: FenixShelter): number {
 
   if (shelter.isStale) score += 30;
 
+  // Ausencia CONFIRMADA de conectividad (spec ARGUS v1.0.3.6 §14) - nunca
+  // penaliza `undefined` (no informado), solo `false` explicito. Peso entre
+  // la penalizacion de ruta "unknown" (10) y "congested" (25): un factor
+  // real pero secundario frente a ocupacion/ruta/vigencia/confianza.
+  if (shelter.hasConnectivity === false) score += 15;
+
   const confidence = shelter.confidence ?? 60;
   score += (100 - confidence) * 0.3;
 

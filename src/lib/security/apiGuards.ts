@@ -30,6 +30,15 @@ export const VERIFIED_USER_ROLES: ArgusRole[] = ["VERIFIED_CITIZEN", "TRUSTED_CI
 export const OPERATOR_ROLES: ArgusRole[] = ["OPERATOR", "ANALYST", "ADMIN", "SUPER_ADMIN"];
 export const ADMIN_ROLES: ArgusRole[] = ["ADMIN", "SUPER_ADMIN"];
 export const MEDICAL_ACCESS_ROLES: ArgusRole[] = ["MEDICAL_OPERATOR", "INSTITUTIONAL_ADMIN", "ADMIN", "SUPER_ADMIN"];
+/**
+ * `OPERATOR_ROLES` is a flat allowlist, not a rank-based floor — AUTHORITY
+ * and INSTITUTIONAL_ADMIN outrank OPERATOR/ANALYST in `roleRank`
+ * (rbac.ts) but aren't included, so `requireOperator()` alone rejects them.
+ * Used by writes (e.g. telecom connectivity, ARGUS v1.0.3.6) that
+ * institutional/authority actors must be able to perform, not just
+ * OPERATOR/ANALYST/ADMIN/SUPER_ADMIN.
+ */
+export const TELECOM_CONNECTIVITY_WRITER_ROLES: ArgusRole[] = ["OPERATOR", "ANALYST", "AUTHORITY", "INSTITUTIONAL_ADMIN", "ADMIN", "SUPER_ADMIN"];
 
 export function requireVerifiedUser() {
   return requireRole(VERIFIED_USER_ROLES);
@@ -45,6 +54,10 @@ export function requireAdmin() {
 
 export function requireMedicalAccess() {
   return requireRole(MEDICAL_ACCESS_ROLES);
+}
+
+export function requireTelecomConnectivityWriter() {
+  return requireRole(TELECOM_CONNECTIVITY_WRITER_ROLES);
 }
 
 export function sanitizeUserForPublic(user: { id: string; publicAlias: string; role?: string | null }) {

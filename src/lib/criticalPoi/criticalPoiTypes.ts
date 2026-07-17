@@ -34,7 +34,10 @@ export type CriticalPoiCategory =
   | "school"
   | "stadium"
   | "logistics_center"
-  | "supply_center";
+  | "supply_center"
+  | "telecom_mobile_unit"
+  | "telecom_emergency_wifi"
+  | "telecom_charging_point";
 
 /**
  * P0 national_critical, P1 emergency_critical, P2 civic_critical,

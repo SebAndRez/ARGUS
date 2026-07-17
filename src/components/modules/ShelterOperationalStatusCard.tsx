@@ -153,6 +153,13 @@ export default function ShelterOperationalStatusCard({ shelter }: Props) {
         ))}
       </div>
 
+      {shelter.hasConnectivity === false && shelter.nearestConnectivityPoint && (
+        <p className="mt-2 border border-cyan-300/25 bg-cyan-500/10 px-2 py-1 text-[0.62rem] text-cyan-200">
+          Punto de conectividad más cercano: {shelter.nearestConnectivityPoint.name} (
+          {shelter.nearestConnectivityPoint.distanceKm} km)
+        </p>
+      )}
+
       {shelter.poiId && (
         <div className="mt-2 flex flex-wrap gap-3 border-t border-white/10 pt-2">
           <Link

@@ -1,6 +1,6 @@
 import { canonicalizeGdacsSeverity } from "@/lib/vigia/gdacsSeverity";
 import { classifyGlobalThreat, threatToArgusEventType, type GlobalThreatType } from "@/lib/vigia/threatClassifier";
-import { getVigiaSource } from "@/lib/vigia/sourceRegistry";
+import { resolveArgusSourceType } from "@/lib/canonical/incidentSourceRegistry";
 import { isDemoLikeSource } from "@/lib/security/demoDataGuard";
 import type { IncidentLifecycle } from "@/lib/vigia/incidentLifecycle";
 import type {
@@ -11,7 +11,6 @@ import type {
   ArgusGeometry,
   ArgusGeometryPrecision,
   ArgusSeverity,
-  ArgusSourceType,
 } from "@/types/argusEvent";
 
 /**
@@ -282,13 +281,13 @@ function resolveCanonicalGeometry(input: {
 // Fuentes / confianza / demo (Prompt 9 §11, §12).
 // ---------------------------------------------------------------------------
 
-function sourceTypeFor(sourceId: string): ArgusSourceType {
-  if (sourceId === "news_evidence") return "news";
-  const definition = getVigiaSource(sourceId);
-  if (!definition) return "global_feed";
-  if (definition.isOfficial) return "official";
-  return definition.role === "context" ? "model_context" : "global_feed";
-}
+/**
+ * `sourceTypeFor` resuelve ahora a través del punto único de consolidación
+ * de fuentes (`src/lib/canonical/incidentSourceRegistry.ts`, Fase A punto 4
+ * de la migración canónica) en vez de leer `getVigiaSource` directamente —
+ * mismo comportamiento, cero lógica duplicada.
+ */
+const sourceTypeFor = resolveArgusSourceType;
 
 function mapConfidence(confidenceScore: number, unconfirmed: boolean): ArgusConfidence {
   if (unconfirmed) return confidenceScore >= 65 ? "medium" : "low";

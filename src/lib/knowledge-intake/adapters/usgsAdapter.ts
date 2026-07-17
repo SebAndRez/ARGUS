@@ -75,6 +75,21 @@ async function fetchJsonWithTimeout(url: string, timeoutMs = 10_000): Promise<Us
   }
 }
 
+export type { UsgsGeoJson, UsgsFeature };
+
+/**
+ * Fetch-only step (raw GeoJSON, not yet normalized) — exported additively so
+ * `src/lib/canonical/adapters/usgsSourceAdapter.ts` can compose it with
+ * `normalizeUsgsEarthquakeFeature` as two independently-callable contract
+ * steps (`ArgusSourceAdapter.fetch`/`.normalize`), instead of only the
+ * combined `fetchUsgsEarthquakes()` below. No behavior change to existing
+ * callers of `fetchUsgsEarthquakes`.
+ */
+export async function fetchRawUsgsFeed(options: UsgsFetchOptions = {}, timeoutMs = 10_000): Promise<UsgsGeoJson> {
+  const feed = options.feed ?? "relevant";
+  return fetchJsonWithTimeout(feedUrls[feed], timeoutMs);
+}
+
 export function normalizeUsgsEarthquakeFeature(feature: UsgsFeature): ArgusIncidentKnowledge | null {
   const [longitude, latitude, depthKm] = feature.geometry?.coordinates ?? [];
   if (typeof latitude !== "number" || typeof longitude !== "number") return null;

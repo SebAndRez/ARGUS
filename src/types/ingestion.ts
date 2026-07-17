@@ -16,6 +16,7 @@ export type ArgusExternalSourceId =
   | "gdelt"
   | "openstreetmap"
   | "codigo_azul"
+  | "telecom_connectivity_manual"
   | "copernicus_glofas"
   | "hdx_hapi"
   | "openaq"

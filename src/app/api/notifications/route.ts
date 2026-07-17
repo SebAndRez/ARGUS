@@ -18,7 +18,9 @@ import {
   resolveDemoFallback,
   type KnowledgeIncidentItem,
   type ShelterOperationalAlertItem,
+  type ConnectivityAlertItem,
 } from "@/lib/notifications/notificationCenterEngine";
+import { buildRegionKey, computeConnectivityStaleness } from "@/lib/connectivity/telecomConnectivityService";
 import {
   getNotificationColorToken,
   getNotificationIcon,
@@ -399,6 +401,109 @@ async function getShelterOperationalAlerts(): Promise<ShelterOperationalAlertIte
   }
 }
 
+/**
+ * Transiciones de conectividad de emergencia que ameritan notificacion
+ * (activacion/expansion/fin de roaming, red degradada/restablecida, nuevo
+ * punto de conectividad, dato desactualizado — spec ARGUS v1.0.3.6 §16).
+ * Se pliega al mismo `Promise.all`/motor que refugios y el resto de fuentes
+ * de esta ruta, no crea un segundo centro de alertas.
+ */
+async function getConnectivityAlerts(): Promise<ConnectivityAlertItem[]> {
+  try {
+    const now = new Date();
+    const alerts: ConnectivityAlertItem[] = [];
+
+    const statusRows = await prisma.telecomConnectivityStatus.findMany({
+      where: {
+        OR: [{ roamingType: { not: "none" } }, { networkState: { in: ["degraded", "outage"] } }, { isStale: true }],
+      },
+      take: 100,
+    });
+
+    for (const row of statusRows) {
+      const regionKey = buildRegionKey(row);
+      const stale = row.isStale || computeConnectivityStaleness({ lastUpdatedAt: row.lastUpdatedAt, now });
+
+      let alertReason: ConnectivityAlertItem["alertReason"] | null = null;
+      if (stale) {
+        alertReason = "marked_stale";
+      } else {
+        const latestEvidence = await prisma.telecomConnectivityEvidence.findFirst({
+          where: { regionKey, subjectType: "region" },
+          orderBy: { createdAt: "desc" },
+        });
+        const notableTypes = new Set(["activated", "expanded", "ended", "degraded", "restored"]);
+        if (latestEvidence && notableTypes.has(latestEvidence.eventType)) {
+          alertReason = latestEvidence.eventType as ConnectivityAlertItem["alertReason"];
+        } else if (row.networkState === "outage") {
+          alertReason = "outage";
+        } else if (row.networkState === "degraded") {
+          alertReason = "degraded";
+        } else if (row.roamingType !== "none") {
+          alertReason = "activated";
+        }
+      }
+      if (!alertReason) continue;
+
+      alerts.push({
+        regionKey,
+        adminLevel1: row.adminLevel1,
+        adminLevel2: row.adminLevel2,
+        latitude: row.centroidLatitude,
+        longitude: row.centroidLongitude,
+        countryCode: row.countryCode,
+        roamingType: row.roamingType,
+        networkState: row.networkState,
+        isStale: stale,
+        verificationStatus: row.verificationStatus,
+        sourceType: row.sourceType,
+        sourceName: row.sourceName,
+        confidence: row.confidence,
+        lastUpdatedAt: row.lastUpdatedAt,
+        alertReason,
+      });
+    }
+
+    const recentPointEvidence = await prisma.telecomConnectivityEvidence.findMany({
+      where: { subjectType: "poi", eventType: "point_added", createdAt: { gte: new Date(now.getTime() - 24 * 3_600_000) } },
+      take: 50,
+    });
+    for (const evidence of recentPointEvidence) {
+      if (!evidence.poiId) continue;
+      const poi = await prisma.criticalPoi.findUnique({ where: { id: evidence.poiId } });
+      if (!poi) continue;
+      alerts.push({
+        regionKey: `poi:${poi.id}`,
+        adminLevel1: poi.adminLevel1 ?? "Chile",
+        adminLevel2: poi.adminLevel2,
+        latitude: poi.latitude,
+        longitude: poi.longitude,
+        countryCode: poi.countryCode,
+        roamingType: "none",
+        networkState: "unknown",
+        isStale: false,
+        verificationStatus: "unverified",
+        sourceType: evidence.sourceType,
+        sourceName: evidence.sourceName,
+        confidence: evidence.confidenceScore,
+        lastUpdatedAt: evidence.createdAt,
+        alertReason: "point_added",
+      });
+    }
+
+    return alerts;
+  } catch (error) {
+    logOperationalEvent({
+      event: "notification_source_fetch_failed",
+      level: "warn",
+      component: "notifications",
+      outcome: "failure",
+      detail: { source: "connectivity_alerts", message: error instanceof Error ? error.message : "unknown" },
+    });
+    return [];
+  }
+}
+
 function predictiveSeverity(value: string): ArgusNotificationSeverity {
   if (value === "P0_CRITICAL") return "P0_CRITICAL";
   if (value === "P1_HIGH") return "P1_HIGH";
@@ -515,6 +620,7 @@ export async function GET(request: NextRequest) {
     vestaReminders,
     knowledgeIncidents,
     shelterAlerts,
+    connectivityAlerts,
   ] = await Promise.all([
     getPersistedEvents(),
     getExternalEvents(),
@@ -523,6 +629,7 @@ export async function GET(request: NextRequest) {
     getDueVestaReminders(),
     getCriticalKnowledgeIncidents(),
     getShelterOperationalAlerts(),
+    getConnectivityAlerts(),
   ]);
   // Fail-closed: an empty real-data result never auto-fills with demoEvents.
   // The fallback only fires when `isDemoDataAllowed()` (src/lib/security/
@@ -547,6 +654,7 @@ export async function GET(request: NextRequest) {
       reminders: vestaReminders,
       knowledgeIncidents,
       shelterAlerts,
+      connectivityAlerts,
       readIds,
       userLocation,
     }),

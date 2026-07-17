@@ -135,6 +135,19 @@ export function canUseFenixInstitutional(user: RbacUser | null | undefined) {
   return hasAnyRole(user, ["INSTITUTIONAL_ADMIN", "ADMIN", "SUPER_ADMIN"]);
 }
 
+/**
+ * Floor for marking a TelecomConnectivityStatus/connectivity point as
+ * `verificationStatus: "official"`. `requireOperator()` (OPERATOR/ANALYST+)
+ * is enough to record a candidate/corroborated entry citing a source, but
+ * "official" is a claim that an authority (SUBTEL/SENAPRED/carrier/
+ * municipality) itself confirmed it — same tier-6+ floor as
+ * `canUseFenixInstitutional`, plus the AUTHORITY role that exists precisely
+ * for this kind of institutional confirmation.
+ */
+export function canConfirmOfficialConnectivityStatus(user: RbacUser | null | undefined) {
+  return hasAnyRole(user, ["AUTHORITY", "INSTITUTIONAL_ADMIN", "ADMIN", "SUPER_ADMIN"]);
+}
+
 export function canUseAuraPro(user: RbacUser | null | undefined) {
   return hasAnyRole(user, medicalRoles);
 }
