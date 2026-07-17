@@ -1,4 +1,5 @@
-import type { CriticalPoi, CriticalPoiBoundingBox } from "@/lib/criticalPoi/criticalPoiTypes";
+import type { CriticalPoiBoundingBox } from "@/lib/criticalPoi/criticalPoiTypes";
+import type { CriticalPoiWithOperationalStatus } from "@/lib/criticalPoi/shelterOperationalStatusTypes";
 
 /**
  * Cliente del layer de infraestructura critica: lee `/api/critical-pois`
@@ -16,7 +17,7 @@ export interface CriticalCityAggregate {
 }
 
 interface CriticalPoiResponse {
-  pois: CriticalPoi[];
+  pois: CriticalPoiWithOperationalStatus[];
   cityAggregates: CriticalCityAggregate[];
   error?: string;
 }

@@ -1,5 +1,20 @@
 [
   {
+    "changeId": "03c1cb25055f",
+    "date": "2026-07-16",
+    "commit": "pending-03c1cb2",
+    "title": "ARGUS 1.0.4.0",
+    "fileCount": 2,
+    "summary": "Se actualizaron 2 archivos relacionados con Dashboard.",
+    "changes": [
+      "Se ajustaron vistas y elementos de interfaz."
+    ],
+    "affectedModules": [
+      "Dashboard"
+    ],
+    "simpleExplanation": "Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada."
+  },
+  {
     "changeId": "8551a81d784e",
     "date": "2026-07-16",
     "commit": "pending-8551a81",

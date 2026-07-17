@@ -32,6 +32,7 @@ import PoiLayer from "@/components/map/PoiLayer";
 import type { PoiEntity } from "@/lib/pois/poiTypes";
 import CriticalPoiLayer from "@/components/map/CriticalPoiLayer";
 import type { CriticalPoi } from "@/lib/criticalPoi/criticalPoiTypes";
+import type { ShelterMapFilterState } from "@/lib/criticalPoi/shelterMapFilters";
 import type { GeoPoint, RouteResult } from "@/lib/routing/routingService";
 import {
   createArgusDivIcon,
@@ -131,6 +132,7 @@ interface Props {
   onPoiSelect?: (poi: PoiEntity) => void;
   selectedCriticalPoiId?: string | null;
   onCriticalPoiSelect?: (poi: CriticalPoi) => void;
+  shelterFilter?: ShelterMapFilterState;
   auraMedicalRoute?: RouteResult | null;
   navigation?: {
     routes: RouteResult[];
@@ -347,6 +349,7 @@ export default function OperationalMap({
   onPoiSelect,
   selectedCriticalPoiId = null,
   onCriticalPoiSelect,
+  shelterFilter,
   auraMedicalRoute = null,
   navigation = null,
   medicalAidRequest = null,
@@ -1493,6 +1496,7 @@ export default function OperationalMap({
               visible={layerSettings.criticalPois !== false}
               selectedPoiId={selectedCriticalPoiId}
               onPoiSelect={onCriticalPoiSelect}
+              shelterFilter={shelterFilter}
               map={mapReady ? mapInstance : null}
               leaflet={mapReady ? leafletInstance : null}
             />

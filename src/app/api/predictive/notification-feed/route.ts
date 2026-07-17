@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPredictiveNotificationPackets } from "@/lib/predictive-core/predictiveFeed";
+import { getCurrentUser } from "@/services/authService";
+import { hasAnyRole } from "@/lib/security/rbac";
+import { OPERATOR_ROLES } from "@/lib/security/apiGuards";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -7,9 +11,26 @@ function severityIsCritical(severity: string) {
   return severity === "P0_CRITICAL" || severity === "P1_HIGH";
 }
 
+/**
+ * SEC-NEW-001 fix: además del título crudo, esta ruta reenviaba
+ * `mapFocus.latitude/longitude` sin redondear (coordenada exacta del
+ * `Report`/`HelpRequest` de origen) en `notifications[].lat/lng`. Mismo
+ * patrón que `/api/predictive/analysis`: operador+ ve datos completos,
+ * cualquier otro llamador recibe la proyección redactada.
+ */
 export async function GET(request: NextRequest) {
+  const user = await getCurrentUser();
+  const canViewFull = hasAnyRole(user, OPERATOR_ROLES);
+
+  if (!user) {
+    const outcome = await enforceRateLimit({ policy: "public_incident_read", request });
+    const blocked = rateLimitResponseForOutcome(outcome);
+    if (blocked) return blocked;
+  }
+
   const packets = await getPredictiveNotificationPackets({
     limit: request.nextUrl.searchParams.get("limit"),
+    audience: canViewFull ? "operator" : "public",
   });
   const notifications = packets
     .filter((packet) => packet.notification)
@@ -30,7 +51,7 @@ export async function GET(request: NextRequest) {
     }))
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     notifications,
     summary: {
       total: notifications.length,
@@ -39,4 +60,8 @@ export async function GET(request: NextRequest) {
       latestAt: notifications[0]?.updatedAt ?? null,
     },
   });
+  if (canViewFull) {
+    response.headers.set("Cache-Control", "private, no-store");
+  }
+  return response;
 }

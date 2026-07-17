@@ -84,6 +84,7 @@ export const notificationTypeLabels: Record<ArgusNotificationType, string> = {
   FENIX: "Fenix",
   SOURCE_UPDATE: "Fuente",
   REMINDER: "Recordatorio",
+  SHELTER: "Refugio",
   SYSTEM: "Sistema",
 };
 
@@ -105,6 +106,7 @@ export function getNotificationIcon(type: ArgusNotificationType) {
     FENIX: "FX",
     SOURCE_UPDATE: "SRC",
     REMINDER: "VST",
+    SHELTER: "SHL",
     SYSTEM: "ARG",
   };
   return icons[type];

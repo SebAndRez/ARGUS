@@ -1,5 +1,23 @@
 # ARGUS Public Changelog
 
+## 2026-07-16 - pending-03c1cb2 - ARGUS 1.0.4.0
+
+**Archivos modificados:** 2
+
+**Resumen publico:**  
+Se actualizaron 2 archivos relacionados con Dashboard.
+
+**Cambios principales:**
+- Se ajustaron vistas y elementos de interfaz.
+
+**Modulos afectados:**
+- Dashboard
+
+**En simple:**  
+Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada.
+
+---
+
 ## 2026-07-16 - pending-8551a81 - ARGUS 1.0.3.0
 
 **Archivos modificados:** 328

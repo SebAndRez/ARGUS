@@ -28,6 +28,7 @@ export type ArgusNotificationType =
   | "FENIX"
   | "SOURCE_UPDATE"
   | "REMINDER"
+  | "SHELTER"
   | "SYSTEM";
 
 export type ArgusNotificationStatus =

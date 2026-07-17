@@ -140,6 +140,18 @@ export const ARGUS_SOURCE_REGISTRY: ArgusSourceRegistryEntry[] = [
   },
   { id: "gdelt", name: "GDELT", category: "geopolitical", tier: 1, priority: 72, status: "planned", reliabilityScore: 70, accessType: "free", notes: "Señales geopolíticas y noticias; requiere contraste." },
   { id: "openstreetmap", name: "OpenStreetMap Data", category: "geospatial", tier: 1, priority: 85, status: "planned", reliabilityScore: 88, accessType: "free_with_terms", notes: "Base geográfica y contexto territorial." },
+  {
+    id: "codigo_azul",
+    name: "Código Azul — Ministerio de Desarrollo Social y Familia",
+    category: "geospatial",
+    tier: 1,
+    priority: 80,
+    status: "active",
+    reliabilityScore: 78,
+    accessType: "free",
+    notes:
+      "Listado oficial de albergues/hospederías del programa Código Azul (sitio Laravel server-rendered, sin API pública — extracción HTML controlada). \"Cupos\" publicado se normaliza como capacityDeclared, nunca como disponibilidad confirmada.",
+  },
   { id: "copernicus_glofas", name: "Copernicus GloFAS / GFM", category: "flood", tier: 2, priority: 80, status: "planned", reliabilityScore: 91, accessType: "free_with_terms", notes: "Inundaciones y caudales." },
   { id: "hdx_hapi", name: "HDX HAPI", category: "humanitarian", tier: 2, priority: 70, status: "planned", reliabilityScore: 82, accessType: "free_with_terms", notes: "Datasets humanitarios normalizados." },
   {

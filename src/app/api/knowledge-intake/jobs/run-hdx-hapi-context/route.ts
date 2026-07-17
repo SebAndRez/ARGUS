@@ -2,12 +2,20 @@ import { NextResponse } from "next/server";
 import { buildHapiEvidence, buildHapiHumanitarianContextSnapshot, getHapiIdentifierStatus, type HapiRequestParams } from "@/lib/knowledge-intake/adapters/hdxHapiAdapter";
 import { saveContextEvidenceIfNew } from "@/lib/knowledge-intake/persistence/contextEvidence";
 import { requireOperator } from "@/lib/security/apiGuards";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   const { user, response: authResponse } = await requireOperator();
   if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
+  const rateLimitOutcome = await enforceRateLimit({
+    policy: "knowledge_intake_job_manual_run",
+    request,
+    identity: { userId: user.id },
+  });
+  const rateLimitedResponse = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimitedResponse) return rateLimitedResponse;
   const body = await request.json().catch(() => ({})) as HapiRequestParams & { maxIncidents?: number; sinceHours?: number };
   const config = getHapiIdentifierStatus();
   if (config.requiresConfiguration) return NextResponse.json({ runId: null, status: "requiresConfiguration", sourceId: "hdx-hapi", consideredIncidents: 0, enrichedIncidents: 0, evidenceCreated: 0, warnings: [config.message], errors: [] }, { status: 503 });

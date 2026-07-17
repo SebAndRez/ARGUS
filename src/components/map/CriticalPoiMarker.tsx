@@ -1,4 +1,9 @@
 import type { CriticalPoi, CriticalPriority } from "@/lib/criticalPoi/criticalPoiTypes";
+import type {
+  CriticalPoiWithOperationalStatus,
+  ShelterStatus,
+  ShelterVerificationStatus,
+} from "@/lib/criticalPoi/shelterOperationalStatusTypes";
 
 /**
  * Iconos de infraestructura critica. Deliberadamente distintos de
@@ -77,18 +82,62 @@ const escapeHtml = (value: string) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
-export function createCriticalPoiDivIcon(poi: CriticalPoi, options: { selected?: boolean } = {}): CriticalPoiDivIconDefinition {
+/**
+ * Color por estado operacional del refugio (spec ARGUS v1.0.3.4 §11): verde
+ * disponible, amarillo capacidad limitada, rojo lleno/no recomendable, gris
+ * cerrado/sin confirmar. `compromised` cae en rojo (no recomendable).
+ */
+const shelterStatusColor: Record<ShelterStatus, string> = {
+  available: "#16a34a",
+  near_capacity: "#f59e0b",
+  full: "#dc2626",
+  compromised: "#dc2626",
+  closed: "#6b7280",
+  unknown: "#6b7280",
+};
+
+/** Estilo/ancho de borde por confianza (spec §11): solido+grueso = oficial, solido+fino = fuente unica/corroborada, punteado = estimado/sin verificar — nunca solo color, para accesibilidad. */
+const verificationBorder: Record<ShelterVerificationStatus, { style: "solid" | "dashed"; width: number }> = {
+  official: { style: "solid", width: 3 },
+  corroborated: { style: "solid", width: 2.5 },
+  candidate: { style: "solid", width: 1.5 },
+  unverified: { style: "dashed", width: 1.5 },
+  rejected: { style: "dashed", width: 1.5 },
+};
+
+export function createCriticalPoiDivIcon(
+  poi: CriticalPoiWithOperationalStatus,
+  options: { selected?: boolean } = {}
+): CriticalPoiDivIconDefinition {
   const size = prioritySize[poi.priority] + (options.selected ? 6 : 0);
-  const color = priorityColor[poi.priority];
+  const status = poi.category === "shelter" ? poi.operationalStatus : undefined;
+  const color = status ? shelterStatusColor[status.shelterStatus] : priorityColor[poi.priority];
   const glyph = categoryGlyph[poi.category] ?? "📍";
-  const title = escapeHtml(`${poi.name} · ${poi.priority}`);
+  const statusLabel = status ? ` · ${shelterStatusLabel[status.shelterStatus]}` : "";
+  const staleLabel = status?.isStale ? " · dato desactualizado" : "";
+  const locationAccuracy = poi.tags?.locationAccuracy;
+  const isApproximateLocation = Boolean(locationAccuracy) && locationAccuracy !== "precise";
+  const accuracyLabel = isApproximateLocation ? " · ubicación aproximada, no es la dirección verificada" : "";
+  const title = escapeHtml(`${poi.name} · ${poi.priority}${statusLabel}${staleLabel}${accuracyLabel}`);
   const ring = options.selected
     ? "box-shadow:0 0 0 2px rgba(255,255,255,0.95),0 0 0 4px rgba(8,47,73,0.9),0 0 14px rgba(220,38,38,0.6);"
     : "box-shadow:0 1px 5px rgba(0,0,0,0.55);";
+  const border = status
+    ? verificationBorder[status.verificationStatus]
+    : { style: "solid" as const, width: 1.5 };
+  const staleBadge = status?.isStale
+    ? `<span aria-hidden="true" style="position:absolute;top:-4px;right:-4px;width:${Math.round(size * 0.4)}px;height:${Math.round(size * 0.4)}px;background:#b45309;border-radius:999px;border:1px solid rgba(255,255,255,0.9);display:flex;align-items:center;justify-content:center;font-size:${Math.round(size * 0.28)}px;line-height:1;">⏱</span>`
+    : "";
+  // Ubicacion no verificada (geocodificada/centroide de comuna, no la
+  // coordenada oficial de la fuente) — nunca se presenta como direccion
+  // exacta, spec ARGUS v1.0.3.5 §19.
+  const approximateBadge = isApproximateLocation
+    ? `<span aria-hidden="true" style="position:absolute;bottom:-4px;left:-4px;width:${Math.round(size * 0.4)}px;height:${Math.round(size * 0.4)}px;background:#334155;border-radius:999px;border:1px solid rgba(255,255,255,0.9);display:flex;align-items:center;justify-content:center;font-size:${Math.round(size * 0.32)}px;line-height:1;color:#fff;font-weight:700;">~</span>`
+    : "";
 
   const html = `
-    <div class="argus-critical-poi-marker argus-critical-poi-${poi.priority.toLowerCase()}" title="${title}" aria-label="${title}" role="img" style="width:${size}px;height:${size}px;background:${color};${ring}clip-path:${priorityShape[poi.priority]};border:1.5px solid rgba(255,255,255,0.9);display:flex;align-items:center;justify-content:center;font-size:${Math.round(size * 0.5)}px;line-height:1;">
-      ${glyph}
+    <div class="argus-critical-poi-marker argus-critical-poi-${poi.priority.toLowerCase()}" title="${title}" aria-label="${title}" role="img" style="position:relative;width:${size}px;height:${size}px;background:${color};${ring}clip-path:${priorityShape[poi.priority]};border:${border.width}px ${border.style} rgba(255,255,255,0.9);display:flex;align-items:center;justify-content:center;font-size:${Math.round(size * 0.5)}px;line-height:1;">
+      ${glyph}${staleBadge}${approximateBadge}
     </div>
   `;
 
@@ -99,6 +148,15 @@ export function createCriticalPoiDivIcon(poi: CriticalPoi, options: { selected?:
     iconAnchor: [size / 2, size / 2],
   };
 }
+
+const shelterStatusLabel: Record<ShelterStatus, string> = {
+  available: "disponible",
+  near_capacity: "capacidad limitada",
+  full: "lleno",
+  compromised: "no recomendado",
+  closed: "cerrado",
+  unknown: "sin confirmar",
+};
 
 /** Cluster especial de infraestructura critica: insignia de escudo con conteo, no el circulo gris generico de PoiMarker. `hasP0P1` decide el color (rojo si agrupa P0/P1, ambar si es solo P2/P3). */
 export function createCriticalClusterDivIcon(count: number, hasP0P1: boolean): CriticalPoiDivIconDefinition {

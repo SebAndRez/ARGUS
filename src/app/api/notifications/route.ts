@@ -17,6 +17,7 @@ import {
   prioritizeGlobalWatchNotifications,
   resolveDemoFallback,
   type KnowledgeIncidentItem,
+  type ShelterOperationalAlertItem,
 } from "@/lib/notifications/notificationCenterEngine";
 import {
   getNotificationColorToken,
@@ -349,6 +350,55 @@ async function getDueVestaReminders() {
   }
 }
 
+/**
+ * Refugios que ameritan alerta operacional (lleno/cerrado/comprometido, ruta
+ * de acceso cortada, o dato desactualizado — spec ARGUS v1.0.3.4 §18). Lee
+ * `CriticalPoiOperationalStatus` (ver `src/lib/criticalPoi/*`), no crea un
+ * segundo centro de alertas: se pliega al mismo `Promise.all` y motor que
+ * el resto de fuentes de esta ruta.
+ */
+async function getShelterOperationalAlerts(): Promise<ShelterOperationalAlertItem[]> {
+  try {
+    const rows = await prisma.criticalPoiOperationalStatus.findMany({
+      where: {
+        OR: [
+          { shelterStatus: { in: ["full", "closed", "compromised"] } },
+          { isStale: true },
+          { routeStatus: "blocked" },
+        ],
+      },
+      include: { poi: true },
+      take: 100,
+    });
+
+    return rows
+      .filter((row) => row.poi.category === "shelter")
+      .map((row) => ({
+        poiId: row.poiId,
+        poiName: row.poi.name,
+        latitude: row.poi.latitude,
+        longitude: row.poi.longitude,
+        countryCode: row.poi.countryCode,
+        shelterStatus: row.shelterStatus,
+        routeStatus: row.routeStatus,
+        isStale: row.isStale,
+        sourceType: row.sourceType,
+        sourceName: row.sourceName,
+        confidence: row.confidence,
+        lastUpdatedAt: row.lastUpdatedAt,
+      }));
+  } catch (error) {
+    logOperationalEvent({
+      event: "notification_source_fetch_failed",
+      level: "warn",
+      component: "notifications",
+      outcome: "failure",
+      detail: { source: "shelter_operational_alerts", message: error instanceof Error ? error.message : "unknown" },
+    });
+    return [];
+  }
+}
+
 function predictiveSeverity(value: string): ArgusNotificationSeverity {
   if (value === "P0_CRITICAL") return "P0_CRITICAL";
   if (value === "P1_HIGH") return "P1_HIGH";
@@ -364,7 +414,12 @@ function predictiveType(inputId: string): ArgusNotificationType {
 async function getPredictiveNotifications(readIds: string[]): Promise<ArgusNotification[]> {
   let packets: Awaited<ReturnType<typeof getPredictiveNotificationPackets>> = [];
   try {
-    packets = await getPredictiveNotificationPackets({ limit: 30 });
+    // SEC-NEW-001: `GET /api/notifications` has no session/role check at
+    // all (confirmed — no `getCurrentUser()` call anywhere in this route's
+    // GET handler), so it must always request the redacted public
+    // projection from Predictive Core. Never pass "operator" here without
+    // first adding real session gating to this route.
+    packets = await getPredictiveNotificationPackets({ limit: 30, audience: "public" });
   } catch (error) {
     logOperationalEvent({
       event: "notification_source_fetch_failed",
@@ -459,6 +514,7 @@ export async function GET(request: NextRequest) {
     predictiveNotifications,
     vestaReminders,
     knowledgeIncidents,
+    shelterAlerts,
   ] = await Promise.all([
     getPersistedEvents(),
     getExternalEvents(),
@@ -466,6 +522,7 @@ export async function GET(request: NextRequest) {
     getPredictiveNotifications(readIds),
     getDueVestaReminders(),
     getCriticalKnowledgeIncidents(),
+    getShelterOperationalAlerts(),
   ]);
   // Fail-closed: an empty real-data result never auto-fills with demoEvents.
   // The fallback only fires when `isDemoDataAllowed()` (src/lib/security/
@@ -489,6 +546,7 @@ export async function GET(request: NextRequest) {
       sourceHealth,
       reminders: vestaReminders,
       knowledgeIncidents,
+      shelterAlerts,
       readIds,
       userLocation,
     }),

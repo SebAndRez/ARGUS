@@ -3,7 +3,9 @@
 import { useEffect, useRef } from "react";
 import { fetchCriticalPois, type CriticalCityAggregate } from "@/lib/criticalPoi/criticalPoiClient";
 import { getClusterConfigForPriority, isCriticalCluster, shouldShowCityAggregate } from "@/lib/criticalPoi/criticalPoiPriority";
+import { defaultShelterMapFilterState, matchesShelterFilter, type ShelterMapFilterState } from "@/lib/criticalPoi/shelterMapFilters";
 import type { CriticalPoi, CriticalPriority } from "@/lib/criticalPoi/criticalPoiTypes";
+import type { CriticalPoiWithOperationalStatus } from "@/lib/criticalPoi/shelterOperationalStatusTypes";
 import {
   createCriticalCityAggregateDivIcon,
   createCriticalClusterDivIcon,
@@ -31,17 +33,19 @@ interface Props {
   visible: boolean;
   selectedPoiId?: string | null;
   onPoiSelect?: (poi: CriticalPoi) => void;
+  /** Filtro de estado/antiguedad aplicado solo a categoria "shelter" (ver `shelterMapFilters.ts`); el resto de infraestructura critica no se ve afectada. */
+  shelterFilter?: ShelterMapFilterState;
 }
 
 interface PoiCluster {
   id: string;
   lat: number;
   lng: number;
-  pois: CriticalPoi[];
+  pois: CriticalPoiWithOperationalStatus[];
   priorityBucket: CriticalPriority;
 }
 
-type RenderItem = CriticalPoi | PoiCluster | CriticalCityAggregate;
+type RenderItem = CriticalPoiWithOperationalStatus | PoiCluster | CriticalCityAggregate;
 
 const DEBOUNCE_MS = 400;
 
@@ -53,7 +57,7 @@ function isCityAggregate(item: RenderItem): item is CriticalCityAggregate {
   return "countsByCategory" in item;
 }
 
-function clusterBucket(pois: CriticalPoi[], bucketPriority: CriticalPriority, zoom: number): Array<CriticalPoi | PoiCluster> {
+function clusterBucket(pois: CriticalPoiWithOperationalStatus[], bucketPriority: CriticalPriority, zoom: number): Array<CriticalPoiWithOperationalStatus | PoiCluster> {
   if (pois.length === 0) return [];
   const config = getClusterConfigForPriority(bucketPriority);
   if (!config.clusterEligible || pois.length <= config.clusterThreshold) return pois;
@@ -76,7 +80,7 @@ function clusterBucket(pois: CriticalPoi[], bucketPriority: CriticalPriority, zo
 }
 
 /** P0 y P1 se agrupan juntos (son la misma "unidad critica" para efectos de cluster especial); P2 y P3 se agrupan cada uno por separado. */
-function clusterCriticalPois(pois: CriticalPoi[], zoom: number): Array<CriticalPoi | PoiCluster> {
+function clusterCriticalPois(pois: CriticalPoiWithOperationalStatus[], zoom: number): Array<CriticalPoiWithOperationalStatus | PoiCluster> {
   const p0p1 = pois.filter((poi) => poi.priority === "P0" || poi.priority === "P1");
   const p2 = pois.filter((poi) => poi.priority === "P2");
   const p3 = pois.filter((poi) => poi.priority === "P3");
@@ -88,20 +92,31 @@ function clusterCriticalPois(pois: CriticalPoi[], zoom: number): Array<CriticalP
   ];
 }
 
-export default function CriticalPoiLayer({ map, leaflet, visible, selectedPoiId, onPoiSelect }: Props) {
+export default function CriticalPoiLayer({ map, leaflet, visible, selectedPoiId, onPoiSelect, shelterFilter }: Props) {
   const layerGroupRef = useRef<import("leaflet").LayerGroup | null>(null);
   const debounceRef = useRef<number | null>(null);
   const requestSeqRef = useRef(0);
   const itemsRef = useRef<RenderItem[]>([]);
+  const rawPoisRef = useRef<CriticalPoiWithOperationalStatus[]>([]);
+  const lastZoomRef = useRef(0);
   const selectedPoiIdRef = useRef<string | null | undefined>(selectedPoiId);
   const onPoiSelectRef = useRef(onPoiSelect);
+  const shelterFilterRef = useRef<ShelterMapFilterState>(shelterFilter ?? defaultShelterMapFilterState);
   const renderRef = useRef<() => void>(() => {});
+  const recomputeRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     selectedPoiIdRef.current = selectedPoiId;
     onPoiSelectRef.current = onPoiSelect;
     renderRef.current();
   }, [selectedPoiId, onPoiSelect]);
+
+  useEffect(() => {
+    shelterFilterRef.current = shelterFilter ?? defaultShelterMapFilterState;
+    // Un cambio de filtro no requiere una nueva consulta a la API — vuelve a
+    // agrupar/clustear los POIs ya obtenidos con el filtro nuevo.
+    recomputeRef.current();
+  }, [shelterFilter]);
 
   useEffect(() => {
     if (!map || !leaflet) return;
@@ -154,8 +169,23 @@ export default function CriticalPoiLayer({ map, leaflet, visible, selectedPoiId,
     if (!visible) {
       itemsRef.current = [];
       layerGroup.clearLayers();
+      recomputeRef.current = () => {};
       return;
     }
+
+    let cityAggregatesRef: CriticalCityAggregate[] = [];
+
+    const recompute = () => {
+      const zoom = lastZoomRef.current;
+      if (shouldShowCityAggregate(zoom)) {
+        itemsRef.current = cityAggregatesRef;
+      } else {
+        const filtered = rawPoisRef.current.filter((poi) => matchesShelterFilter(poi, shelterFilterRef.current));
+        itemsRef.current = clusterCriticalPois(filtered, zoom);
+      }
+      renderItems();
+    };
+    recomputeRef.current = recompute;
 
     const load = async () => {
       const zoom = map.getZoom();
@@ -169,8 +199,10 @@ export default function CriticalPoiLayer({ map, leaflet, visible, selectedPoiId,
       );
       if (seq !== requestSeqRef.current) return;
 
-      itemsRef.current = shouldShowCityAggregate(zoom) ? cityAggregates : clusterCriticalPois(pois, zoom);
-      renderItems();
+      lastZoomRef.current = zoom;
+      rawPoisRef.current = pois;
+      cityAggregatesRef = cityAggregates;
+      recompute();
     };
 
     const scheduleLoad = () => {

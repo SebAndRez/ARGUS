@@ -2,12 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { runAllConfiguredKnowledgeIngestion } from "@/lib/knowledge-intake/persistence/knowledgeIngestionJobs";
 import { explainRunAllBlockedSources, getDefaultRunAllSources } from "@/lib/source-governance/runAllPolicy";
 import { requireOperator } from "@/lib/security/apiGuards";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   const { user, response: authResponse } = await requireOperator();
   if (authResponse || !user) return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
+  const rateLimitOutcome = await enforceRateLimit({
+    policy: "knowledge_intake_job_manual_run",
+    request,
+    identity: { userId: user.id },
+  });
+  const rateLimitedResponse = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimitedResponse) return rateLimitedResponse;
   try {
     const body = await request.json().catch(() => ({})) as { includeContextual?: boolean; includeHydrologicalContext?: boolean; includeCoastalObservationContext?: boolean; includeSeaLevelObservationContext?: boolean; includeAirQualityContext?: boolean; includeCriticalInfrastructureContext?: boolean; includeHumanitarianContext?: boolean; includePublicHealth?: boolean; includeEcdc?: boolean; includeMediaSignals?: boolean; includeGdelt?: boolean; includeFloodForecastContext?: boolean; includeObservedFloodContext?: boolean; includeCopernicusFlood?: boolean; includeVolcanoReports?: boolean; includeSmithsonianGvp?: boolean; includeImpact?: boolean; includeShakeMap?: boolean; includePager?: boolean; purpose?: string; maxIncidents?: number; radiusKm?: number; categories?: string[] };
     const includeContextual = request.nextUrl.searchParams.get("includeContextual") === "true" || body.includeContextual === true;

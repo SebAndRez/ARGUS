@@ -20,7 +20,22 @@ export type FenixShelterStatus =
   | "near_capacity"
   | "full"
   | "closed"
-  | "compromised";
+  | "compromised"
+  /** Refugio real sin reporte de estado todavia (nunca usado por escenarios demo). */
+  | "unknown";
+
+export type FenixShelterRouteStatus = "open" | "congested" | "blocked" | "unknown";
+export type FenixShelterSourceType = "senapred" | "codigo_azul" | "municipality" | "media" | "manual_operator" | "osm" | "argus_estimate" | "demo";
+
+/**
+ * Como FENIX puede usar un refugio real como candidato (spec ARGUS v1.0.3.5
+ * §23): `confirmed` = evidencia oficial de que esta abierto y disponible;
+ * `potential` = aparece en el registro oficial pero su disponibilidad no
+ * esta confirmada; `reference` = el recinto existe (p.ej. solo Codigo Azul,
+ * sin estado operacional verificado) pero no debe usarse como recomendacion
+ * operacional. Ver `deriveFenixRecommendationTier` en `fenixShelterSource.ts`.
+ */
+export type FenixShelterRecommendationTier = "confirmed" | "potential" | "reference";
 
 export type FenixVehicleType =
   | "pedestrian"
@@ -73,16 +88,49 @@ export type FenixRouteCollapsePrediction = {
 
 export type FenixShelter = {
   id: string;
-  scenarioId: string;
+  /** Solo presente para refugios demo; los reales se filtran por proximidad, no por escenario. */
+  scenarioId?: string;
   name: string;
   status: FenixShelterStatus;
   coordinates: [number, number];
-  capacity: number;
-  currentOccupancy: number;
-  medicalSupport: boolean;
-  powerAvailable: boolean;
-  waterAvailable: boolean;
+  /** Ausente = capacidad no informada todavia. Nunca inventar un numero. */
+  capacity?: number;
+  /** Ausente = ocupacion no informada todavia. Nunca inventar un numero. */
+  currentOccupancy?: number;
+  /** Cifra autoreportada por la fuente (p.ej. "Cupos" de Codigo Azul), sin significado de disponibilidad confirmado. Nunca presentar como "cupos disponibles". */
+  capacityDeclared?: number;
+  /** Horario de operacion publicado tal cual (p.ej. "24 Horas"). Nunca implica disponibilidad actual. */
+  operatingHours?: string;
+  /** Ausente = servicio no informado (nunca equivale a `false`). */
+  medicalSupport?: boolean;
+  powerAvailable?: boolean;
+  waterAvailable?: boolean;
+  /** Servicios adicionales — solo poblados para refugios reales, ausentes (nunca `false`) en refugios demo. */
+  hasFood?: boolean;
+  hasHeating?: boolean;
+  hasBathrooms?: boolean;
+  hasShowers?: boolean;
+  isAccessible?: boolean;
+  allowsPets?: boolean;
+  hasConnectivity?: boolean;
   accessNotes?: string;
+
+  /** Campos de procedencia — solo poblados para refugios reales (`source: "critical_poi"` en `/api/fenix/shelters`); ausentes en refugios demo. */
+  poiId?: string;
+  address?: string;
+  operatorName?: string;
+  contactPhone?: string;
+  routeStatus?: FenixShelterRouteStatus;
+  sourceType?: FenixShelterSourceType;
+  sourceName?: string;
+  confidence?: number;
+  verificationStatus?: string;
+  lastVerifiedAt?: string;
+  isStale?: boolean;
+  publicationStatus?: "active" | "missing" | "stale" | "archived";
+  /** Precision de la ubicacion — ver `locationAccuracy` en `CriticalPoi.tagsJson`. Ausente en refugios demo (siempre precisos). */
+  locationAccuracy?: "precise" | "approximate" | "commune_centroid" | "unresolved";
+  fenixRecommendationTier?: FenixShelterRecommendationTier;
 };
 
 export type FenixPopulationExposure = {

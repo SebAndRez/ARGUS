@@ -30,7 +30,11 @@ const sourceStatuses: SourceHealthStatus[] = [
  * always zero/empty, never backfilled from the synthetic builders.
  */
 export async function GET() {
-  const predictiveAnalyses = await getPredictiveAnalyses({ limit: 8 });
+  // SEC-NEW-001: this route has no session/role check (confirmed — no
+  // `getCurrentUser()` call anywhere in this file), so it must always
+  // request the redacted public projection from Predictive Core. Never
+  // pass "operator" here without first adding real session gating.
+  const predictiveAnalyses = await getPredictiveAnalyses({ limit: 8, audience: "public" });
   const { mode, operational, incidents: allIncidents, message } = getCommandCenterIncidents();
   const sources = getCommandSourceHealth();
   // Prompt 10 — `incidents` puede incluir estados terminales (`CLOSED`/

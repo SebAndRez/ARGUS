@@ -30,6 +30,7 @@ import type {
   FenixEvacuationRoute,
   FenixInstitutionalAccessLevel,
   FenixRouteCollapsePrediction,
+  FenixShelter,
   FenixSimulationResult as LegacyFenixSimulationResult,
   FenixVehicleType,
 } from "@/types/fenix";
@@ -353,15 +354,52 @@ export function estimateReportDensity(_reports: unknown[], zones: FenixAffectedZ
   return aggregateReportsByArea(zones);
 }
 
-export function estimateShelterPressure(shelters: typeof demoFenixShelters) {
+export function estimateShelterPressure(shelters: FenixShelter[]) {
   return shelters.map((shelter) => {
-    const ratio = shelter.currentOccupancy / Math.max(1, shelter.capacity);
+    const hasCapacityData = typeof shelter.capacity === "number" && typeof shelter.currentOccupancy === "number" && shelter.capacity > 0;
+    const ratio = hasCapacityData ? shelter.currentOccupancy! / shelter.capacity! : null;
     return {
       id: shelter.id,
       name: shelter.name,
-      pressure: ratio > 0.9 ? "critical" as const : ratio > 0.75 ? "high" as const : ratio > 0.45 ? "medium" as const : "low" as const,
+      pressure:
+        ratio === null
+          ? ("unknown" as const)
+          : ratio > 0.9
+            ? ("critical" as const)
+            : ratio > 0.75
+              ? ("high" as const)
+              : ratio > 0.45
+                ? ("medium" as const)
+                : ("low" as const),
     };
   });
+}
+
+/**
+ * Puntaje de preferencia de un refugio candidato (menor = mas recomendable),
+ * usado tanto para el ranking de `recommendedShelter` como por cualquier
+ * consumidor futuro que necesite comparar refugios reales entre si. Pondera
+ * ocupacion, estado de ruta, vigencia y confianza del dato — no solo la
+ * razon de ocupacion (spec ARGUS v1.0.3.4 §14). Datos demo (sin
+ * routeStatus/confidence/isStale) se comportan igual que antes: la
+ * ocupacion sigue siendo el unico factor real cuando el resto es unknown.
+ */
+export function scoreShelterCandidate(shelter: FenixShelter): number {
+  let score =
+    typeof shelter.capacity === "number" && typeof shelter.currentOccupancy === "number" && shelter.capacity > 0
+      ? (shelter.currentOccupancy / shelter.capacity) * 100
+      : 50;
+
+  if (shelter.routeStatus === "blocked") score += 1000;
+  else if (shelter.routeStatus === "congested") score += 25;
+  else if (shelter.routeStatus === undefined || shelter.routeStatus === "unknown") score += 10;
+
+  if (shelter.isStale) score += 30;
+
+  const confidence = shelter.confidence ?? 60;
+  score += (100 - confidence) * 0.3;
+
+  return score;
 }
 
 export function buildPublicGuidance(result: Pick<FenixSimulationResult, "isDemo" | "uncertainty">) {
@@ -468,7 +506,12 @@ export function runFenixSimulation(input: {
     routes.find((route) => route.status !== "blocked");
   const recommendedShelter = shelters
     .filter((shelter) => shelter.status === "available" || shelter.status === "near_capacity")
-    .sort((left, right) => left.currentOccupancy / left.capacity - right.currentOccupancy / right.capacity)[0];
+    // "reference" (existe pero sin evidencia operacional confirmada, p.ej.
+    // solo Codigo Azul) nunca se recomienda como destino — spec ARGUS
+    // v1.0.3.5 §23. Ausente en datos demo (siempre undefined ahi), sin
+    // efecto sobre el comportamiento existente.
+    .filter((shelter) => shelter.fenixRecommendationTier !== "reference")
+    .sort((left, right) => scoreShelterCandidate(left) - scoreShelterCandidate(right))[0];
   const predictions = buildCollapsePredictions(routes);
   const actionPlan = buildActionPlan(scenario.id, predictions, shelters);
   const totalExposedPopulation = normalizedInput.exposedPopulationEstimate ??
@@ -490,7 +533,7 @@ export function runFenixSimulation(input: {
     .map((shelter) => ({
       id: shelter.id,
       name: shelter.name,
-      distanceKm: Number(Math.max(0.8, shelter.currentOccupancy / 1000).toFixed(1)),
+      distanceKm: Number(Math.max(0.8, (shelter.currentOccupancy ?? 0) / 1000).toFixed(1)),
       isDemo: true,
     }));
   const isDemo = true;

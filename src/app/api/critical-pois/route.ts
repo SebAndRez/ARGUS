@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCriticalPoisInBbox } from "@/lib/criticalPoi/criticalPoiPersistenceService";
 import { prioritiesVisibleAtZoom, shouldShowCityAggregate } from "@/lib/criticalPoi/criticalPoiPriority";
+import { getOperationalStatusesByPoiIds } from "@/lib/criticalPoi/shelterOperationalStatusService";
 import type { CriticalPoi, CriticalPoiBoundingBox } from "@/lib/criticalPoi/criticalPoiTypes";
+import type { CriticalPoiWithOperationalStatus } from "@/lib/criticalPoi/shelterOperationalStatusTypes";
 
 /**
  * Lee infraestructura critica YA PERSISTIDA (tabla `CriticalPoi`), no
@@ -17,6 +19,18 @@ function parseCoord(value: string | null): number | null {
   if (!value) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Adjunta el estado operacional (si existe) a los POIs de categoria "shelter". El resto queda intacto - ningun otro modulo/categoria cambia de forma. */
+async function withShelterOperationalStatus(pois: CriticalPoi[]): Promise<CriticalPoiWithOperationalStatus[]> {
+  const shelterIds = pois.filter((poi) => poi.category === "shelter").map((poi) => poi.id);
+  if (shelterIds.length === 0) return pois;
+
+  const statusByPoiId = await getOperationalStatusesByPoiIds(shelterIds);
+  return pois.map((poi) => {
+    const operationalStatus = statusByPoiId.get(poi.id);
+    return operationalStatus ? { ...poi, operationalStatus } : poi;
+  });
 }
 
 function buildCityAggregates(pois: CriticalPoi[]) {
@@ -61,7 +75,8 @@ export async function GET(request: NextRequest) {
 
     const priorities = prioritiesVisibleAtZoom(zoom);
     const pois = await getCriticalPoisInBbox(bbox, { priorities, limit: 800 });
-    return NextResponse.json({ pois, cityAggregates: [] });
+    const poisWithStatus = await withShelterOperationalStatus(pois);
+    return NextResponse.json({ pois: poisWithStatus, cityAggregates: [] });
   } catch (error) {
     const message = error instanceof Error ? error.message : "No se pudo consultar infraestructura crítica.";
     return NextResponse.json(

@@ -1,18 +1,53 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { analyzeHelpRequest } from "@/services/crisisAnalysisService";
 import { getCurrentUser } from "@/services/authService";
 import { logAuditEvent } from "@/services/auditService";
+import { hasAnyRole } from "@/lib/security/rbac";
+import { OPERATOR_ROLES } from "@/lib/security/apiGuards";
+import { toOperatorHelpRequest, toPublicHelpRequest } from "@/lib/security/incidentDto";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 
 const RESTRICTED_ACCOUNT = ["LIMITED", "SUSPENDED", "BANNED"];
+const DEFAULT_LIMIT = 100;
+const MAX_LIMIT = 200;
 
-export async function GET() {
+function parseLimit(value: string | null) {
+  const limit = Number(value ?? DEFAULT_LIMIT);
+  return Number.isInteger(limit) ? Math.min(MAX_LIMIT, Math.max(1, limit)) : DEFAULT_LIMIT;
+}
+
+export async function GET(request: NextRequest) {
+  const user = await getCurrentUser();
+  const canViewFull = hasAnyRole(user, OPERATOR_ROLES);
+
+  // Rate limiting only applies to anonymous/unauthenticated callers — an
+  // authenticated operator/analyst/admin session already identifies the
+  // caller and must not be throttled while refreshing the operational
+  // dashboard (Prompt PRIV-FINAL-001 §16).
+  if (!user) {
+    const outcome = await enforceRateLimit({ policy: "public_incident_read", request });
+    const blocked = rateLimitResponseForOutcome(outcome);
+    if (blocked) return blocked;
+  }
+
+  const limit = parseLimit(request.nextUrl.searchParams.get("limit"));
   const helpRequests = await prisma.helpRequest.findMany({
     include: { user: { select: { publicAlias: true } } },
     orderBy: { createdAt: "desc" },
+    take: limit,
   });
 
-  return NextResponse.json({ helpRequests });
+  const payload = canViewFull
+    ? helpRequests.map(toOperatorHelpRequest)
+    : helpRequests.map(toPublicHelpRequest);
+
+  const response = NextResponse.json({ helpRequests: payload });
+  if (canViewFull) {
+    // Never let a CDN/browser cache the full operator view of PII-bearing rows.
+    response.headers.set("Cache-Control", "private, no-store");
+  }
+  return response;
 }
 
 export async function POST(req: Request) {
@@ -54,12 +89,14 @@ export async function POST(req: Request) {
     },
   });
 
+  // Metadata never carries free-text user input (title/description/location) —
+  // only categorical/operational fields, per PRIV-FINAL-001 §14.
   await logAuditEvent({
     actorUserId: user.id,
     action: "CREATE_HELP_REQUEST",
     targetType: "HelpRequest",
     targetId: helpRequest.id,
-    metadata: { category, title, restrictedMode },
+    metadata: { category, restrictedMode },
   });
 
   return NextResponse.json({ helpRequest, restrictedMode });

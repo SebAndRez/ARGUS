@@ -22,7 +22,7 @@ import {
  * distribuido (Upstash), sin un segundo proveedor.
  */
 
-export type JobLockName = "global-watch" | "chile-alerts" | "senapred-ingestion";
+export type JobLockName = "global-watch" | "chile-alerts" | "senapred-ingestion" | "codigo-azul-shelters";
 
 export interface JobLockRule {
   name: JobLockName;
@@ -65,6 +65,15 @@ export const jobLockRules: Record<JobLockName, JobLockRule> = {
     notes:
       "Lock secundario compartido (Prompt 13 §20 Opción B) — protege únicamente la sección crítica " +
       "promoteChileOfficialAlerts(), llamada tanto por Chile Alerts como por la fuente SENAPRED de Global Watch.",
+  },
+  "codigo-azul-shelters": {
+    name: "codigo-azul-shelters",
+    key: "argus:job-lock:codigo-azul-shelters",
+    ttlMs: 5 * 60 * 1000,
+    notes:
+      "5 min: hasta ~9 páginas HTML secuenciales con retraso deliberado entre solicitudes (cortesía hacia " +
+      "el WAF del sitio oficial) más geocodificación de respaldo ocasional — más lento que chile-alerts pero " +
+      "sin maxDuration explícito declarado, 5 min sigue siendo generoso frente a la duración observada.",
   },
 };
 

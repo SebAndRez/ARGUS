@@ -1,0 +1,52 @@
+name: ARGUS Codigo Azul Shelters Cron
+
+# Runs the Codigo Azul shelter ingestion job on a schedule external to
+# Vercel Cron, since Vercel Hobby only allows a cron to run once per day
+# and this job needs a ~6-hour cadence (spec ARGUS v1.0.3.5 §16). See
+# src/app/api/jobs/run-codigo-azul-shelters/route.ts for the endpoint this
+# calls, and src/lib/jobs/jobLock.ts for the "codigo-azul-shelters" lock
+# name that prevents overlapping runs.
+on:
+  schedule:
+    # Every 6 hours, offset from the hour to avoid the top-of-hour traffic
+    # spike shared by everyone else's "on the dot" cron jobs.
+    - cron: "13 */6 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run-codigo-azul-shelters:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger /api/jobs/run-codigo-azul-shelters
+        run: |
+          # Stable across curl's own --retry (same step execution = same
+          # github.run_id/run_attempt); a new scheduled/dispatched run
+          # always gets a fresh github.run_id, so it never collides with a
+          # prior run's idempotency key.
+          idempotency_key="argus-run-codigo-azul-shelters-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          http_code=$(curl -sS -o /tmp/response.json -w "%{http_code}" -X POST \
+            "${ARGUS_PROD_URL}/api/jobs/run-codigo-azul-shelters" \
+            -H "Authorization: Bearer ${ARGUS_CRON_SECRET}" \
+            -H "X-Argus-Run-Id: ${idempotency_key}" \
+            -H "User-Agent: argus-github-actions-cron" \
+            --retry 2 \
+            --retry-delay 15)
+          echo "HTTP status: ${http_code}"
+          cat /tmp/response.json
+          echo ""
+          if [ "$http_code" = "409" ]; then
+            # Another legitimate run (cron or manual) already holds the
+            # pipeline lock — neutral outcome, not a workflow failure.
+            echo "Codigo Azul shelters pipeline already running elsewhere — treating as neutral, no action needed."
+            exit 0
+          fi
+          if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+            echo "Codigo Azul shelters job completed (status ${http_code})."
+            exit 0
+          fi
+          echo "Codigo Azul shelters job failed with status ${http_code}."
+          exit 1
+        env:
+          ARGUS_PROD_URL: ${{ secrets.ARGUS_PROD_URL }}
+          ARGUS_CRON_SECRET: ${{ secrets.ARGUS_CRON_SECRET }}

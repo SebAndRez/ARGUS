@@ -42,6 +42,7 @@ export type RateLimitPolicyName =
   | "knowledge_import_manual"
   | "knowledge_import_file"
   | "critical_pois_sync"
+  | "shelter_status_manual_update"
   | "vigia_manual_run"
   | "chile_alerts_manual_run"
   | "auth_login_ip"
@@ -49,7 +50,11 @@ export type RateLimitPolicyName =
   | "auth_register_ip"
   | "mobile_safety_signal"
   | "sensor_safety_signal"
-  | "quakesense_signal";
+  | "quakesense_signal"
+  | "public_incident_read"
+  | "knowledge_intake_job_manual_run"
+  | "codigo_azul_shelters_manual_run"
+  | "routing_directions_public";
 
 export interface RateLimitRule {
   name: RateLimitPolicyName;
@@ -96,6 +101,16 @@ export const rateLimitRules: Record<RateLimitPolicyName, RateLimitRule> = {
     failureMode: "fail_closed",
     notes:
       "Cada llamada golpea Overpass (recurso de terceros con su propia cuota) y escribe CriticalPoi — el límite más estricto de los endpoints administrativos.",
+  },
+  shelter_status_manual_update: {
+    name: "shelter_status_manual_update",
+    description: "Actualización manual de estado operacional de un refugio (operador)",
+    windowSeconds: 600,
+    maxRequests: 20,
+    keyStrategy: "user",
+    failureMode: "fail_closed",
+    notes:
+      "Escribe CriticalPoiOperationalStatus/CriticalPoiStatusEvidence — sin dependencia de terceros, límite más alto que critical_pois_sync porque es la vía primaria de datos oficiales (no hay API pública SENAPRED/municipal confirmada), pero sigue acotado a operadores autenticados y fail-closed.",
   },
   vigia_manual_run: {
     name: "vigia_manual_run",
@@ -172,6 +187,46 @@ export const rateLimitRules: Record<RateLimitPolicyName, RateLimitRule> = {
     keyStrategy: "ip",
     failureMode: "fail_open_local",
     notes: "Mismo criterio que mobile_safety_signal.",
+  },
+  public_incident_read: {
+    name: "public_incident_read",
+    description: "Lectura pública/anónima de Report y HelpRequest redactados (PRIV-FINAL-001)",
+    windowSeconds: 60,
+    maxRequests: 60,
+    keyStrategy: "ip",
+    failureMode: "fail_open_local",
+    notes:
+      "Solo se aplica a llamadores sin sesión — nunca a OPERATOR/ANALYST/ADMIN/SUPER_ADMIN autenticados, que ya pasan por su propia sesión y necesitan refrescar el panel operativo sin fricción. Sirve para acotar enumeración/scraping del feed público redactado, no es la defensa de privacidad (esa es la redacción server-side); fail-open en memoria porque es una señal pública de emergencia y un bloqueo total ante falla del backend distribuido no debe poder ocultar un mapa de riesgo activo.",
+  },
+  knowledge_intake_job_manual_run: {
+    name: "knowledge_intake_job_manual_run",
+    description: "Ejecución manual de un job de ingesta de Knowledge Intake (operador)",
+    windowSeconds: 900,
+    maxRequests: 3,
+    keyStrategy: "user",
+    failureMode: "fail_closed",
+    notes:
+      "Mismo perfil de costo/riesgo que vigia_manual_run/chile_alerts_manual_run: cada job golpea una API externa (con su propia cuota) y escribe KnowledgeIncident/KnowledgeEvidence/KnowledgeDocument. Se aplica de forma uniforme a los ~24 endpoints bajo /api/knowledge-intake/jobs/*, incluido run-all (que internamente puede disparar varias fuentes a la vez, por lo que el límite por operador es aún más relevante ahí que en un job individual).",
+  },
+  codigo_azul_shelters_manual_run: {
+    name: "codigo_azul_shelters_manual_run",
+    description: "Ejecución manual de la sincronización de albergues Código Azul (operador)",
+    windowSeconds: 900,
+    maxRequests: 3,
+    keyStrategy: "user",
+    failureMode: "fail_closed",
+    notes:
+      "Mismo perfil que knowledge_intake_job_manual_run/chile_alerts_manual_run: recorre hasta ~9 páginas HTML del sitio oficial (recurso de terceros con su propio WAF) y escribe CriticalPoi/CriticalPoiOperationalStatus/CriticalPoiStatusEvidence — límite estricto porque cada corrida es costosa en tiempo y en cortesía hacia la fuente.",
+  },
+  routing_directions_public: {
+    name: "routing_directions_public",
+    description: "Proxy público de Google Directions (sin sesión requerida)",
+    windowSeconds: 60,
+    maxRequests: 30,
+    keyStrategy: "ip",
+    failureMode: "fail_open_local",
+    notes:
+      "Ruteo a pie/vehículo/evacuación debe seguir disponible para cualquier ciudadano sin cuenta — mismo criterio de disponibilidad que mobile_safety_signal/quakesense_signal (fail-open en memoria: un bloqueo total ante falla del backend distribuido no debe impedir obtener una ruta durante una emergencia real). Esto NO exime de costo: cada solicitud gasta cupo real de GOOGLE_DIRECTIONS_API_KEY, así que el límite por IP existe específicamente para acotar ese gasto, no solo abuso genérico.",
   },
 };
 

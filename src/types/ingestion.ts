@@ -15,6 +15,7 @@ export type ArgusExternalSourceId =
   | "reliefweb"
   | "gdelt"
   | "openstreetmap"
+  | "codigo_azul"
   | "copernicus_glofas"
   | "hdx_hapi"
   | "openaq"

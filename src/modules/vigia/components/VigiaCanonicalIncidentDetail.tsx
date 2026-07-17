@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCanonicalModuleIncidentById } from "@/hooks/useCanonicalModuleIncidents";
+import IncidentShelterOperationalSection from "@/components/modules/IncidentShelterOperationalSection";
 
 /**
  * ARGUS Prompt 17 §12 — vista de detalle de VIGÍA sobre un incidente
@@ -85,6 +86,11 @@ export default function VigiaCanonicalIncidentDetail({ incidentId, canViewSource
               Evaluar impacto en TALOS →
             </Link>
           </div>
+
+          <IncidentShelterOperationalSection
+            latitude={result.data.location.latitude}
+            longitude={result.data.location.longitude}
+          />
         </div>
       )}
 

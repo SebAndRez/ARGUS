@@ -62,6 +62,29 @@ export type KnowledgeIncidentItem = {
   casualtiesJson?: unknown;
 };
 
+/**
+ * Proyeccion de un refugio (`CriticalPoi` categoria "shelter" +
+ * `CriticalPoiOperationalStatus`) que amerita una alerta operacional (lleno,
+ * cerrado, comprometido, ruta cortada o dato desactualizado — spec ARGUS
+ * v1.0.3.4 §18). El caller (`/api/notifications`) es responsable de aplicar
+ * el filtro de "amerita alerta"; este tipo solo describe la forma minima
+ * necesaria para renderizar la notificacion.
+ */
+export type ShelterOperationalAlertItem = {
+  poiId: string;
+  poiName: string;
+  latitude: number | null;
+  longitude: number | null;
+  countryCode?: string | null;
+  shelterStatus: string;
+  routeStatus?: string | null;
+  isStale: boolean;
+  sourceType: string;
+  sourceName: string;
+  confidence: number;
+  lastUpdatedAt: Date | string;
+};
+
 type SourceHealthItem = {
   id?: string;
   sourceId?: string;
@@ -97,6 +120,7 @@ export interface BuildNotificationInput {
    * caller's query.
    */
   knowledgeIncidents?: KnowledgeIncidentItem[];
+  shelterAlerts?: ShelterOperationalAlertItem[];
   readIds?: string[];
   userLocation?: { lat: number; lng: number; countryCode?: string | null };
 }
@@ -680,6 +704,81 @@ function reminderToNotification(reminder: VestaReminderItem, readIds: Set<string
   );
 }
 
+/**
+ * Un refugio puede calificar por mas de un motivo a la vez (lleno + ruta
+ * cortada, por ejemplo); se reporta uno por notificacion con esta
+ * prioridad — comprometido/ruta cortada primero (afecta si se puede llegar
+ * o quedarse), luego lleno/cerrado (afecta si conviene recomendarlo), y
+ * "dato desactualizado" solo cuando ningun otro motivo aplica.
+ */
+function shelterAlertToNotification(alert: ShelterOperationalAlertItem, readIds: Set<string>, userLocation?: BuildNotificationInput["userLocation"]) {
+  const lat = toFiniteNumber(alert.latitude);
+  const lng = toFiniteNumber(alert.longitude);
+  const time = toIso(alert.lastUpdatedAt);
+  const distanceKm = userLocation && lat !== null && lng !== null ? calculateDistanceKm(userLocation, { lat, lng }) : null;
+  const id = `shelter-alert-${alert.poiId}`;
+
+  let severity: ArgusNotificationSeverity;
+  let title: string;
+  let description: string;
+  if (alert.shelterStatus === "compromised") {
+    severity = "P1_HIGH";
+    title = `Refugio no recomendable: ${alert.poiName}`;
+    description = "El refugio fue marcado como comprometido/no recomendable por su fuente.";
+  } else if (alert.routeStatus === "blocked") {
+    severity = "P1_HIGH";
+    title = `Ruta cortada hacia refugio: ${alert.poiName}`;
+    description = "La ruta de acceso conocida hacia este refugio esta reportada como bloqueada.";
+  } else if (alert.shelterStatus === "full") {
+    severity = "P2_MEDIUM";
+    title = `Refugio lleno: ${alert.poiName}`;
+    description = "El refugio alcanzo su capacidad reportada. Considerar alternativas.";
+  } else if (alert.shelterStatus === "closed") {
+    severity = "P2_MEDIUM";
+    title = `Refugio cerrado: ${alert.poiName}`;
+    description = "El refugio fue reportado como cerrado.";
+  } else {
+    severity = "P3_LOW";
+    title = `Dato desactualizado: ${alert.poiName}`;
+    description = "El estado operacional de este refugio no se ha confirmado dentro de la ventana de vigencia esperada.";
+  }
+
+  return finalize(
+    {
+      id,
+      title,
+      description,
+      type: "SHELTER",
+      severity,
+      scope: scopeForLocation(lat, lng, alert.countryCode ?? null, userLocation),
+      status: "MONITORING",
+      createdAt: time,
+      updatedAt: time,
+      eventTime: time,
+      sourceType: "SYSTEM",
+      category: "system_notice",
+      verificationStatus: undefined,
+      isOfficial: false,
+      sourceName: alert.sourceName,
+      confidence: Math.max(0, Math.min(100, alert.confidence)),
+      lat,
+      lng,
+      countryCode: alert.countryCode ?? null,
+      region: null,
+      city: null,
+      distanceKm,
+      relatedEventId: null,
+      relatedReportId: null,
+      relatedIncidentId: alert.poiId,
+      relatedFenixScenarioId: null,
+      relatedRouteId: null,
+      actionUrl: lat !== null && lng !== null ? `/app?lat=${lat}&lng=${lng}&criticalPoiId=${alert.poiId}` : `/app?criticalPoiId=${alert.poiId}`,
+      sourceUrl: null,
+    },
+    readIds
+  );
+}
+
 function knowledgeIncidentToNotification(
   incident: KnowledgeIncidentItem,
   readIds: Set<string>,
@@ -833,6 +932,7 @@ export function buildArgusNotifications(input: BuildNotificationInput) {
     ...(input.routes ?? []).map((route) => routeToNotification(route, readIds)),
     ...(input.sourceHealth ?? []).map((source) => sourceToNotification(source, readIds)),
     ...(input.reminders ?? []).map((reminder) => reminderToNotification(reminder, readIds)),
+    ...(input.shelterAlerts ?? []).map((alert) => shelterAlertToNotification(alert, readIds, input.userLocation)),
   ];
 
   return notifications.sort((a, b) => {

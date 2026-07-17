@@ -3,7 +3,9 @@
 import type { ReactNode } from "react";
 import ArgusMapLegend from "@/components/map/ArgusMapLegend";
 import DemoEventFilterControls from "@/components/map/DemoEventFilterControls";
+import ShelterFilterControls from "@/components/map/ShelterFilterControls";
 import ProductStatusLegend from "@/components/status/ProductStatusLegend";
+import type { ShelterMapFilterState } from "@/lib/criticalPoi/shelterMapFilters";
 import type { BaseMapType } from "@/types/map";
 import type {
   DemoLifecycleFilter,
@@ -110,6 +112,10 @@ interface Props<TLayers extends MapLayerState> {
     onLifecycleChange: (value: DemoLifecycleFilter) => void;
     visibleCount: number;
     totalCount: number;
+  };
+  shelterFilters?: {
+    value: ShelterMapFilterState;
+    onChange: (value: ShelterMapFilterState) => void;
   };
 }
 
@@ -226,6 +232,7 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
   layerMeta,
   supplementalPanel,
   demoFilters,
+  shelterFilters,
 }: Props<TLayers>) {
   const currentBaseMapLabel = baseMapOptions.find(
     (option) => option.type === baseMapType
@@ -546,6 +553,9 @@ export default function MapLayerControls<TLayers extends MapLayerState>({
             {availableKeys.includes("demoReports" as Extract<keyof TLayers, string>) &&
               Boolean(layers.demoReports) &&
               demoFilters && <DemoEventFilterControls {...demoFilters} />}
+            {availableKeys.includes("criticalPois" as Extract<keyof TLayers, string>) &&
+              Boolean(layers.criticalPois) &&
+              shelterFilters && <ShelterFilterControls {...shelterFilters} />}
           </section>
         );
       })}

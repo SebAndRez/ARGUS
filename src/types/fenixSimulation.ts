@@ -134,7 +134,7 @@ export type FenixCrisisCourse = {
     densityLabel: "low" | "medium" | "high";
     isDemo: boolean;
   };
-  shelters: Array<{ id: string; name: string; pressure: "low" | "medium" | "high" | "critical" }>;
+  shelters: Array<{ id: string; name: string; pressure: "low" | "medium" | "high" | "critical" | "unknown" }>;
   medicalPoints: Array<{ id: string; name: string; distanceKm: number; isDemo: boolean }>;
   recommendedActions: FenixRecommendedAction[];
   confidence: number;

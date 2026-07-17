@@ -18,7 +18,12 @@ import ConflictLegend from "@/components/conflict/ConflictLegend";
 import ConflictZonePanel from "@/components/conflict/ConflictZonePanel";
 import ArgusEventDetailPanel from "@/components/map/ArgusEventDetailPanel";
 import type { ArgusEvent } from "@/types/argusEvent";
-import { demoArgusEvents } from "@/data/demoArgusEvents";
+import {
+  ARGUS_EVENTS_LOADING_STATE,
+  resolveArgusEventsDataState,
+  type ArgusEventsDataState,
+} from "@/lib/map/argusEventsDataState";
+import { logOperationalEvent } from "@/lib/observability/operationalEvents";
 import ArgusModuleLauncher from "@/components/modules/ArgusModuleLauncher";
 import AuraMedicalButton from "@/components/medical/AuraMedicalButton";
 import AuraMedicalPanel from "@/components/medical/AuraMedicalPanel";
@@ -29,6 +34,7 @@ import PoiInfoCard from "@/components/map/PoiInfoCard";
 import type { PoiEntity } from "@/lib/pois/poiTypes";
 import CriticalPoiInfoCard from "@/components/map/CriticalPoiInfoCard";
 import type { CriticalPoi } from "@/lib/criticalPoi/criticalPoiTypes";
+import { defaultShelterMapFilterState, type ShelterMapFilterState } from "@/lib/criticalPoi/shelterMapFilters";
 import { getCriticalPoiCategory } from "@/lib/criticalPoi/criticalPoiCategoryRegistry";
 import RouteAlternativesCards from "@/components/routing/RouteAlternativesCards";
 import TransportModeSelector from "@/components/routing/TransportModeSelector";
@@ -384,13 +390,16 @@ export default function AppPage() {
   const [nwsUserAgentConfigured, setNwsUserAgentConfigured] = useState<boolean | null>(null);
   const [nwsRetryVersion, setNwsRetryVersion] = useState(0);
   const nwsFetchStartedRef = useRef(false);
-  // Starts from the curated demo dataset so the official-alerts layer is
-  // never blank before the first live fetch resolves, then upgrades to real
-  // SENAPRED events once `/api/argus/events` responds — that endpoint
-  // itself falls back to the same demo dataset if the live SENAPRED source
-  // fails, so this state is never worse than what used to be hardcoded here.
-  const [argusEvents, setArgusEvents] = useState<ArgusEvent[]>(demoArgusEvents);
+  // DATA-FINAL-001: starts empty/loading — never seeded with demo data. Demo
+  // can only ever enter `argusEventsState` when the server (`/api/argus/events`,
+  // `source: "curated_demo"`, gated by `isDemoDataAllowed()`) explicitly
+  // says so; a failed/slow fetch here maps to "unavailable"/"partial", never
+  // to a client-invented fallback. See src/lib/map/argusEventsDataState.ts.
+  const [argusEventsState, setArgusEventsState] = useState<ArgusEventsDataState>(
+    ARGUS_EVENTS_LOADING_STATE
+  );
   const argusEventsFetchStartedRef = useRef(false);
+  const [argusEventsRetryVersion, setArgusEventsRetryVersion] = useState(0);
   const [reliefWebEvents, setReliefWebEvents] = useState<
     ArgusNormalizedEvent[]
   >([]);
@@ -742,6 +751,8 @@ export default function AppPage() {
   }, []);
 
   const closeCriticalPoiCard = useCallback(() => setSelectedCriticalPoi(null), []);
+
+  const [shelterFilter, setShelterFilter] = useState<ShelterMapFilterState>(defaultShelterMapFilterState);
 
   const handleCriticalPoiRoute = useCallback((poi: CriticalPoi) => {
     setNavDestination(criticalPoiToPlaceResult(poi));
@@ -1210,6 +1221,32 @@ export default function AppPage() {
           : `${demoEvents.length} disponibles para probar`,
         status: layerSettings.demoReports ? "ready" : "idle",
         emphasis: true,
+      },
+      // DATA-FINAL-001: never reports "0" as if it were a confirmed empty
+      // result when the layer is actually loading/unavailable/partial —
+      // count only reflects argusEventsState.events, which can never contain
+      // demo+real mixed (see src/lib/map/argusEventsDataState.ts).
+      argusOfficialAlerts: {
+        count: argusEventsState.events.length,
+        detail:
+          argusEventsState.status === "loading"
+            ? "Consultando alertas oficiales..."
+            : argusEventsState.status === "unavailable"
+              ? "Datos no disponibles"
+              : argusEventsState.status === "partial"
+                ? `Datos parciales · fuentes no disponibles: ${argusEventsState.failedSources.join(", ")}`
+                : argusEventsState.status === "demo"
+                  ? "MODO DEMO — datos simulados"
+                  : argusEventsState.status === "empty"
+                    ? "Sin alertas oficiales vigentes"
+                    : `${argusEventsState.events.length} alertas oficiales vigentes`,
+        status:
+          argusEventsState.status === "loading"
+            ? "loading"
+            : argusEventsState.status === "unavailable"
+              ? "error"
+              : "ready",
+        emphasis: argusEventsState.status === "demo",
       },
       usgsEarthquakes: {
         count: usgsEvents.length,
@@ -1847,61 +1884,131 @@ export default function AppPage() {
     if (!dataActive.argusOfficialAlerts || argusEventsFetchStartedRef.current) return;
 
     argusEventsFetchStartedRef.current = true;
+    let cancelled = false;
+
+    // Fetches a single JSON endpoint and classifies it as success/failed —
+    // never throws, so a rejected/parse-broken response degrades this one
+    // source instead of aborting the whole load (DATA-FINAL-001 §8).
+    async function fetchArgusSource(
+      endpoint: string
+    ): Promise<{ outcome: { status: "success"; events: ArgusEvent[] } | { status: "failed" }; source?: string }> {
+      try {
+        const response = await fetch(endpoint, { cache: "no-store" });
+        const payload = (await response.json()) as { events?: ArgusEvent[]; source?: string };
+        if (!response.ok || !Array.isArray(payload.events)) {
+          return { outcome: { status: "failed" } };
+        }
+        return { outcome: { status: "success", events: payload.events }, source: payload.source };
+      } catch {
+        return { outcome: { status: "failed" } };
+      }
+    }
 
     async function loadArgusEvents() {
-      let baseEvents: ArgusEvent[] | null = null;
-      try {
-        const response = await fetch("/api/argus/events", { cache: "no-store" });
-        const payload = (await response.json()) as {
-          events?: ArgusEvent[];
-          error?: string;
-        };
-        if (!response.ok) {
-          throw new Error(
-            payload.error || "No fue posible cargar las alertas oficiales ARGUS."
-          );
-        }
+      logOperationalEvent({
+        event: "map_data_load_started",
+        level: "debug",
+        component: "argus_events_layer",
+      });
 
-        if (Array.isArray(payload.events)) baseEvents = payload.events;
-      } catch {
-        // Keep whatever was already rendered (the curated demo dataset on
-        // first load) — never blank the official-alerts layer just because
-        // a live refresh attempt failed.
+      const baseResult = await fetchArgusSource("/api/argus/events");
+      const isDemo = baseResult.outcome.status === "success" && baseResult.source === "curated_demo";
+
+      if (baseResult.outcome.status === "failed") {
+        // The old bug: a fetch failure here used to fall back to the client's
+        // own hardcoded demo dataset, bypassing isDemoDataAllowed() entirely.
+        logOperationalEvent({
+          event: "demo_data_blocked",
+          level: "warn",
+          component: "argus_events_layer",
+          detail: { reason: "base_source_fetch_failed" },
+        });
       }
 
       // Persisted Chile severe-weather alerts (SENAPRED, promoted via
       // `alertPromotionEngine`) and ARGUS Global Watch incidents (VIGÍA:
-      // USGS/GDACS/EONET/FIRMS/EFFIS/Copernicus EMS/ReliefWeb) — merged in
-      // alongside the demo/live events above so everything renders through
-      // the same `ArgusEventLayer` (severity coloring, phenomenon-based
-      // toggles, detail panel). Both fetches are additive and independent:
-      // a failure in one never blanks the base layer or the other.
-      let merged = baseEvents ?? demoArgusEvents;
-      let hasExtraEvents = false;
-      for (const endpoint of ["/api/chile-alerts", "/api/vigia/events"]) {
-        try {
-          const extraResponse = await fetch(endpoint, { cache: "no-store" });
-          const extraPayload = (await extraResponse.json()) as { events?: ArgusEvent[] };
-          if (extraResponse.ok && Array.isArray(extraPayload.events) && extraPayload.events.length > 0) {
-            const mergedIds = new Set(merged.map((event) => event.id));
-            merged = merged.concat(extraPayload.events.filter((event) => !mergedIds.has(event.id)));
-            hasExtraEvents = true;
-          }
-        } catch {
-          // Additive layer — a failed fetch here should not affect the rest.
-        }
-      }
+      // USGS/GDACS/EONET/FIRMS/EFFIS/Copernicus EMS/ReliefWeb) — both already
+      // exclude demo events server-side unless `?includeDemo=true` (never
+      // sent here), so they are safe to merge additively. Skipped entirely
+      // when the base source is demo: demo mode never mixes with real data
+      // (DATA-FINAL-001 §4).
+      const extras = isDemo
+        ? []
+        : await Promise.all(
+            [
+              { label: "chile_alerts", endpoint: "/api/chile-alerts" },
+              { label: "vigia_events", endpoint: "/api/vigia/events" },
+            ].map(async ({ label, endpoint }) => ({
+              label,
+              outcome: (await fetchArgusSource(endpoint)).outcome,
+            }))
+          );
 
-      if (hasExtraEvents) {
-        setArgusEvents(merged);
-        return;
-      }
+      if (cancelled) return;
 
-      if (baseEvents) setArgusEvents(baseEvents);
+      const nextState = resolveArgusEventsDataState({
+        base: { outcome: baseResult.outcome, isDemo },
+        extras,
+      });
+
+      if (nextState.status === "demo") {
+        logOperationalEvent({ event: "demo_mode_enabled", level: "info", component: "argus_events_layer" });
+      } else if (nextState.status === "unavailable") {
+        logOperationalEvent({
+          event: "map_data_load_failed",
+          level: "error",
+          component: "argus_events_layer",
+          errorCode: "MAP_DATA_UNAVAILABLE",
+          detail: { failedSources: nextState.failedSources },
+        });
+      } else if (nextState.status === "partial") {
+        logOperationalEvent({
+          event: "map_data_load_partial",
+          level: "warn",
+          component: "argus_events_layer",
+          errorCode: "MAP_DATA_PARTIAL",
+          count: nextState.events.length,
+          detail: { failedSources: nextState.failedSources },
+        });
+      } else {
+        logOperationalEvent({
+          event: "map_data_load_completed",
+          level: "info",
+          component: "argus_events_layer",
+          count: nextState.events.length,
+        });
+      }
+      logOperationalEvent({
+        event: "orbit_data_projected",
+        level: "debug",
+        component: "argus_events_layer",
+        count: nextState.events.length,
+      });
+
+      setArgusEventsState(nextState);
     }
 
     loadArgusEvents();
-  }, [dataActive.argusOfficialAlerts]);
+    return () => {
+      cancelled = true;
+    };
+  }, [dataActive.argusOfficialAlerts, argusEventsRetryVersion]);
+
+  const retryArgusEvents = () => {
+    argusEventsFetchStartedRef.current = false;
+    setArgusEventsState(ARGUS_EVENTS_LOADING_STATE);
+    setArgusEventsRetryVersion((current) => current + 1);
+  };
+
+  // DATA-FINAL-001 §12: never keep a selection pointing at an event that no
+  // longer exists in the current collection (demo event selected, then the
+  // layer transitions to real/partial/unavailable; or a real event expires
+  // out of the feed on refresh).
+  useEffect(() => {
+    if (!selectedArgusEvent) return;
+    const stillPresent = argusEventsState.events.some((event) => event.id === selectedArgusEvent.id);
+    if (!stillPresent) setSelectedArgusEvent(null);
+  }, [argusEventsState.events, selectedArgusEvent]);
 
   useEffect(() => {
     if (
@@ -2260,6 +2367,7 @@ export default function AppPage() {
         onPoiSelect={selectPoiFromMap}
         selectedCriticalPoiId={selectedCriticalPoi?.id}
         onCriticalPoiSelect={selectCriticalPoiFromMap}
+        shelterFilter={shelterFilter}
         auraMedicalRoute={auraMedicalRoute}
         navigation={
           navDestination
@@ -2282,7 +2390,7 @@ export default function AppPage() {
         newsEvidence={curatedNewsEvidence}
         selectedConflictZoneId={selectedConflictZone?.id}
         onConflictZoneSelect={selectConflictZone}
-        argusEvents={argusEvents}
+        argusEvents={argusEventsState.events}
         selectedArgusEventId={selectedArgusEvent?.id}
         onArgusEventSelect={selectArgusEvent}
         baseMapType={baseMapType}
@@ -2579,6 +2687,7 @@ export default function AppPage() {
           onBaseMapChange={setBaseMapType}
           layerMeta={layerMeta}
           showActiveSummary
+          shelterFilters={{ value: shelterFilter, onChange: setShelterFilter }}
           supplementalPanel={
             <>
               <LiveCameraList
@@ -2742,6 +2851,56 @@ export default function AppPage() {
             type="button"
             onClick={retryNwsAlerts}
             className="mt-3 border border-cyan-200/30 bg-cyan-400/10 px-3 py-2 text-xs font-semibold uppercase text-cyan-100 transition hover:bg-cyan-400/20"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {/*
+        DATA-FINAL-001 — honest status for the official-alerts layer
+        (argusEventsState). Demo is only ever shown when the server itself
+        (`/api/argus/events`, source: "curated_demo") authorized it; a fetch
+        failure never falls back to demo and is always labeled, never shown
+        as "0 incidents" pretending to be a real empty result.
+      */}
+      {layerSettings.argusOfficialAlerts && argusEventsState.status === "demo" && (
+        <div
+          role="status"
+          className="fixed left-4 top-[38rem] z-40 max-w-sm border-2 border-amber-300/60 bg-amber-500/15 px-4 py-3 text-sm text-amber-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-[34rem]"
+        >
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-200">
+            Modo demo · Datos simulados
+          </p>
+          <p className="mt-1 text-xs leading-5 text-amber-100/90">
+            Estas alertas oficiales son datos de demostración. No usar para decisiones reales.
+          </p>
+        </div>
+      )}
+
+      {layerSettings.argusOfficialAlerts && argusEventsState.status === "partial" && (
+        <div className="fixed left-4 top-[38rem] z-40 max-w-sm border border-orange-300/25 bg-slate-950/92 px-4 py-3 text-sm text-orange-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-[34rem]">
+          <p>Alertas oficiales ARGUS: datos parciales.</p>
+          <p className="mt-1 text-xs text-orange-100/70">
+            Fuente(s) no disponible(s): {argusEventsState.failedSources.join(", ")}
+          </p>
+          <button
+            type="button"
+            onClick={retryArgusEvents}
+            className="mt-3 border border-orange-200/30 bg-orange-400/10 px-3 py-2 text-xs font-semibold uppercase text-orange-100 transition hover:bg-orange-400/20"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {layerSettings.argusOfficialAlerts && argusEventsState.status === "unavailable" && (
+        <div className="fixed left-4 top-[38rem] z-40 max-w-sm border border-red-300/25 bg-slate-950/92 px-4 py-3 text-sm text-red-100 shadow-xl shadow-black/30 backdrop-blur-xl md:top-[34rem]">
+          <p>Alertas oficiales ARGUS: temporalmente no disponibles.</p>
+          <button
+            type="button"
+            onClick={retryArgusEvents}
+            className="mt-3 border border-red-200/30 bg-red-400/10 px-3 py-2 text-xs font-semibold uppercase text-red-100 transition hover:bg-red-400/20"
           >
             Reintentar
           </button>

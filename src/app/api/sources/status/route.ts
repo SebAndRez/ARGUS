@@ -34,7 +34,7 @@ export async function GET() {
   }>();
 
   try {
-    const [counts, runs] = await Promise.all([
+    const [counts, runs, codigoAzulCount] = await Promise.all([
       prisma.externalEvent.groupBy({ by: ["sourceId"], _count: { _all: true } }),
       prisma.ingestionRun.findMany({
         orderBy: { fetchedAt: "desc" },
@@ -49,8 +49,12 @@ export async function GET() {
           error: true,
         },
       }),
+      // Código Azul persiste en CriticalPoi, no ExternalEvent — mismo
+      // per-source special-casing que getCacheForSource() de abajo.
+      prisma.criticalPoi.count({ where: { source: "official_open_data" } }),
     ]);
     persistedCounts = new Map(counts.map((item) => [item.sourceId, item._count._all]));
+    persistedCounts.set("codigo_azul", codigoAzulCount);
     runs.forEach((run) => {
       if (!latestRuns.has(run.sourceId)) latestRuns.set(run.sourceId, run);
     });

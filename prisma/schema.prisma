@@ -574,10 +574,110 @@ model CriticalPoi {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
+  operationalStatus CriticalPoiOperationalStatus?
+
   @@unique([source, externalId])
   @@index([category])
   @@index([priority])
   @@index([latitude, longitude])
   @@index([countryCode])
   @@index([status])
+}
+
+/// Estado operacional en tiempo real de un CriticalPoi de categoria "shelter"
+/// (capacidad, ocupacion, servicios, ruta, procedencia). Vista resuelta actual;
+/// el historial/evidencia por fuente vive en CriticalPoiStatusEvidence. La
+/// relacion con incidentes es por proximidad calculada en lectura (mismo patron
+/// que getCriticalInfrastructureNearIncident), no un vinculo persistido -
+/// linkedIncidentId es solo un hint opcional del ultimo incidente que la
+/// origino. No inventar capacidad/ocupacion: los campos ausentes quedan null.
+model CriticalPoiOperationalStatus {
+  id     String      @id @default(cuid())
+  poiId  String      @unique
+  poi    CriticalPoi @relation(fields: [poiId], references: [id])
+
+  shelterStatus  String @default("unknown") // available|near_capacity|full|closed|compromised|unknown
+  capacityStatus String @default("unknown") // ok|near_capacity|full|unknown (derivado, no ingresado directo)
+
+  capacityTotal    Int?
+  occupancyCurrent Int?
+  /// Cifra autoreportada por la fuente (p.ej. "Cupos" de Codigo Azul) sin
+  /// significado administrativo confirmado (total/contratado/habilitado/
+  /// disponible). NUNCA se usa para calcular capacityStatus/capacityAvailable
+  /// -- eso sigue reservado a capacityTotal/occupancyCurrent confirmados por
+  /// una fuente de mayor precedencia. Ver deriveCapacity() en
+  /// shelterOperationalStatusService.ts.
+  capacityDeclared Int?
+
+  hasWater        Boolean?
+  hasElectricity  Boolean?
+  hasFood         Boolean?
+  hasMedical      Boolean?
+  hasHeating      Boolean?
+  hasBathrooms    Boolean?
+  hasShowers      Boolean?
+  isAccessible    Boolean?
+  allowsPets      Boolean?
+  hasConnectivity Boolean?
+
+  operatorName String?
+  contactPhone String?
+  contactNotes String?
+  /// Horario de operacion publicado tal cual (p.ej. "24 Horas"). Nunca
+  /// interpretar como disponibilidad actual -- ver capacityDeclared.
+  operatingHours String?
+
+  routeStatus String? // open|congested|blocked|unknown - hacia el acceso conocido mas cercano
+
+  sourceType        String // senapred|municipality|media|manual_operator|osm|argus_estimate
+  sourceName        String
+  sourceUrl         String?
+  sourcePublishedAt DateTime?
+  confidence        Int       @default(50)
+  verificationStatus String   @default("unverified") // unverified|candidate|corroborated|official|rejected
+
+  lastUpdatedAt DateTime  @updatedAt
+  lastVerifiedAt DateTime?
+  isStale        Boolean   @default(false)
+
+  linkedIncidentId String?
+
+  /// Presencia en el listado de la fuente (distinto de shelterStatus, que es
+  /// el estado fisico del recinto): active|missing|stale|archived. Calculado
+  /// a partir de CriticalPoi.lastSeenAt (ver shelterStatusLifecycle.ts) -
+  /// nunca se borra un registro por dejar de aparecer en la fuente.
+  publicationStatus String @default("active")
+
+  createdAt DateTime @default(now())
+
+  @@index([shelterStatus])
+  @@index([isStale])
+  @@index([linkedIncidentId])
+  @@index([publicationStatus])
+}
+
+/// Un registro por reporte de fuente sobre un CriticalPoi (creacion, cambio de
+/// capacidad/ocupacion, cierre, corte de ruta, recuperacion de servicio,
+/// actualizacion de fuente, marcado como desactualizado, conflicto entre
+/// fuentes). Es el rastro de procedencia/dedup y, ordenado por createdAt, el
+/// historial auditable exigido por el modulo operacional - no se agrega una
+/// tercera tabla de historial.
+model CriticalPoiStatusEvidence {
+  id     String @id @default(cuid())
+  poiId  String
+
+  eventType String // created|enabled|capacity_updated|occupancy_updated|full|closed|route_blocked|route_restored|service_recovered|source_updated|marked_stale|conflict_detected
+
+  sourceType        String
+  sourceName        String
+  sourceUrl         String?
+  sourcePublishedAt DateTime?
+  confidenceScore   Int
+
+  payloadJson Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([poiId])
+  @@index([eventType])
 }

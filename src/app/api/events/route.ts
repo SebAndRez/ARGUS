@@ -1,17 +1,47 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/services/authService";
+import { hasAnyRole } from "@/lib/security/rbac";
+import { OPERATOR_ROLES } from "@/lib/security/apiGuards";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
+import { toPublicHelpRequestMapEvent, toPublicReportMapEvent } from "@/lib/security/incidentDto";
 
 type EventSeverityKey = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
-export async function GET() {
+const FETCH_LIMIT = 200;
+
+export async function GET(request: NextRequest) {
+  const user = await getCurrentUser();
+  const canViewFull = hasAnyRole(user, OPERATOR_ROLES);
+
+  // Same policy as GET /api/reports and GET /api/help-requests
+  // (PRIV-FINAL-001 §16): this route is the map's real data source and
+  // queries Report/HelpRequest directly, so it needs the same rate limit —
+  // only for anonymous callers, never for authenticated operators.
+  if (!user) {
+    const outcome = await enforceRateLimit({ policy: "public_incident_read", request });
+    const blocked = rateLimitResponseForOutcome(outcome);
+    if (blocked) return blocked;
+  }
+
   const reports = await prisma.report.findMany({
     include: { user: { select: { publicAlias: true } } },
     orderBy: { createdAt: "desc" },
+    take: FETCH_LIMIT,
   });
   const helpRequests = await prisma.helpRequest.findMany({
     include: { user: { select: { publicAlias: true } } },
     orderBy: { createdAt: "desc" },
+    take: FETCH_LIMIT,
   });
+
+  if (!canViewFull) {
+    const events = [
+      ...reports.map(toPublicReportMapEvent).filter((event) => event !== null),
+      ...helpRequests.map(toPublicHelpRequestMapEvent).filter((event) => event !== null),
+    ];
+    return NextResponse.json({ events });
+  }
 
   const events = [
     ...reports.map((report) => ({
@@ -61,5 +91,8 @@ export async function GET() {
     })),
   ];
 
-  return NextResponse.json({ events });
+  const response = NextResponse.json({ events });
+  // Never let a CDN/browser cache the full operator view of PII-bearing rows.
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
 }
