@@ -28,6 +28,7 @@ import {
 } from "@/lib/vigia/globalAlertPromotionEngine";
 import { clusterFirmsIncidents, firmsClusterToIncident } from "@/lib/vigia/firmsClusterer";
 import { sweepIncidentLifecycles, type LifecycleSweepSummary } from "@/lib/vigia/incidentLifecycle";
+import { runMasterIncidentCorrelation, type MasterIncidentSummary } from "@/lib/incidents/masterIncidentEngine";
 import { classifyGlobalThreat } from "@/lib/vigia/threatClassifier";
 import { correlateWildfireEvents, logWildfireEvent } from "@/lib/vigia/wildfireCorrelationEngine";
 import {
@@ -107,6 +108,7 @@ export type GlobalWatchSummary = {
   notificationsGenerated: number;
   candidatesCreated: number;
   lifecycle: LifecycleSweepSummary | null;
+  masterIncidents: MasterIncidentSummary | null;
   errorsBySource: Record<string, string[]>;
   sources: GlobalWatchSourceSummary[];
 };
@@ -649,6 +651,18 @@ export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promi
     lifecycle = null;
   }
 
+  // 7. Incidente maestro: correlación cross-amenaza (ARGUS Fusion Engine) —
+  //    agrupa incidentes de dominios distintos en la misma región/ventana
+  //    (ej. alerta meteorológica + inundación + daño a infraestructura) bajo
+  //    un incidente padre sintético, sin fusionar sus filas. Best-effort: un
+  //    fallo aquí nunca degrada el resultado ya persistido por los pasos 1-6.
+  let masterIncidents: MasterIncidentSummary | null = null;
+  try {
+    masterIncidents = await runMasterIncidentCorrelation(new Date());
+  } catch {
+    masterIncidents = null;
+  }
+
   const finishedAt = new Date();
   const errorsBySource: Record<string, string[]> = {};
   for (const summary of sourceSummaries) {
@@ -672,6 +686,7 @@ export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promi
     notificationsGenerated: sourceSummaries.reduce((acc, summary) => acc + summary.notificationsGenerated, 0),
     candidatesCreated: sourceSummaries.reduce((acc, summary) => acc + summary.candidatesCreated, 0),
     lifecycle,
+    masterIncidents,
     errorsBySource,
     sources: sourceSummaries.sort((a, b) => a.sourceId.localeCompare(b.sourceId)),
   };

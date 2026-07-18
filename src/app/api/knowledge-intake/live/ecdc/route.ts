@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 import { buildEcdcEvidencePayload, buildEcdcIncidentPayload, fetchEcdcFeeds, type EcdcParams } from "@/lib/knowledge-intake/adapters/ecdcAdapter";
 import { saveContextEvidenceIfNew } from "@/lib/knowledge-intake/persistence/contextEvidence";
 import { upsertKnowledgeIncidentByExternalId } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
@@ -7,6 +8,13 @@ import { requireOperator } from "@/lib/security/apiGuards";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  // ARGUS Prompt 9/10 (SEC-1): esta lectura en vivo no tenia auth NI rate
+  // limit por defecto (solo `?persist=true` pasaba por requireOperator).
+  // No se exige sesion: consumidores anonimos legitimos (ej. /app, NASA
+  // EONET) dependen de esta lectura publica. Solo se acota el abuso/costo.
+  const rateLimitOutcome = await enforceRateLimit({ policy: "knowledge_intake_live_read", request });
+  const rateLimited = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimited) return rateLimited;
   const p = request.nextUrl.searchParams;
   const input: EcdcParams = { feeds: p.get("feeds") ?? undefined, feedTypes: p.get("feedTypes") ?? undefined, top: num(p, "top") ?? 20, since: p.get("since") ?? undefined, disease: p.get("disease") ?? undefined, country: p.get("country") ?? undefined, region: p.get("region") ?? undefined, persist: p.get("persist") === "true", createIncidents: p.get("createIncidents") === "true", updateExisting: p.get("updateExisting") !== "false", includePageMetadata: p.get("includePageMetadata") !== "false", includePdfUrl: p.get("includePdfUrl") !== "false", includeRaw: p.get("includeRaw") !== "false" };
   const result = await fetchEcdcFeeds(input);

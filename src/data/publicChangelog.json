@@ -1,5 +1,20 @@
 [
   {
+    "changeId": "92bb9421c780",
+    "date": "2026-07-17",
+    "commit": "pending-92bb942",
+    "title": "ARGUS 1.0.6.6 Mejoras de rendimiento y funcionamiento interno",
+    "fileCount": 2,
+    "summary": "Se actualizaron 2 archivos relacionados con Documentacion.",
+    "changes": [
+      "Se agregaron cambios de documentacion publica o interna."
+    ],
+    "affectedModules": [
+      "Documentacion"
+    ],
+    "simpleExplanation": "Esta actualizacion mejora la informacion disponible sobre ARGUS y sus capacidades."
+  },
+  {
     "changeId": "00caba03eb22",
     "date": "2026-07-17",
     "commit": "pending-00caba0",

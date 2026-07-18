@@ -5,7 +5,16 @@ import { VIGIA_SOURCE_REGISTRY } from "@/lib/vigia/sourceRegistry";
 import { getRecentIngestionRunsBySource } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
 import { computeOverallHealth, isStale, type ComponentHealth, type OperationalHealthStatus } from "@/lib/observability/healthStatus";
 import { getRecentIssues } from "@/lib/observability/recentIssuesBuffer";
-import type { OperationalHealthSnapshot, OperationalIssue, PipelineHealth, SourcesComponentHealth } from "@/types/operationalHealth";
+import { MASTER_INCIDENT_PARENT_DOMAIN } from "@/lib/incidents/masterIncidentRules";
+import type {
+  MasterIncidentHealth,
+  ModuleActivationHealth,
+  OperationalHealthSnapshot,
+  OperationalIssue,
+  PipelineHealth,
+  SourceIngestionCounts,
+  SourcesComponentHealth,
+} from "@/types/operationalHealth";
 
 /**
  * ARGUS Prompt 19 §3-4, §23 — la única función que reúne salud
@@ -159,6 +168,71 @@ function rollUpFromRecentIssues(component: string, now: Date): ComponentHealth {
   };
 }
 
+/**
+ * Fase C / Fusion Engine — hallazgo de auditoría: el panel mostraba salud
+ * agregada por fuente pero nunca cuántos registros se descartaron
+ * (`recordsSkipped`) ni cuántos fueron altas vs. actualizaciones — el dato
+ * ya existe en `KnowledgeIngestionRun`, solo no se exponía. Suma las últimas
+ * corridas ya traídas para el cálculo de frescura, sin una consulta nueva.
+ */
+async function computeSourceIngestionCounts(): Promise<SourceIngestionCounts[]> {
+  const allSourceIds = [...GLOBAL_WATCH_SOURCE_IDS, ...CHILE_ALERTS_SOURCE_IDS];
+  const runsBySource = await getRecentIngestionRunsBySource(allSourceIds, 20);
+  return allSourceIds.map((sourceId) => {
+    const runs = runsBySource.get(sourceId) ?? [];
+    const totals = runs.reduce(
+      (acc, run) => {
+        acc.recordsFetched += run.recordsFetched ?? 0;
+        acc.recordsInserted += run.recordsInserted ?? 0;
+        acc.recordsUpdated += run.recordsUpdated ?? 0;
+        acc.recordsSkipped += run.recordsSkipped ?? 0;
+        return acc;
+      },
+      { recordsFetched: 0, recordsInserted: 0, recordsUpdated: 0, recordsSkipped: 0 }
+    );
+    const last = runs[0];
+    return {
+      sourceId,
+      ...totals,
+      lastStatus: last?.status ?? null,
+      lastRunAt: last?.startedAt?.toISOString() ?? null,
+    };
+  });
+}
+
+/** Incidentes maestros activos (`masterIncidentEngine.ts`) — correlación cross-amenaza, ver Tarea 4 del mandato. */
+async function computeMasterIncidentHealth(): Promise<MasterIncidentHealth> {
+  const [activeParents, totalChildRelations] = await Promise.all([
+    prisma.knowledgeIncident.count({
+      where: { domain: MASTER_INCIDENT_PARENT_DOMAIN, NOT: { status: { in: ["resolved", "archived"] } } },
+    }),
+    prisma.incidentRelation.count({ where: { kind: "child_of" } }),
+  ]);
+  return { activeParents, totalChildRelations };
+}
+
+/** Recomendaciones de módulo de las últimas 24h (`moduleActivationEngine.ts`), leídas de `AuditLog` (sin tabla nueva). */
+async function computeModuleActivationHealth(now: Date): Promise<ModuleActivationHealth> {
+  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const where = { action: "module_activation_recommended", createdAt: { gte: since } };
+  const [recentRecommendationsCount, rows] = await Promise.all([
+    prisma.auditLog.count({ where }),
+    prisma.auditLog.findMany({ where, orderBy: { createdAt: "desc" }, take: 10 }),
+  ]);
+  return {
+    recentRecommendationsCount,
+    recent: rows.map((row) => {
+      let modules: string[] = [];
+      try {
+        modules = row.metadata ? (JSON.parse(row.metadata).modules ?? []) : [];
+      } catch {
+        modules = [];
+      }
+      return { incidentId: row.targetId ?? "unknown", modules, createdAt: row.createdAt.toISOString() };
+    }),
+  };
+}
+
 function computeActiveIssues(now: Date): OperationalIssue[] {
   const recent = getRecentIssues(60 * 60 * 1000, now);
   const byKey = new Map<string, OperationalIssue>();
@@ -184,11 +258,14 @@ function computeActiveIssues(now: Date): OperationalIssue[] {
 }
 
 export async function getOperationalHealthSnapshot(now: Date = new Date()): Promise<OperationalHealthSnapshot> {
-  const [persistence, sourceEntries, globalWatch, chileAlerts] = await Promise.all([
+  const [persistence, sourceEntries, globalWatch, chileAlerts, sourceIngestionCounts, masterIncidents, moduleActivations] = await Promise.all([
     checkPersistence(),
     getSourceOperationsHealth(now),
     checkPipelineFreshness("global-watch", GLOBAL_WATCH_SOURCE_IDS, GLOBAL_WATCH_FRESHNESS_MINUTES, now),
     checkPipelineFreshness("chile-alerts", CHILE_ALERTS_SOURCE_IDS, CHILE_ALERTS_FRESHNESS_MINUTES, now),
+    computeSourceIngestionCounts(),
+    computeMasterIncidentHealth(),
+    computeModuleActivationHealth(now),
   ]);
 
   const platform = checkPlatformReadiness();
@@ -214,9 +291,12 @@ export async function getOperationalHealthSnapshot(now: Date = new Date()): Prom
     distributedBackend,
     pipelines: [globalWatch.pipeline, chileAlerts.pipeline],
     sources,
+    sourceIngestionCounts,
     notifications,
     projections,
     modules,
+    masterIncidents,
+    moduleActivations,
     activeIssues,
   };
 }

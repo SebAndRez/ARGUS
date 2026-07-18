@@ -38,6 +38,18 @@ vi.mock("@/lib/knowledge-intake/persistence/knowledgePersistenceService", () => 
   // ejecutan, preservando el comportamiento que este test ya verificaba.
   getRecentIngestionRunsBySource: vi.fn().mockResolvedValue(new Map()),
 }));
+// ARGUS Fusion Engine (`masterIncidentEngine.ts`) — runGlobalWatch corre esta
+// correlación cross-amenaza como paso final, con llamadas directas a prisma
+// (no pasa por knowledgePersistenceService). Sin anclas (findMany vacío) sale
+// de inmediato sin crear nada — cero red/DB real, igual que el resto del archivo.
+vi.mock("@/lib/prisma", () => ({
+  prisma: {
+    knowledgeIncident: { findMany: vi.fn().mockResolvedValue([]) },
+    incidentRelation: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn() },
+    criticalPoi: { findMany: vi.fn().mockResolvedValue([]) },
+    auditLog: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn() },
+  },
+}));
 
 import { fetchFirmsActiveFires } from "@/lib/knowledge-intake/adapters/firmsAdapter";
 import { fetchEffisWildfires } from "@/lib/vigia/adapters/effisAdapter";

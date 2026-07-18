@@ -1,5 +1,23 @@
 # ARGUS Public Changelog
 
+## 2026-07-17 - pending-92bb942 - ARGUS 1.0.6.6 Mejoras de rendimiento y funcionamiento interno
+
+**Archivos modificados:** 2
+
+**Resumen publico:**  
+Se actualizaron 2 archivos relacionados con Documentacion.
+
+**Cambios principales:**
+- Se agregaron cambios de documentacion publica o interna.
+
+**Modulos afectados:**
+- Documentacion
+
+**En simple:**  
+Esta actualizacion mejora la informacion disponible sobre ARGUS y sus capacidades.
+
+---
+
 ## 2026-07-17 - pending-00caba0 - ARGUS 1.0.6.5 Mejoras de rendimiento y funcionamiento interno
 
 **Archivos modificados:** 35

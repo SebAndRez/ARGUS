@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { demoFenixShelters } from "@/data/fenixDemo";
 import { getRealFenixShelters } from "@/lib/fenix/fenixShelterSource";
+import { isDemoDataAllowed } from "@/lib/security/productionGuard";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,13 @@ export async function GET(request: NextRequest) {
         { status: 200 }
       );
     }
+  }
+
+  // ARGUS Prompt 9/10 (DATA-1): el modo con lat/lng arriba ya usa datos
+  // reales sin condicion; este fallback (sin coordenadas) es el que servia
+  // fixture sin ningun guard de produccion.
+  if (!isDemoDataAllowed()) {
+    return NextResponse.json({ source: "unavailable", count: 0, shelters: [] });
   }
 
   const scenarioId = searchParams.get("scenarioId");

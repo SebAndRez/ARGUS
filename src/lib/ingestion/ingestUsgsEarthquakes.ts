@@ -1,7 +1,7 @@
 import { getArgusSource } from "@/config/argusSourceRegistry";
 import { deduplicateEvents } from "@/lib/ingestion/deduplicateEvents";
 import { normalizeUsGsEarthquake } from "@/lib/ingestion/normalizeUsGsEarthquake";
-import { persistFreshIngestion } from "@/lib/ingestion/persistExternalEvents";
+import { persistFreshIngestion, recordIngestionRun } from "@/lib/ingestion/persistExternalEvents";
 import {
   getCachedSource,
   setCachedSource,
@@ -80,6 +80,10 @@ export async function getOrFetchUsgsEarthquakes(): Promise<
     });
 
     if (!response.ok) {
+      await recordIngestionRun(USGS_SOURCE_ID, "error", {
+        error: `USGS respondió con estado ${response.status}.`,
+        durationMs: Date.now() - startedAt,
+      });
       return {
         error: "USGS no respondió correctamente.",
         upstreamStatus: response.status,
@@ -88,6 +92,10 @@ export async function getOrFetchUsgsEarthquakes(): Promise<
 
     const payload = (await response.json()) as UsgsEarthquakeFeatureCollection;
     if (payload.type !== "FeatureCollection" || !Array.isArray(payload.features)) {
+      await recordIngestionRun(USGS_SOURCE_ID, "error", {
+        error: "USGS devolvió un formato GeoJSON no reconocido.",
+        durationMs: Date.now() - startedAt,
+      });
       return { error: "USGS devolvió un formato GeoJSON no reconocido." };
     }
 
@@ -115,12 +123,14 @@ export async function getOrFetchUsgsEarthquakes(): Promise<
     };
   } catch (error) {
     const timedOut = error instanceof Error && error.name === "AbortError";
-    return {
-      error: timedOut
-        ? "La consulta a USGS superó el tiempo de espera."
-        : "No fue posible consultar USGS en este momento.",
-      timedOut,
-    };
+    const message = timedOut
+      ? "La consulta a USGS superó el tiempo de espera."
+      : "No fue posible consultar USGS en este momento.";
+    await recordIngestionRun(USGS_SOURCE_ID, "error", {
+      error: message,
+      durationMs: Date.now() - startedAt,
+    });
+    return { error: message, timedOut };
   } finally {
     clearTimeout(timeoutId);
   }

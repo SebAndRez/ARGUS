@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchSenapredAlerts } from "@/lib/adapters/senapred/senapredEventosAdapter";
 import { acquireJobLock, responseForJobLockResult } from "@/lib/jobs/jobLock";
 import { generateRunId } from "@/lib/jobs/runIdentity";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,15 @@ function splitList(value: string | null) {
  * way.
  */
 export async function GET(request: NextRequest) {
+  // ARGUS Prompt 9/10 (SEC-1): esta ruta de diagnostico solo estaba protegida
+  // por el lock de ingestion, sin auth ni rate limit — cualquier anonimo
+  // podia amplificar consultas contra SENAPRED. Se mantiene publica (es una
+  // herramienta manual de debugging, no una superficie ciudadana) pero
+  // acotada por IP con la misma politica que el resto de los fetch en vivo.
+  const rateLimitOutcome = await enforceRateLimit({ policy: "knowledge_intake_live_read", request });
+  const rateLimited = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimited) return rateLimited;
+
   const params = request.nextUrl.searchParams;
   const daysBack = Number(params.get("daysBack") ?? "30");
 

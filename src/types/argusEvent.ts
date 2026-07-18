@@ -174,4 +174,11 @@ export interface ArgusEvent {
   relatedSignals?: string[];
   tags?: string[];
   isDemo?: boolean;
+  /**
+   * Slugs de `src/data/argusModules.ts` que el ARGUS Fusion Engine recomienda
+   * para este incidente (`src/lib/modules/moduleActivationEngine.ts`) — nunca
+   * navega automáticamente, solo informa qué módulos son relevantes para que
+   * la UI ofrezca el enlace. Ausente/vacío = sin recomendación calculada.
+   */
+  recommendedModules?: string[];
 }

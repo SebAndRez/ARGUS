@@ -11,59 +11,75 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * (nunca red real — `tests/setup.ts` bloquea cualquier fetch sin mockear).
  */
 
-const criticalPoiFindMany = vi.fn().mockResolvedValue([]);
-const criticalPoiCreate = vi.fn().mockImplementation((args: { data: { externalId?: string } }) =>
-  Promise.resolve({ id: `poi-${args.data.externalId ?? "x"}` })
-);
-const criticalPoiUpdate = vi.fn().mockResolvedValue({ id: "poi-updated" });
-const operationalStatusUpsert = vi.fn().mockResolvedValue({
-  id: "status-1",
-  poiId: "poi-1",
-  shelterStatus: "unknown",
-  capacityStatus: "unknown",
-  capacityTotal: null,
-  occupancyCurrent: null,
-  capacityDeclared: null,
-  hasWater: null,
-  hasElectricity: null,
-  hasFood: null,
-  hasMedical: null,
-  hasHeating: null,
-  hasBathrooms: null,
-  hasShowers: null,
-  isAccessible: null,
-  allowsPets: null,
-  hasConnectivity: null,
-  operatorName: null,
-  contactPhone: null,
-  contactNotes: null,
-  operatingHours: null,
-  routeStatus: null,
-  sourceType: "codigo_azul",
-  sourceName: "Código Azul",
-  sourceUrl: null,
-  sourcePublishedAt: null,
-  confidence: 75,
-  verificationStatus: "candidate",
-  lastUpdatedAt: new Date(),
-  lastVerifiedAt: null,
-  isStale: false,
-  linkedIncidentId: null,
-  publicationStatus: "active",
-  createdAt: new Date(),
-});
-const operationalStatusFindUnique = vi.fn().mockResolvedValue(null);
-const evidenceCreate = vi.fn().mockResolvedValue({});
-const ingestionRunFindFirst = vi.fn().mockResolvedValue(null);
-const transactionMock = vi.fn((ops: Promise<unknown>[]) => Promise.all(ops));
+// `vi.mock` se hoistea sobre los imports; `const`s normales referenciadas en
+// su factory revientan con "Cannot access before initialization" (bug real
+// que rompia este archivo: ver auditoria Prompt 9). `vi.hoisted` es el patron
+// ya usado en el resto del repo (ver tests/impact/incidentImpactAssessment.test.ts)
+// para declarar los mocks en el mismo punto de hoisting que `vi.mock`.
+const {
+  mockCriticalPoiFindMany,
+  mockCriticalPoiCreate,
+  mockCriticalPoiUpdate,
+  mockOperationalStatusUpsert,
+  mockOperationalStatusFindUnique,
+  mockEvidenceCreate,
+  mockIngestionRunFindFirst,
+  mockTransaction,
+} = vi.hoisted(() => ({
+  mockCriticalPoiFindMany: vi.fn().mockResolvedValue([]),
+  mockCriticalPoiCreate: vi.fn().mockImplementation((args: { data: { externalId?: string } }) =>
+    Promise.resolve({ id: `poi-${args.data.externalId ?? "x"}` })
+  ),
+  mockCriticalPoiUpdate: vi.fn().mockResolvedValue({ id: "poi-updated" }),
+  mockOperationalStatusUpsert: vi.fn().mockResolvedValue({
+    id: "status-1",
+    poiId: "poi-1",
+    shelterStatus: "unknown",
+    capacityStatus: "unknown",
+    capacityTotal: null,
+    occupancyCurrent: null,
+    capacityDeclared: null,
+    hasWater: null,
+    hasElectricity: null,
+    hasFood: null,
+    hasMedical: null,
+    hasHeating: null,
+    hasBathrooms: null,
+    hasShowers: null,
+    isAccessible: null,
+    allowsPets: null,
+    hasConnectivity: null,
+    operatorName: null,
+    contactPhone: null,
+    contactNotes: null,
+    operatingHours: null,
+    routeStatus: null,
+    sourceType: "codigo_azul",
+    sourceName: "Código Azul",
+    sourceUrl: null,
+    sourcePublishedAt: null,
+    confidence: 75,
+    verificationStatus: "candidate",
+    lastUpdatedAt: new Date(),
+    lastVerifiedAt: null,
+    isStale: false,
+    linkedIncidentId: null,
+    publicationStatus: "active",
+    createdAt: new Date(),
+  }),
+  mockOperationalStatusFindUnique: vi.fn().mockResolvedValue(null),
+  mockEvidenceCreate: vi.fn().mockResolvedValue({}),
+  mockIngestionRunFindFirst: vi.fn().mockResolvedValue(null),
+  mockTransaction: vi.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+}));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    criticalPoi: { findMany: criticalPoiFindMany, create: criticalPoiCreate, update: criticalPoiUpdate },
-    criticalPoiOperationalStatus: { upsert: operationalStatusUpsert, findUnique: operationalStatusFindUnique },
-    criticalPoiStatusEvidence: { create: evidenceCreate },
-    ingestionRun: { findFirst: ingestionRunFindFirst },
-    $transaction: transactionMock,
+    criticalPoi: { findMany: mockCriticalPoiFindMany, create: mockCriticalPoiCreate, update: mockCriticalPoiUpdate },
+    criticalPoiOperationalStatus: { upsert: mockOperationalStatusUpsert, findUnique: mockOperationalStatusFindUnique },
+    criticalPoiStatusEvidence: { create: mockEvidenceCreate },
+    ingestionRun: { findFirst: mockIngestionRunFindFirst },
+    $transaction: mockTransaction,
   },
 }));
 
@@ -105,8 +121,8 @@ function mockFetchByPage(pagesHtml: Record<number, string>) {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
-  criticalPoiFindMany.mockResolvedValue([]);
-  ingestionRunFindFirst.mockResolvedValue(null);
+  mockCriticalPoiFindMany.mockResolvedValue([]);
+  mockIngestionRunFindFirst.mockResolvedValue(null);
 });
 
 describe("runCodigoAzulIngestion — paginacion", () => {
@@ -148,20 +164,20 @@ describe("runCodigoAzulIngestion — paginacion", () => {
     const result = await runCodigoAzulIngestion();
     expect(result.status).toBe("schema_changed");
     expect(result.structuralChangeDetail).toBeDefined();
-    expect(criticalPoiCreate).not.toHaveBeenCalled();
-    expect(criticalPoiUpdate).not.toHaveBeenCalled();
+    expect(mockCriticalPoiCreate).not.toHaveBeenCalled();
+    expect(mockCriticalPoiUpdate).not.toHaveBeenCalled();
   });
 
   it("una caida anomala de registros respecto de la corrida anterior se marca degraded y no toca la base", async () => {
-    ingestionRunFindFirst.mockResolvedValue({ count: 89 });
+    mockIngestionRunFindFirst.mockResolvedValue({ count: 89 });
     mockFetchByPage({ 1: buildPageHtml(3), 2: EMPTY_PAGE_HTML });
     const result = await runCodigoAzulIngestion();
     expect(result.status).toBe("degraded");
-    expect(criticalPoiCreate).not.toHaveBeenCalled();
+    expect(mockCriticalPoiCreate).not.toHaveBeenCalled();
   });
 
   it("cero registros sin corrida previa no se trata como anomalia degradada (primera corrida real)", async () => {
-    ingestionRunFindFirst.mockResolvedValue(null);
+    mockIngestionRunFindFirst.mockResolvedValue(null);
     mockFetchByPage({ 1: EMPTY_PAGE_HTML });
     const result = await runCodigoAzulIngestion();
     expect(result.status).toBe("success");
@@ -169,10 +185,10 @@ describe("runCodigoAzulIngestion — paginacion", () => {
   });
 
   it("crea un CriticalPoi nuevo por cada fila cuando no hay coincidencia existente", async () => {
-    criticalPoiFindMany.mockResolvedValue([]);
+    mockCriticalPoiFindMany.mockResolvedValue([]);
     mockFetchByPage({ 1: buildPageHtml(2), 2: EMPTY_PAGE_HTML });
     const result = await runCodigoAzulIngestion();
     expect(result.recordsCreated).toBe(2);
-    expect(criticalPoiCreate).toHaveBeenCalledTimes(2);
+    expect(mockCriticalPoiCreate).toHaveBeenCalledTimes(2);
   });
 });

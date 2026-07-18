@@ -33,6 +33,29 @@ export type SourcesComponentHealth = ComponentHealth & {
   total: number;
 };
 
+/** Fase C / Fusion Engine — visibilidad de descartados/duplicados por fuente, ausente hasta ahora del panel. */
+export type SourceIngestionCounts = {
+  sourceId: string;
+  recordsFetched: number;
+  recordsInserted: number;
+  recordsUpdated: number;
+  recordsSkipped: number;
+  lastStatus: string | null;
+  lastRunAt: string | null;
+};
+
+/** Incidentes maestros activos generados por `masterIncidentEngine.ts` (correlación cross-amenaza). */
+export type MasterIncidentHealth = {
+  activeParents: number;
+  totalChildRelations: number;
+};
+
+/** Recomendaciones de módulo recientes (`moduleActivationEngine.ts`), registradas en `AuditLog`. */
+export type ModuleActivationHealth = {
+  recentRecommendationsCount: number;
+  recent: Array<{ incidentId: string; modules: string[]; createdAt: string }>;
+};
+
 export type OperationalHealthSnapshot = {
   generatedAt: string;
   overallStatus: OperationalHealthStatus;
@@ -41,8 +64,11 @@ export type OperationalHealthSnapshot = {
   distributedBackend: ComponentHealth;
   pipelines: PipelineHealth[];
   sources: SourcesComponentHealth;
+  sourceIngestionCounts: SourceIngestionCounts[];
   notifications: ComponentHealth;
   projections: ComponentHealth;
   modules: ComponentHealth;
+  masterIncidents: MasterIncidentHealth;
+  moduleActivations: ModuleActivationHealth;
   activeIssues: OperationalIssue[];
 };

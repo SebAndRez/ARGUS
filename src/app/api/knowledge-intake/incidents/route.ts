@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { demoKnowledgeIncidents } from "@/data/knowledgeIntakeDemo";
 import { getKnowledgeIncidents } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
+import { isDemoDataAllowed } from "@/lib/security/productionGuard";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,14 @@ export async function GET(request: NextRequest) {
       count: persisted.length,
       incidents: persisted,
     });
+  }
+  // ARGUS Prompt 9/10 (DATA-1): sin datos persistidos (BD vacia o el
+  // `.catch(() => [])` de arriba absorbiendo un fallo de BD), esta ruta
+  // caia a fixtures sin ningun guard — a diferencia de `argus/events`. En
+  // produccion sin `ARGUS_ALLOW_DEMO_DATA`, "sin datos reales" ahora se
+  // refleja como lista vacia, nunca como incidentes sinteticos.
+  if (!isDemoDataAllowed()) {
+    return NextResponse.json({ source: "unavailable", count: 0, incidents: [] });
   }
   const incidents = demoKnowledgeIncidents
     .filter((incident) => (!domain || incident.domain === domain) && (!country || incident.country === country))

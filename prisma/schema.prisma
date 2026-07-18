@@ -345,6 +345,24 @@ model KnowledgeIncident {
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 
+  // --- Campos canonicos (Fase C, ARGUS_INCIDENT_MIGRATION_PLAN.md) ---
+  // Aditivos, nullable: no reemplazan severity/reviewStatus/technicalFactorsJson.lifecycle,
+  // solo formalizan la misma informacion como columnas tipadas para dejar de derivarla de JSON
+  // en cada lectura. Poblados por dual-write (knowledgePersistenceService/chileAlertPromotionEngine).
+  status             String?   // lifecycle tipado: detected/validating/confirmed/active/escalating/monitoring/contained/resolved/archived/rejected/duplicate
+  effectiveSeverity  String?   // info/low/moderate/high/critical - unico campo que mapa/notificaciones deben leer
+  confidenceLevel    String?   // low/medium/high/very_high
+  verificationStatus String?   // unverified/candidate/corroborated/official
+  scope              String?   // local/regional/national/global
+  startedAt          DateTime?
+  confirmedAt        DateTime?
+  resolvedAt         DateTime?
+  archivedAt         DateTime?
+  sourceCount        Int?
+  evidenceCount      Int?
+  isOfficial         Boolean?
+  canonicalKey       String?   // clave de correlacion persistida (hoy se calcula al vuelo en dedup.ts y se descarta)
+
   @@unique([sourceId, externalId])
   @@index([sourceId])
   @@index([domain])
@@ -352,6 +370,38 @@ model KnowledgeIncident {
   @@index([reviewStatus])
   @@index([occurredAt])
   @@index([latitude, longitude])
+  @@index([status])
+  @@index([effectiveSeverity])
+  @@index([canonicalKey])
+}
+
+model IncidentRelation {
+  id             String   @id @default(cuid())
+  fromIncidentId String
+  toIncidentId   String
+  kind           String   // duplicate_of | caused_by | related_to | escalates | child_of | triggered_by | affects | part_of
+  confidence     Int
+  explanation    String?
+  createdAt      DateTime @default(now())
+
+  @@index([fromIncidentId])
+  @@index([toIncidentId])
+  @@index([kind])
+}
+
+model IncidentTransition {
+  id               String   @id @default(cuid())
+  incidentId       String
+  previousStatus   String?
+  newStatus        String?
+  previousSeverity String?
+  newSeverity      String?
+  reason           String
+  actorId          String? // null = automatico (sistema)
+  createdAt        DateTime @default(now())
+
+  @@index([incidentId])
+  @@index([createdAt])
 }
 
 model KnowledgeEvidence {

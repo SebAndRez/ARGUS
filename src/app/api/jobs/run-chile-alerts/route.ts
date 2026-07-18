@@ -47,11 +47,13 @@ async function runJob(request: NextRequest) {
   logJobEvent("job_started", { pipeline: "chile-alerts" });
   try {
     const result = await runChileAlertsIngestion(false, runId);
-    logJobEvent(result.status === "success" ? "job_completed" : "job_partial", {
+    logJobEvent(result.status === "success" ? "job_completed" : result.status === "failed" ? "job_failed" : "job_partial", {
       pipeline: "chile-alerts",
       durationMs: Date.now() - startedAt,
     });
-    return NextResponse.json(result);
+    // Mismo bug que run-global-watch (ver auditoría): `status: "failed"`
+    // devolvía HTTP 200 igual, invisible para el workflow de GitHub Actions.
+    return NextResponse.json(result, { status: result.status === "failed" ? 502 : 200 });
   } catch (error) {
     logJobEvent("job_failed", { pipeline: "chile-alerts", durationMs: Date.now() - startedAt });
     // Deliberately return only `error.message`, never the raw `error` object

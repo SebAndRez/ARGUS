@@ -5,6 +5,7 @@ import {
   getExternalIdFromIncident,
   shouldUpdateExistingIncident,
 } from "@/lib/knowledge-intake/persistence/knowledgeDeduplication";
+import { computeCanonicalFields } from "@/lib/incidents/canonicalFieldsSync";
 import type {
   ArgusIncidentKnowledge,
   ArgusKnowledgeEvidenceItem,
@@ -82,7 +83,42 @@ function reviewStatusForIncident(incident: ArgusIncidentKnowledge) {
   return "pending_review";
 }
 
+/**
+ * Fase C (`docs/architecture/ARGUS_INCIDENT_MIGRATION_PLAN.md` §3) —
+ * dual-write de las columnas canónicas. `existing` es `null` en creación
+ * (no hay snapshot previo que preservar); en actualización se pasa la fila
+ * previa para que `confirmedAt`/`resolvedAt`/`archivedAt`/`sourceCount` no
+ * retrocedan (ver `computeCanonicalFields`).
+ */
+function canonicalFieldsData(
+  incident: ArgusIncidentKnowledge,
+  reviewStatus: string,
+  existing: Parameters<typeof computeCanonicalFields>[2]
+) {
+  return computeCanonicalFields(
+    {
+      sourceId: incident.sourceIds[0] ?? "unknown",
+      domain: incident.domain,
+      subtype: incident.subtype ?? null,
+      severity: incident.severity,
+      confidenceScore: incident.confidenceScore,
+      country: incident.country ?? null,
+      region: incident.region ?? null,
+      latitude: incident.latitude ?? null,
+      longitude: incident.longitude ?? null,
+      occurredAt: incident.occurredAt ?? null,
+      detectedAt: incident.detectedAt ?? null,
+      technicalFactorsJson: incident.technicalFactors,
+      reviewStatus,
+    },
+    incident,
+    existing
+  );
+}
+
 function incidentCreateData(incident: ArgusIncidentKnowledge): Prisma.KnowledgeIncidentUncheckedCreateInput {
+  const reviewStatus = reviewStatusForIncident(incident);
+  const canonical = canonicalFieldsData(incident, reviewStatus, null);
   return {
     externalId: getExternalIdFromIncident(incident),
     sourceId: incident.sourceIds[0] ?? "unknown",
@@ -116,7 +152,20 @@ function incidentCreateData(incident: ArgusIncidentKnowledge): Prisma.KnowledgeI
     tagsJson: toJson(incident.tags),
     language: incident.language,
     rawEvidenceRefsJson: toJson(incident.rawEvidenceRefs),
-    reviewStatus: reviewStatusForIncident(incident),
+    reviewStatus,
+    status: canonical.status,
+    effectiveSeverity: canonical.effectiveSeverity,
+    confidenceLevel: canonical.confidenceLevel,
+    verificationStatus: canonical.verificationStatus,
+    scope: canonical.scope,
+    isOfficial: canonical.isOfficial,
+    canonicalKey: canonical.canonicalKey,
+    startedAt: canonical.startedAt,
+    confirmedAt: canonical.confirmedAt,
+    resolvedAt: canonical.resolvedAt,
+    archivedAt: canonical.archivedAt,
+    sourceCount: canonical.sourceCount,
+    evidenceCount: canonical.evidenceCount,
   };
 }
 
@@ -204,26 +253,85 @@ export async function saveKnowledgeIncident(incident: ArgusIncidentKnowledge) {
   return prisma.knowledgeIncident.create({ data: incidentCreateData(incident) });
 }
 
+/**
+ * Escribe `IncidentTransition` cuando `status` (lifecycle) o
+ * `effectiveSeverity` cambiaron entre la fila previa y la nueva — nunca en
+ * la creación (no hay "antes" que trazar) ni cuando ninguno de los dos
+ * cambió (adjuntar evidencia sin transición real no debe generar ruido de
+ * auditoría, diseño §15). Best-effort: un fallo aquí nunca aborta el
+ * upsert principal, que ya persistió correctamente.
+ */
+async function recordTransitionIfChanged(
+  incidentId: string,
+  previous: { status: string | null; effectiveSeverity: string | null },
+  next: { status: string | null; effectiveSeverity: string | null }
+) {
+  if (previous.status === next.status && previous.effectiveSeverity === next.effectiveSeverity) return;
+  try {
+    await prisma.incidentTransition.create({
+      data: {
+        incidentId,
+        previousStatus: previous.status,
+        newStatus: next.status,
+        previousSeverity: previous.effectiveSeverity,
+        newSeverity: next.effectiveSeverity,
+        reason: "canonical_fields_sync",
+        actorId: null,
+      },
+    });
+  } catch {
+    // Telemetría best-effort — no debe romper la ingesta.
+  }
+}
+
 export async function upsertKnowledgeIncidentByExternalId(incident: ArgusIncidentKnowledge) {
   const existing = await findExistingIncident(incident);
-  const data = incidentCreateData(incident);
   if (!existing) {
+    const data = incidentCreateData(incident);
     return { action: "inserted" as const, incident: await prisma.knowledgeIncident.create({ data }) };
   }
   if (!shouldUpdateExistingIncident(existing, incident)) {
     return { action: "skipped" as const, incident: existing };
   }
-  return {
-    action: "updated" as const,
-    incident: await prisma.knowledgeIncident.update({
-      where: { id: existing.id },
-      data: {
-        ...data,
-        externalId: data.externalId,
-        sourceId: data.sourceId,
-      },
-    }),
-  };
+
+  const data = incidentCreateData(incident);
+  const reviewStatus = reviewStatusForIncident(incident);
+  const canonical = canonicalFieldsData(incident, reviewStatus, {
+    confirmedAt: existing.confirmedAt,
+    resolvedAt: existing.resolvedAt,
+    archivedAt: existing.archivedAt,
+    sourceCount: existing.sourceCount,
+  });
+
+  const updated = await prisma.knowledgeIncident.update({
+    where: { id: existing.id },
+    data: {
+      ...data,
+      externalId: data.externalId,
+      sourceId: data.sourceId,
+      status: canonical.status,
+      effectiveSeverity: canonical.effectiveSeverity,
+      confidenceLevel: canonical.confidenceLevel,
+      verificationStatus: canonical.verificationStatus,
+      scope: canonical.scope,
+      isOfficial: canonical.isOfficial,
+      canonicalKey: canonical.canonicalKey,
+      startedAt: canonical.startedAt,
+      confirmedAt: canonical.confirmedAt,
+      resolvedAt: canonical.resolvedAt,
+      archivedAt: canonical.archivedAt,
+      sourceCount: canonical.sourceCount,
+      evidenceCount: canonical.evidenceCount,
+    },
+  });
+
+  await recordTransitionIfChanged(
+    existing.id,
+    { status: existing.status, effectiveSeverity: existing.effectiveSeverity },
+    { status: canonical.status, effectiveSeverity: canonical.effectiveSeverity }
+  );
+
+  return { action: "updated" as const, incident: updated };
 }
 
 export async function saveKnowledgeEvidence(evidence: ArgusKnowledgeEvidenceItem) {

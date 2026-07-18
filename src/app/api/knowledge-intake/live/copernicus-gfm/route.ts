@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 import { buildGfmEvidence, buildGfmIncidentPayload, buildObservedFloodExtentContext, fetchGfmProducts, getGfmConfigStatus, normalizeGfmProduct, shouldCreateObservedFloodIncident, validateGfmRequest, type CopernicusGfmParams } from "@/lib/knowledge-intake/adapters/copernicusGfmAdapter";
 import { saveContextEvidenceIfNew } from "@/lib/knowledge-intake/persistence/contextEvidence";
 import { upsertKnowledgeIncidentByExternalId } from "@/lib/knowledge-intake/persistence/knowledgePersistenceService";
@@ -12,6 +13,13 @@ export const dynamic = "force-dynamic";
  * operator/admin session as the equivalent `jobs/*` POST endpoint.
  */
 export async function GET(request: NextRequest) {
+  // ARGUS Prompt 9/10 (SEC-1): esta lectura en vivo no tenia auth NI rate
+  // limit por defecto (solo `?persist=true` pasaba por requireOperator).
+  // No se exige sesion: consumidores anonimos legitimos (ej. /app, NASA
+  // EONET) dependen de esta lectura publica. Solo se acota el abuso/costo.
+  const rateLimitOutcome = await enforceRateLimit({ policy: "knowledge_intake_live_read", request });
+  const rateLimited = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimited) return rateLimited;
   const p = request.nextUrl.searchParams;
   const input: CopernicusGfmParams = { aoiId: p.get("aoiId") ?? undefined, productId: p.get("productId") ?? undefined, lat: num(p, "lat"), lon: num(p, "lon"), bbox: p.get("bbox") ?? undefined, since: p.get("since") ?? undefined, until: p.get("until") ?? undefined, incidentId: p.get("incidentId") ?? undefined, routeAnalysisId: p.get("routeAnalysisId") ?? undefined, fenixSimulationId: p.get("fenixSimulationId") ?? undefined, persist: p.get("persist") === "true", createIncident: p.get("createIncident") === "true", includeGeometry: p.get("includeGeometry") === "true", includeRaster: p.get("includeRaster") === "true", includeAffectedPopulation: p.get("includeAffectedPopulation") === "true", includeAffectedLandcover: p.get("includeAffectedLandcover") === "true" };
   const validation = validateGfmRequest(input);

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 import { buildHapiEvidence, buildHapiHumanitarianContextSnapshot, getHapiIdentifierStatus, validateHapiRequest, type HapiRequestParams } from "@/lib/knowledge-intake/adapters/hdxHapiAdapter";
 import { saveContextEvidenceIfNew } from "@/lib/knowledge-intake/persistence/contextEvidence";
 import { requireOperator } from "@/lib/security/apiGuards";
@@ -6,6 +7,13 @@ import { requireOperator } from "@/lib/security/apiGuards";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  // ARGUS Prompt 9/10 (SEC-1): esta lectura en vivo no tenia auth NI rate
+  // limit por defecto (solo `?persist=true` pasaba por requireOperator).
+  // No se exige sesion: consumidores anonimos legitimos (ej. /app, NASA
+  // EONET) dependen de esta lectura publica. Solo se acota el abuso/costo.
+  const rateLimitOutcome = await enforceRateLimit({ policy: "knowledge_intake_live_read", request });
+  const rateLimited = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimited) return rateLimited;
   const params = request.nextUrl.searchParams;
   const input: HapiRequestParams = {
     locationCode: params.get("locationCode") ?? undefined,

@@ -88,7 +88,9 @@ describe("/api/vigia/events usa el mapeador canónico", () => {
     const body = await response.json();
 
     const expected = canonicalKnowledgeIncidentToArgusEvent(row, { idPrefix: "vigia" });
-    expect(body.events).toEqual([expected]);
+    // `/api/vigia/events` enriquece con `recommendedModules` (ARGUS Fusion
+    // Engine, `moduleActivationEngine.ts`) — no lo produce el mapeador puro.
+    expect(body.events).toEqual([{ ...expected, recommendedModules: ["fenix", "hermes", "arca", "aura"] }]);
     expect(body.source).toBe("argus_global_watch");
   });
 

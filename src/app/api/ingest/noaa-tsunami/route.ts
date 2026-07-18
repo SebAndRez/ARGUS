@@ -5,7 +5,7 @@ import {
   normalizeNoaaTsunami,
   parseNoaaTsunamiAtom,
 } from "@/lib/ingestion/normalizeNoaaTsunami";
-import { persistFreshIngestion } from "@/lib/ingestion/persistExternalEvents";
+import { persistFreshIngestion, recordIngestionRun } from "@/lib/ingestion/persistExternalEvents";
 import {
   getCachedSource,
   setCachedSource,
@@ -104,14 +104,16 @@ export async function GET() {
     );
     const timedOut =
       failure?.reason instanceof Error && failure.reason.name === "AbortError";
+    const message = timedOut
+      ? "La consulta a NOAA Tsunami superó el tiempo de espera."
+      : failure?.reason instanceof Error
+        ? failure.reason.message
+        : "No fue posible consultar NOAA Tsunami en este momento.";
+    await recordIngestionRun(SOURCE_ID, "error", { error: message, durationMs: Date.now() - startedAt });
 
     return NextResponse.json(
       {
-        error: timedOut
-          ? "La consulta a NOAA Tsunami superó el tiempo de espera."
-          : failure?.reason instanceof Error
-            ? failure.reason.message
-            : "No fue posible consultar NOAA Tsunami en este momento.",
+        error: message,
         sourceId: SOURCE_ID,
         sourceName: getArgusSource(SOURCE_ID)?.name ?? "NOAA Tsunami",
         cached: false,

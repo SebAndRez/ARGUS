@@ -5,7 +5,7 @@ import {
   normalizeGdacsAlert,
   parseGdacsRss,
 } from "@/lib/ingestion/normalizeGdacsAlert";
-import { persistFreshIngestion } from "@/lib/ingestion/persistExternalEvents";
+import { persistFreshIngestion, recordIngestionRun } from "@/lib/ingestion/persistExternalEvents";
 import {
   getCachedSource,
   setCachedSource,
@@ -121,13 +121,15 @@ export async function GET() {
   }
 
   const timedOut = lastError instanceof Error && lastError.name === "AbortError";
+  const message = timedOut
+    ? "La consulta a GDACS superó el tiempo de espera."
+    : lastError instanceof Error
+      ? lastError.message
+      : "No fue posible consultar GDACS en este momento.";
+  await recordIngestionRun(SOURCE_ID, "error", { error: message, durationMs: Date.now() - startedAt });
   return NextResponse.json(
     {
-      error: timedOut
-        ? "La consulta a GDACS superó el tiempo de espera."
-        : lastError instanceof Error
-          ? lastError.message
-          : "No fue posible consultar GDACS en este momento.",
+      error: message,
       sourceId: SOURCE_ID,
       sourceName: getArgusSource(SOURCE_ID)?.name ?? "GDACS Global Disaster Alerts",
       cached: false,

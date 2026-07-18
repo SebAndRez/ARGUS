@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { runFenixSimulation } from "@/lib/fenix/fenixSimulationEngine";
 import { createFenixSeedFromPrediction } from "@/lib/predictive-core/fenixBridge";
 import { requireOperator } from "@/lib/security/apiGuards";
+import { isDemoDataAllowed } from "@/lib/security/productionGuard";
 import type { ArgusDecisionPacket } from "@/types/predictiveCore";
 import type { FenixSimulationInput } from "@/types/fenixSimulation";
 
@@ -161,6 +162,13 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   const { response: authResponse } = await requireOperator();
   if (authResponse) return authResponse;
+
+  // ARGUS Prompt 9/10 (DATA-1): consistente con el resto de las rutas demo —
+  // ya estaba detras de `requireOperator`, pero seguia respondiendo con un
+  // escenario sintetico sin respetar el kill switch de produccion.
+  if (!isDemoDataAllowed()) {
+    return NextResponse.json({ source: "unavailable", count: 0, simulations: [] });
+  }
 
   const result = runFenixSimulation({ scenarioId: "fenix-wildfire-urban-edge" });
   return NextResponse.json({

@@ -201,6 +201,62 @@ export default function OperationsPanel() {
               </table>
             </section>
 
+            <section className="overflow-x-auto border border-white/10 bg-white/[0.02]">
+              <h2 className="px-4 pt-3 text-xs font-bold uppercase tracking-wide text-slate-400">
+                Ingesta por fuente (últimas corridas)
+              </h2>
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead className="border-b border-white/10 text-xs uppercase tracking-wide text-slate-400">
+                  <tr>
+                    <th className="px-4 py-3">Fuente</th>
+                    <th className="px-4 py-3">Último estado</th>
+                    <th className="px-4 py-3">Última corrida</th>
+                    <th className="px-4 py-3">Obtenidos</th>
+                    <th className="px-4 py-3">Nuevos</th>
+                    <th className="px-4 py-3">Actualizados</th>
+                    <th className="px-4 py-3">Descartados</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {snapshot.sourceIngestionCounts.map((row) => (
+                    <tr key={row.sourceId} className="border-b border-white/5">
+                      <td className="px-4 py-3 font-semibold text-white">{row.sourceId}</td>
+                      <td className="px-4 py-3 text-slate-300">{row.lastStatus ?? "—"}</td>
+                      <td className="px-4 py-3 text-slate-300">{formatDateTime(row.lastRunAt)}</td>
+                      <td className="px-4 py-3 text-slate-300">{row.recordsFetched}</td>
+                      <td className="px-4 py-3 text-slate-300">{row.recordsInserted}</td>
+                      <td className="px-4 py-3 text-slate-300">{row.recordsUpdated}</td>
+                      <td className="px-4 py-3 text-slate-300">{row.recordsSkipped}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+
+            <section className="grid gap-3 sm:grid-cols-2">
+              <div className="border border-white/10 bg-white/[0.03] px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-slate-400">Incidentes maestros activos</p>
+                <p className="mt-2 text-2xl font-bold text-white">{snapshot.masterIncidents.activeParents}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {snapshot.masterIncidents.totalChildRelations} incidente(s) hijo enlazado(s) en total (ARGUS Fusion
+                  Engine — correlación cross-amenaza).
+                </p>
+              </div>
+              <div className="border border-white/10 bg-white/[0.03] px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-slate-400">Activaciones de módulo (24h)</p>
+                <p className="mt-2 text-2xl font-bold text-white">{snapshot.moduleActivations.recentRecommendationsCount}</p>
+                {snapshot.moduleActivations.recent.length > 0 && (
+                  <ul className="mt-2 grid gap-1 text-xs text-slate-400">
+                    {snapshot.moduleActivations.recent.slice(0, 5).map((entry, index) => (
+                      <li key={`${entry.incidentId}-${index}`}>
+                        <span className="text-slate-300">{entry.incidentId}</span>: {entry.modules.join(", ") || "—"}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </section>
+
             <section className="grid gap-3 sm:grid-cols-3">
               {[
                 { label: "Notificaciones", health: snapshot.notifications },

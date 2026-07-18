@@ -8,7 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 vi.mock("@/lib/prisma", () => ({
-  prisma: { $queryRaw: vi.fn() },
+  prisma: {
+    $queryRaw: vi.fn(),
+    knowledgeIncident: { count: vi.fn() },
+    incidentRelation: { count: vi.fn() },
+    auditLog: { count: vi.fn(), findMany: vi.fn() },
+  },
 }));
 vi.mock("@/lib/security/rateLimitBackend", () => ({
   determineRateLimitBackendKind: vi.fn(),
@@ -32,6 +37,10 @@ const queryRawMock = vi.mocked(prisma.$queryRaw);
 const backendKindMock = vi.mocked(determineRateLimitBackendKind);
 const sourceHealthMock = vi.mocked(getSourceOperationsHealth);
 const ingestionRunsMock = vi.mocked(getRecentIngestionRunsBySource);
+const knowledgeIncidentCountMock = vi.mocked(prisma.knowledgeIncident.count);
+const incidentRelationCountMock = vi.mocked(prisma.incidentRelation.count);
+const auditLogCountMock = vi.mocked(prisma.auditLog.count);
+const auditLogFindManyMock = vi.mocked(prisma.auditLog.findMany);
 
 const NOW = new Date("2026-07-15T12:00:00.000Z");
 
@@ -52,6 +61,10 @@ beforeEach(() => {
   backendKindMock.mockReset();
   sourceHealthMock.mockReset();
   ingestionRunsMock.mockReset();
+  knowledgeIncidentCountMock.mockReset().mockResolvedValue(0);
+  incidentRelationCountMock.mockReset().mockResolvedValue(0);
+  auditLogCountMock.mockReset().mockResolvedValue(0);
+  auditLogFindManyMock.mockReset().mockResolvedValue([]);
 });
 
 afterEach(() => {

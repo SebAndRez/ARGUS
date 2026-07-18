@@ -57,7 +57,9 @@ export type RateLimitPolicyName =
   | "routing_directions_public"
   | "incident_impact_read"
   | "territorial_dossier_read"
-  | "operational_briefing_read";
+  | "operational_briefing_read"
+  | "knowledge_intake_live_read"
+  | "source_status_read";
 
 export interface RateLimitRule {
   name: RateLimitPolicyName;
@@ -260,6 +262,26 @@ export const rateLimitRules: Record<RateLimitPolicyName, RateLimitRule> = {
     failureMode: "fail_closed",
     notes:
       "Internamente compone impacto (Prompt 6) + expediente territorial (Prompt 7), cada uno con su propio costo ya acotado por sus propias políticas — este es el endpoint más costoso de los tres, de ahí el límite más bajo (15/min). No invoca ningún proveedor generativo (ninguno está habilitado en este pase), por lo que no hay coste de tokens que limitar todavía.",
+  },
+  knowledge_intake_live_read: {
+    name: "knowledge_intake_live_read",
+    description: "Fetch en vivo (sin persistir) de un adaptador de Knowledge Intake — proxy de datos públicos de terceros",
+    windowSeconds: 60,
+    maxRequests: 30,
+    keyStrategy: "ip",
+    failureMode: "fail_open_local",
+    notes:
+      "Auditoría Prompt 9 (SEC-1): ~24 rutas bajo /api/knowledge-intake/live/* (mas /api/argus/senapred/live) no tenian auth NI rate limit en su GET por defecto — solo `?persist=true` pasaba por requireOperator. No se puede exigir sesión aquí: `/app` (mapa público, ej. NASA EONET) y otros consumidores anónimos legítimos dependen de la lectura sin sesión. El límite por IP acota el riesgo real (amplificación de costo/abuso contra APIs de terceros como NASA FIRMS/ReliefWeb/USGS), sin romper el fetch público; fail-open en memoria porque estos son datos públicos de alerta, no debe desaparecer el feed ante una caída de Redis. Nunca sustituye el requireOperator ya existente para `persist=true`, que sigue intacto.",
+  },
+  source_status_read: {
+    name: "source_status_read",
+    description: "Lectura pública del estado legacy de fuentes (/api/sources/status)",
+    windowSeconds: 60,
+    maxRequests: 30,
+    keyStrategy: "ip",
+    failureMode: "fail_open_local",
+    notes:
+      "Auditoría Prompt 9 (OBS-1): ruta pública sin auth que expone `latestError` crudo. Mismo criterio que knowledge_intake_live_read — acota scraping/abuso sin exigir sesión para una lectura de solo estado.",
   },
 };
 

@@ -9,10 +9,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * `criticalPoiPersistenceService.ts`, que lo usa a nivel de consulta.
  */
 
-const findManyMock = vi.fn();
+// `vi.mock` se hoistea sobre los imports; una `const` normal referenciada en
+// su factory revienta con "Cannot access before initialization" (bug real que
+// rompia este archivo: ver auditoria Prompt 9). `vi.hoisted` es el patron ya
+// usado en el resto del repo (ver tests/impact/incidentImpactAssessment.test.ts)
+// para declarar el mock en el mismo punto de hoisting que `vi.mock`.
+const { mockFindMany } = vi.hoisted(() => ({
+  mockFindMany: vi.fn(),
+}));
 
 vi.mock("@/lib/prisma", () => ({
-  prisma: { criticalPoi: { findMany: findManyMock } },
+  prisma: { criticalPoi: { findMany: mockFindMany } },
 }));
 
 import { resolveShelterCandidateIdentity } from "@/lib/criticalPoi/shelterStatusDeduplication";
@@ -62,11 +69,11 @@ describe("shelterSourceAuthorityRank — Codigo Azul entre SENAPRED y municipali
 
 describe("resolveShelterCandidateIdentity", () => {
   afterEach(() => {
-    findManyMock.mockReset();
+    mockFindMany.mockReset();
   });
 
   it("match exacto por [source, externalId] -> kind 'exact'", async () => {
-    findManyMock.mockResolvedValue([poiRow()]);
+    mockFindMany.mockResolvedValue([poiRow()]);
     const result = await resolveShelterCandidateIdentity({
       name: "Albergue ONG Maria Olga Ester",
       commune: "Arica",
@@ -79,7 +86,7 @@ describe("resolveShelterCandidateIdentity", () => {
   });
 
   it("sin match exacto pero un unico match difuso por nombre -> kind 'single_fuzzy'", async () => {
-    findManyMock.mockResolvedValue([poiRow({ externalId: "999999" })]);
+    mockFindMany.mockResolvedValue([poiRow({ externalId: "999999" })]);
     const result = await resolveShelterCandidateIdentity({
       name: "Albergue ONG Maria Olga Ester",
       commune: "Arica",
@@ -92,7 +99,7 @@ describe("resolveShelterCandidateIdentity", () => {
   });
 
   it("dos o mas coincidencias difusas -> kind 'ambiguous', nunca fusiona automaticamente", async () => {
-    findManyMock.mockResolvedValue([
+    mockFindMany.mockResolvedValue([
       poiRow({ id: "poi-1", externalId: "111111", name: "Albergue Fundación Caritas" }),
       poiRow({ id: "poi-2", externalId: "222222", name: "Albergue Fundación Caritas Anexo" }),
     ]);
@@ -109,7 +116,7 @@ describe("resolveShelterCandidateIdentity", () => {
   });
 
   it("sin coincidencias -> kind 'new'", async () => {
-    findManyMock.mockResolvedValue([]);
+    mockFindMany.mockResolvedValue([]);
     const result = await resolveShelterCandidateIdentity({
       name: "Refugio Completamente Nuevo",
       commune: "Coquimbo",
@@ -124,6 +131,6 @@ describe("resolveShelterCandidateIdentity", () => {
   it("sin coordenadas -> kind 'new' (nunca inventa una busqueda por proximidad sin coordenadas)", async () => {
     const result = await resolveShelterCandidateIdentity({ name: "Sin coordenadas", source: "official_open_data" });
     expect(result.kind).toBe("new");
-    expect(findManyMock).not.toHaveBeenCalled();
+    expect(mockFindMany).not.toHaveBeenCalled();
   });
 });

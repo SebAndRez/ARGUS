@@ -48,14 +48,23 @@ async function runJob(request: NextRequest) {
   logJobEvent("job_started", { pipeline: "global-watch" });
   try {
     const summary = await runGlobalWatch({ runId });
-    logJobEvent(summary.status === "success" ? "job_completed" : "job_partial", {
-      pipeline: "global-watch",
-      durationMs: Date.now() - startedAt,
-      sourcesConsulted: summary.sourcesConsulted,
-    });
+    logJobEvent(
+      summary.status === "success" ? "job_completed" : summary.status === "failed" ? "job_failed" : "job_partial",
+      {
+        pipeline: "global-watch",
+        durationMs: Date.now() - startedAt,
+        sourcesConsulted: summary.sourcesConsulted,
+      }
+    );
     // El resumen expone solo contadores, ids de fuente y mensajes de error
     // acotados — nunca secretos ni payloads crudos de las APIs externas.
-    return NextResponse.json(summary);
+    // Bug confirmado en auditoría: `summary.status === "failed"` (todas las
+    // fuentes fallaron/deshabilitadas) devolvía HTTP 200 igual — el workflow
+    // (`.github/workflows/argus-global-watch.yml`) solo trata códigos fuera
+    // del rango 2xx como fallo, así que un fallo total nunca se detectaba.
+    // 502 iguala el código ya usado por la rama `catch` de abajo para un
+    // fallo del pipeline (no se inventa un código nuevo).
+    return NextResponse.json(summary, { status: summary.status === "failed" ? 502 : 200 });
   } catch (error) {
     logJobEvent("job_failed", { pipeline: "global-watch", durationMs: Date.now() - startedAt });
     return NextResponse.json(

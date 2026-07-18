@@ -5,6 +5,7 @@ import {
   getSourceCacheMetadata,
 } from "@/lib/ingestion/sourceCache";
 import { buildSourceHealthSummary } from "@/lib/sources/sourceHealthEngine";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,15 @@ function getCacheForSource(sourceId: string) {
 }
 
 export async function GET() {
+  // ARGUS Prompt 9/10 (OBS-1): esta ruta legacy era publica y sin auth,
+  // exponiendo `run.error` crudo dentro de `warnings` (getSourceWarnings()
+  // interpola el mensaje de error tal cual, ver sourceHealthEngine.ts).
+  // Confirmado sin consumidores vivos en `src` (el unico componente que la
+  // llama, SourceStatusPanel.tsx, no esta montado en ninguna pagina) — se
+  // gatea igual que /api/vigia/source-health en vez de solo acotar la tasa.
+  const { response: authResponse } = await requireOperator();
+  if (authResponse) return authResponse;
+
   let persistedCounts = new Map<string, number>();
   let latestRuns = new Map<string, {
     status: string;

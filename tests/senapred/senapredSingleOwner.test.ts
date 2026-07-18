@@ -64,6 +64,13 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     externalEvent: { groupBy: vi.fn().mockResolvedValue([]) },
     ingestionRun: { findMany: vi.fn().mockResolvedValue([]) },
+    // ARGUS Fusion Engine (`masterIncidentEngine.ts`) — runGlobalWatch ahora
+    // corre esta correlación cross-amenaza como paso final; sin anclas
+    // encontradas (findMany vacío) sale de inmediato sin tocar el resto.
+    knowledgeIncident: { findMany: vi.fn().mockResolvedValue([]) },
+    incidentRelation: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn() },
+    criticalPoi: { findMany: vi.fn().mockResolvedValue([]) },
+    auditLog: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn() },
   },
 }));
 

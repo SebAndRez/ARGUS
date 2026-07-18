@@ -5,7 +5,7 @@ import {
   normalizeNasaFirms,
   parseNasaFirmsCsv,
 } from "@/lib/ingestion/normalizeNasaFirms";
-import { persistFreshIngestion } from "@/lib/ingestion/persistExternalEvents";
+import { persistFreshIngestion, recordIngestionRun } from "@/lib/ingestion/persistExternalEvents";
 import {
   getCachedSource,
   setCachedSource,
@@ -162,6 +162,7 @@ export async function GET(request: NextRequest) {
 
     if (!response.ok) {
       const { message, httpStatus } = messageForFirmsStatus(response.status);
+      await recordIngestionRun(SOURCE_ID, "error", { error: message, durationMs: Date.now() - startedAt });
       return NextResponse.json(
         {
           error: message,
@@ -179,9 +180,11 @@ export async function GET(request: NextRequest) {
       !header.includes("longitude") ||
       !header.includes("acq_date")
     ) {
+      const message = "NASA FIRMS devolvió una respuesta CSV no reconocida.";
+      await recordIngestionRun(SOURCE_ID, "error", { error: message, durationMs: Date.now() - startedAt });
       return NextResponse.json(
         {
-          error: "NASA FIRMS devolvió una respuesta CSV no reconocida.",
+          error: message,
           sourceId: SOURCE_ID,
           cached: false,
         },
@@ -213,11 +216,13 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const timedOut = error instanceof Error && error.name === "AbortError";
+    const message = timedOut
+      ? "La consulta a NASA FIRMS superó el tiempo de espera."
+      : "No fue posible consultar NASA FIRMS en este momento.";
+    await recordIngestionRun(SOURCE_ID, "error", { error: message, durationMs: Date.now() - startedAt });
     return NextResponse.json(
       {
-        error: timedOut
-          ? "La consulta a NASA FIRMS superó el tiempo de espera."
-          : "No fue posible consultar NASA FIRMS en este momento.",
+        error: message,
         sourceId: SOURCE_ID,
         cached: false,
       },

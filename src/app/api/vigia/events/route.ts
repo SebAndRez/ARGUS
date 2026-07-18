@@ -5,6 +5,8 @@ import { VIGIA_SOURCE_REGISTRY } from "@/lib/vigia/sourceRegistry";
 import { isDemoDataAllowed } from "@/lib/security/productionGuard";
 import { isIncidentOperationallyActive, logUnrecognizedLifecycle } from "@/lib/lifecycle/operationalVisibilityPolicy";
 import { logOperationalEvent } from "@/lib/observability/operationalEvents";
+import { MASTER_INCIDENT_SOURCE_ID } from "@/lib/incidents/masterIncidentRules";
+import { computeRecommendedModules } from "@/lib/modules/moduleActivationEngine";
 
 export const dynamic = "force-dynamic";
 
@@ -18,9 +20,16 @@ export const dynamic = "force-dynamic";
  * archivados y cualquier otro estado terminal (Prompt 10 — ver
  * docs/architecture/ARGUS_OPERATIONAL_LIFECYCLE_POLICY.md).
  */
-const VIGIA_SOURCE_IDS = VIGIA_SOURCE_REGISTRY
-  .filter((source) => source.id !== "senapred_eventos") // Chile ya se sirve por /api/chile-alerts.
-  .map((source) => source.id);
+const VIGIA_SOURCE_IDS = [
+  ...VIGIA_SOURCE_REGISTRY
+    .filter((source) => source.id !== "senapred_eventos") // Chile ya se sirve por /api/chile-alerts.
+    .map((source) => source.id),
+  // Incidentes maestros sintéticos del ARGUS Fusion Engine (correlación
+  // cross-amenaza, `src/lib/incidents/masterIncidentEngine.ts`) — no vienen
+  // del registry de fuentes (no fetchean nada), pero deben verse en el mapa
+  // igual que cualquier otro incidente.
+  MASTER_INCIDENT_SOURCE_ID,
+];
 
 /**
  * `technicalFactorsJson.lifecycle` vive en JSON, no en una columna — Prisma
@@ -79,6 +88,8 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  const incidentById = new Map(incidents.map((incident) => [incident.id, incident]));
+
   const events = projected
     .filter((event): event is NonNullable<typeof event> => Boolean(event))
     .filter((event) => {
@@ -93,7 +104,23 @@ export async function GET(request: NextRequest) {
     .filter((event) => includeDemo || !event.isDemo)
     .filter((event) => !severity || event.severity === severity)
     .filter((event) => !threat || event.tags?.includes(`vigia:${threat.toLowerCase()}`))
-    .slice(0, limit);
+    .slice(0, limit)
+    .map((event) => {
+      // `event.id` es `vigia-${incident.id}` (idPrefix fijo de esta ruta) —
+      // recomendación calculada en lectura (ARGUS Fusion Engine), nunca
+      // persistida en el DTO ni usada para navegar automáticamente.
+      const source = incidentById.get(event.id.replace(/^vigia-/, ""));
+      if (!source) return event;
+      return {
+        ...event,
+        recommendedModules: computeRecommendedModules({
+          domain: source.domain,
+          subtype: source.subtype,
+          effectiveSeverity: source.effectiveSeverity,
+          severity: source.severity,
+        }),
+      };
+    });
 
   return NextResponse.json({
     source: "argus_global_watch",
