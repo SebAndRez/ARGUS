@@ -1,5 +1,24 @@
 [
   {
+    "changeId": "367ee336af06",
+    "date": "2026-07-21",
+    "commit": "pending-367ee33",
+    "title": "ARGUS 1.0.5.0",
+    "fileCount": 22,
+    "summary": "Se actualizaron 22 archivos relacionados con Reportes ciudadanos y Acceso y sesion.",
+    "changes": [
+      "Se mejoro la lectura y gestion de reportes.",
+      "Se ajustaron flujos de acceso y sesion.",
+      "Se actualizaron servicios internos usados por ARGUS."
+    ],
+    "affectedModules": [
+      "Reportes ciudadanos",
+      "Acceso y sesion",
+      "Base de datos interna"
+    ],
+    "simpleExplanation": "Esta actualizacion ayuda a que los reportes sean mas claros, ordenados y faciles de revisar."
+  },
+  {
     "changeId": "39bbb694dba3",
     "date": "2026-07-18",
     "commit": "pending-39bbb69",
