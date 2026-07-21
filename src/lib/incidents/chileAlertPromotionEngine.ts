@@ -124,6 +124,10 @@ export async function promoteChileOfficialAlerts(rawAlerts: ChileOfficialAlertRa
   const errors: string[] = [];
   const incidents: ArgusIncidentKnowledge[] = [];
 
+  // Pass 1 (sync, cheap): classify + filter to what's actually promotable.
+  // Severity filtering never touches the DB, so it stays a plain loop.
+  type PromotableAlert = { raw: ChileOfficialAlertRaw; threat: SevereWeatherThreatType; severity: "high" | "critical" };
+  const promotable: PromotableAlert[] = [];
   for (const raw of rawAlerts) {
     const threat = classifyThreat(raw.threatText);
     const severity = classifySeverityFromLevel(raw.levelText);
@@ -131,7 +135,21 @@ export async function promoteChileOfficialAlerts(rawAlerts: ChileOfficialAlertRa
       notPromoted += 1;
       continue;
     }
+    promotable.push({ raw, threat, severity });
+  }
 
+  // Pass 2 (DB, bounded concurrency): previously a plain `for` loop awaiting
+  // one upsert + evidence save at a time — confirmed contributor to the
+  // Global Watch 300s timeout during an active-alert period (many high/
+  // critical alerts). `PROMOTION_PERSIST_CONCURRENCY` workers pull from a
+  // shared queue instead, same idiom `globalWatchEngine.ts` already uses for
+  // its own persistence step (`PERSIST_CONCURRENCY`). Counter mutations
+  // below are safe under this pattern: JS has no true parallelism, so each
+  // `+=` still runs to completion between await points, never interleaved
+  // mid-update.
+  const PROMOTION_PERSIST_CONCURRENCY = 6;
+  const queue = [...promotable];
+  const persistOne = async ({ raw, threat, severity }: PromotableAlert) => {
     const areaName = raw.commune ?? raw.province ?? raw.region ?? "chile";
     const geometryResolved = resolveAdministrativeAreaWithFallback("CL", {
       commune: raw.commune,
@@ -248,7 +266,13 @@ export async function promoteChileOfficialAlerts(rawAlerts: ChileOfficialAlertRa
     } catch (error) {
       errors.push(error instanceof Error ? error.message : `Failed to persist incident ${externalId}`);
     }
+  };
+  async function persistWorker() {
+    for (let next = queue.shift(); next; next = queue.shift()) {
+      await persistOne(next);
+    }
   }
+  await Promise.all(Array.from({ length: Math.min(PROMOTION_PERSIST_CONCURRENCY, promotable.length) }, () => persistWorker()));
 
   await finishIngestionRun(run.id, {
     status: errors.length > 0 ? "partial" : "success",

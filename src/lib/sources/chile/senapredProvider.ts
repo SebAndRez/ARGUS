@@ -35,6 +35,18 @@ const SENAPRED_EVENTOS_BASE_URL = "https://www.senapred.cl/eventos/";
 /** Cheap pre-filter so we don't fetch full per-alert detail (comuna/provincia breakdown) for every routine green/monitoring alert — only for ones plausibly severe. Actual classification happens in `severeWeatherClassifier`. */
 const DETAIL_WORTHY_PATTERN = /roja|naranja|tornado|tromba|viento|tormenta|el[ée]ctrica|remoci[oó]n|aluvi[oó]n|inundaci[oó]n|desborde/i;
 
+/**
+ * Confirmed root cause of the Global Watch 300s timeout (2026-07-21 audit):
+ * this was previously a plain `for` loop doing `await fetchAlertaDetail(item.id)`
+ * one at a time. During an active severe-weather period, dozens of alerts
+ * match `DETAIL_WORTHY_PATTERN`, turning into that many strictly sequential
+ * AppSync round trips with no concurrency — the single largest contributor
+ * to the timeout. Bounded to a fixed worker-pool concurrency instead (same
+ * queue-shift idiom already used by `globalWatchEngine.ts`'s
+ * `PERSIST_CONCURRENCY`), not an unbounded `Promise.all`.
+ */
+const DETAIL_FETCH_CONCURRENCY = 8;
+
 function stripHtml(value?: string): string {
   return (value ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -76,23 +88,44 @@ export async function fetchChileOfficialAlertsRaw(params?: {
   } while (nextToken && page < maxPages);
   if (nextToken) warnings.push(`Stopped after ${maxPages} pages; more SENAPRED alerts may exist in range.`);
 
-  const alerts: ChileOfficialAlertRaw[] = [];
-  for (const item of allItems) {
+  // Pass 1 (sync, cheap): derive per-item fields and decide which alerts
+  // actually need a detail lookup — no network I/O yet.
+  const prepared = allItems.map((item) => {
     const regionNames = item.regionesIds.map((id) => regionById.get(id)).filter((name): name is string => Boolean(name));
     const levelText = item.variableRiesgo?.tipoAlerta?.nombre ?? "";
     const threatTextBase = `${item.variableRiesgo?.nombre ?? ""} ${stripHtml(item.contenido)}`.trim();
+    const needsDetail = DETAIL_WORTHY_PATTERN.test(`${item.titulo} ${levelText} ${threatTextBase}`);
+    return { item, regionNames, levelText, threatTextBase, needsDetail };
+  });
 
+  // Pass 2 (network, bounded concurrency): fetch full detail only for the
+  // alerts that need it, `DETAIL_FETCH_CONCURRENCY` at a time instead of one
+  // at a time — same outcome per alert (best-effort, `null` on failure),
+  // just no longer serialized behind each other's round-trip latency.
+  const detailIds = prepared.filter((p) => p.needsDetail).map((p) => p.item.id);
+  const detailById = new Map<string, Awaited<ReturnType<typeof fetchAlertaDetail>>>();
+  const detailQueue = [...detailIds];
+  async function detailWorker() {
+    for (let id = detailQueue.shift(); id; id = detailQueue.shift()) {
+      const detail = await fetchAlertaDetail(id).catch(() => null);
+      if (detail) detailById.set(id, detail);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(DETAIL_FETCH_CONCURRENCY, detailIds.length) }, () => detailWorker()));
+
+  // Pass 3 (sync): assemble the final alerts using the pre-fetched details.
+  const alerts: ChileOfficialAlertRaw[] = prepared.map(({ item, regionNames, levelText, threatTextBase, needsDetail }) => {
     let province: string | undefined;
     let commune: string | undefined;
-    if (DETAIL_WORTHY_PATTERN.test(`${item.titulo} ${levelText} ${threatTextBase}`)) {
-      const detail = await fetchAlertaDetail(item.id).catch(() => null);
+    if (needsDetail) {
+      const detail = detailById.get(item.id);
       if (detail) {
         province = detail.provincias.map((id) => provinciaById.get(id)).find(Boolean);
         commune = detail.comunas.map((id) => comunaById.get(id)).find(Boolean);
       }
     }
 
-    alerts.push({
+    return {
       title: stripHtml(item.titulo),
       region: regionNames[0],
       province,
@@ -101,11 +134,11 @@ export async function fetchChileOfficialAlertsRaw(params?: {
       levelText,
       issuedAt: toIsoDate(item.fechaHora),
       updatedAt: toIsoDate(item.fechaHora),
-      sourceId: "senapred_eventos",
+      sourceId: "senapred_eventos" as const,
       evidenceUrl: item.urlAccess ? `${SENAPRED_EVENTOS_BASE_URL}${item.urlAccess}` : SENAPRED_EVENTOS_BASE_URL,
       contenido: item.contenido,
-    });
-  }
+    };
+  });
 
   return { alerts, warnings, errors };
 }

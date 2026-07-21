@@ -111,6 +111,14 @@ export type GlobalWatchSummary = {
   masterIncidents: MasterIncidentSummary | null;
   errorsBySource: Record<string, string[]>;
   sources: GlobalWatchSourceSummary[];
+  /** Aggregated, verifiable job-level counters — audit Fase 6: the endpoint must never report a generic "ok" without real numbers behind it. */
+  totals: {
+    received: number;
+    created: number;
+    updated: number;
+    discarded: number;
+    failedSources: number;
+  };
 };
 
 type FetchResult = {
@@ -387,7 +395,36 @@ export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promi
       }
 
       if (source.id === "senapred_eventos") {
-        sourceSummaries.push(await runSenapredSource(source, seedMode, options.runId));
+        // Confirmed root cause of the Global Watch 300s timeout (2026-07-21
+        // audit): unlike every other source below, this call used to run
+        // with NO timeout guard at all — `runSenapredSource()` was awaited
+        // directly inside this same top-level `Promise.all`, so if its
+        // (previously unbounded, now bounded — see senapredProvider.ts/
+        // chileAlertPromotionEngine.ts) sequential AppSync/DB work ran long,
+        // the whole `Promise.all` — and therefore every other source's
+        // persistence/lifecycle/response — waited on it too. Wrapped the
+        // same way as every other source (`runWithTimeout`, registry-declared
+        // `timeoutMs`) so one slow source can never again consume the
+        // entire job's time budget. `runWithTimeout` races rather than
+        // cancels the underlying call (see sourceScheduler.ts) — the
+        // `senapred-ingestion` lock it holds is still released by its own
+        // `finally` whenever that background work actually finishes.
+        const senapredStart = Date.now();
+        console.info(`[global-watch] source:start source=senapred_eventos`);
+        const timeoutMs = getSourceDefinition(source.id)?.timeoutMs ?? 20_000;
+        try {
+          const result = await runWithTimeout(source.id, timeoutMs, () => runSenapredSource(source, seedMode, options.runId));
+          sourceSummaries.push(result);
+        } catch (error) {
+          const summary = emptySourceSummary(source);
+          summary.status = "failed";
+          summary.errors = [error instanceof Error ? error.message : `Fuente ${source.id} falló.`];
+          summary.durationMs = Date.now() - senapredStart;
+          sourceSummaries.push(summary);
+        }
+        console.info(
+          `[global-watch] source:complete source=senapred_eventos durationMs=${Date.now() - senapredStart}`
+        );
         return;
       }
 
@@ -423,6 +460,7 @@ export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promi
 
       const summary = emptySourceSummary(source);
       const sourceStart = Date.now();
+      console.info(`[global-watch] source:start source=${source.id}`);
       let runId: string | null = null;
       try {
         const run = await createIngestionRun({
@@ -455,6 +493,7 @@ export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promi
         await sourceLock.release();
       }
       summary.durationMs = Date.now() - sourceStart;
+      console.info(`[global-watch] source:complete source=${source.id} durationMs=${summary.durationMs} status=${summary.status}`);
       sourceSummaries.push(summary);
     })
   );
@@ -472,6 +511,8 @@ export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promi
   // 4. Persistencia: incidentes/candidatos → KnowledgeIncident + evidencias.
   //    En lotes concurrentes acotados: la BD es remota y cada evento cuesta
   //    varios round-trips; secuencial puro multiplica la latencia por N.
+  const persistStageStart = Date.now();
+  console.info(`[global-watch] stage:start stage=persistence count=${mergedEvents.length}`);
   const PERSIST_CONCURRENCY = 6;
   const persistQueue = [...mergedEvents];
   const persistWorker = async () => {
@@ -614,6 +655,7 @@ export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promi
     }
   };
   await Promise.all(Array.from({ length: PERSIST_CONCURRENCY }, () => persistWorker()));
+  console.info(`[global-watch] stage:complete stage=persistence durationMs=${Date.now() - persistStageStart}`);
 
   // 5. Cerrar corridas de ingesta con contadores reales.
   for (const summary of sourceSummaries) {
@@ -689,5 +731,12 @@ export async function runGlobalWatch(options: GlobalWatchRunOptions = {}): Promi
     masterIncidents,
     errorsBySource,
     sources: sourceSummaries.sort((a, b) => a.sourceId.localeCompare(b.sourceId)),
+    totals: {
+      received: sourceSummaries.reduce((acc, summary) => acc + summary.fetched, 0),
+      created: sourceSummaries.reduce((acc, summary) => acc + summary.incidentsCreated, 0),
+      updated: sourceSummaries.reduce((acc, summary) => acc + summary.incidentsUpdated, 0),
+      discarded: sourceSummaries.reduce((acc, summary) => acc + summary.incidentsSkipped, 0),
+      failedSources: sourceSummaries.filter((summary) => summary.status === "failed").length,
+    },
   };
 }
