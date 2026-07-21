@@ -11,6 +11,17 @@ import {
 import { computeRecommendedModules, recordModuleActivationRecommendation } from "@/lib/modules/moduleActivationEngine";
 
 /**
+ * Off by default: cycle-prevention, concurrent-run, notification-throttling,
+ * and privacy-exclusion behavior are not yet covered by tests (release audit
+ * gap), so this engine must not run in production until an operator opts in
+ * explicitly — mirrors the `ARGUS_ALLOW_DEMO_DATA` opt-in convention in
+ * `src/lib/security/productionGuard.ts`.
+ */
+export function isFusionEngineEnabled(): boolean {
+  return process.env.ARGUS_ENABLE_FUSION_ENGINE === "true";
+}
+
+/**
  * ARGUS Fusion Engine — correlación cross-amenaza ("incidente maestro").
  *
  * Corre como paso nuevo al final de `runGlobalWatch()` (después del sweep de
@@ -327,6 +338,8 @@ export async function runMasterIncidentCorrelation(now: Date = new Date()): Prom
     moduleActivationsLogged: 0,
     errors: [],
   };
+
+  if (!isFusionEngineEnabled()) return summary;
 
   for (const rule of MASTER_INCIDENT_RULES) {
     try {

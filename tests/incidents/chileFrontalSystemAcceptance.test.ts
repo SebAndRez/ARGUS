@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Tarea 10 del mandato — prueba de aceptación con el caso del sistema
@@ -47,7 +47,13 @@ const auditLogCreate = vi.mocked(prisma.auditLog.create);
 
 const NOW = new Date("2026-07-16T20:00:00.000Z");
 
+// Fusion Engine is off by default (ARGUS_ENABLE_FUSION_ENGINE, see
+// masterIncidentEngine.ts) — this suite exists specifically to exercise its
+// real correlation behavior, so it opts in for its own duration only.
+const PREVIOUS_FUSION_ENGINE_FLAG = process.env.ARGUS_ENABLE_FUSION_ENGINE;
+
 beforeEach(() => {
+  process.env.ARGUS_ENABLE_FUSION_ENGINE = "true";
   findMany.mockReset();
   findUnique.mockReset();
   create.mockReset();
@@ -69,6 +75,11 @@ beforeEach(() => {
   criticalPoiFindMany.mockResolvedValue([CHILE_FRONTAL_SYSTEM_SHELTER] as never);
   auditLogFindFirst.mockResolvedValue(null as never);
   auditLogCreate.mockResolvedValue({} as never);
+});
+
+afterEach(() => {
+  if (PREVIOUS_FUSION_ENGINE_FLAG === undefined) delete process.env.ARGUS_ENABLE_FUSION_ENGINE;
+  else process.env.ARGUS_ENABLE_FUSION_ENGINE = PREVIOUS_FUSION_ENGINE_FLAG;
 });
 
 describe("Sistema frontal de Chile — reconstrucción con el ARGUS Fusion Engine", () => {

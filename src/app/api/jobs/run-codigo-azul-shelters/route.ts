@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runCodigoAzulIngestion } from "@/lib/criticalPoi/criticalPoiCodigoAzulSync";
 import { recordIngestionRun } from "@/lib/ingestion/persistExternalEvents";
-import { acquireJobLock, logJobEvent, responseForJobLockResult } from "@/lib/jobs/jobLock";
+import { acquireJobLock, isPreviewDeployment, logJobEvent, responseForJobLockResult } from "@/lib/jobs/jobLock";
 import { resolveIdempotencyKey } from "@/lib/jobs/runIdentity";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +20,9 @@ function isAuthorized(request: NextRequest): boolean {
 }
 
 async function runJob(request: NextRequest) {
+  if (isPreviewDeployment()) {
+    return NextResponse.json({ status: "error", error: "Jobs are disabled in preview deployments" }, { status: 403 });
+  }
   if (!isAuthorized(request)) {
     return NextResponse.json({ status: "error", error: "Unauthorized" }, { status: 401 });
   }

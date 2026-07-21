@@ -3,7 +3,7 @@ import { getCriticalPoisInBbox } from "@/lib/criticalPoi/criticalPoiPersistenceS
 import { prioritiesVisibleAtZoom, shouldShowCityAggregate } from "@/lib/criticalPoi/criticalPoiPriority";
 import { getOperationalStatusesByPoiIds } from "@/lib/criticalPoi/shelterOperationalStatusService";
 import type { CriticalPoi, CriticalPoiBoundingBox } from "@/lib/criticalPoi/criticalPoiTypes";
-import type { CriticalPoiWithOperationalStatus } from "@/lib/criticalPoi/shelterOperationalStatusTypes";
+import { toPublicShelterOperationalStatus, type PublicCriticalPoiWithOperationalStatus } from "@/lib/criticalPoi/shelterOperationalStatusTypes";
 
 /**
  * Lee infraestructura critica YA PERSISTIDA (tabla `CriticalPoi`), no
@@ -21,15 +21,22 @@ function parseCoord(value: string | null): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/** Adjunta el estado operacional (si existe) a los POIs de categoria "shelter". El resto queda intacto - ningun otro modulo/categoria cambia de forma. */
-async function withShelterOperationalStatus(pois: CriticalPoi[]): Promise<CriticalPoiWithOperationalStatus[]> {
+/**
+ * Adjunta el estado operacional (si existe) a los POIs de categoria
+ * "shelter". El resto queda intacto - ningun otro modulo/categoria cambia de
+ * forma. Esta ruta no tiene autenticacion, asi que el estado se redacta con
+ * `toPublicShelterOperationalStatus` — nunca expone operatorName/
+ * contactPhone/contactNotes (esos solo viven detras de `requireOperator()`
+ * en `/api/critical-pois/[id]/operational-status`).
+ */
+async function withShelterOperationalStatus(pois: CriticalPoi[]): Promise<PublicCriticalPoiWithOperationalStatus[]> {
   const shelterIds = pois.filter((poi) => poi.category === "shelter").map((poi) => poi.id);
   if (shelterIds.length === 0) return pois;
 
   const statusByPoiId = await getOperationalStatusesByPoiIds(shelterIds);
   return pois.map((poi) => {
     const operationalStatus = statusByPoiId.get(poi.id);
-    return operationalStatus ? { ...poi, operationalStatus } : poi;
+    return operationalStatus ? { ...poi, operationalStatus: toPublicShelterOperationalStatus(operationalStatus) } : poi;
   });
 }
 

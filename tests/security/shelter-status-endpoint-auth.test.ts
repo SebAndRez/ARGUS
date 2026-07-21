@@ -31,8 +31,12 @@ vi.mock("@/lib/criticalPoi/shelterOperationalStatusService", () => ({
 import { getCurrentUser } from "@/services/authService";
 import { logAuditEvent } from "@/services/auditService";
 import { getCriticalPoiById } from "@/lib/criticalPoi/criticalPoiPersistenceService";
-import { applyShelterStatusReport, getOperationalStatusByPoiId } from "@/lib/criticalPoi/shelterOperationalStatusService";
-import { POST as operationalStatusPost } from "@/app/api/critical-pois/[id]/operational-status/route";
+import {
+  applyShelterStatusReport,
+  getOperationalStatusByPoiId,
+  getStatusEvidenceForPoi,
+} from "@/lib/criticalPoi/shelterOperationalStatusService";
+import { GET as operationalStatusGet, POST as operationalStatusPost } from "@/app/api/critical-pois/[id]/operational-status/route";
 import { resetMemoryRateLimitBackendForTests } from "@/lib/security/rateLimitBackend";
 
 const getCurrentUserMock = vi.mocked(getCurrentUser);
@@ -40,6 +44,7 @@ const logAuditEventMock = vi.mocked(logAuditEvent);
 const getCriticalPoiByIdMock = vi.mocked(getCriticalPoiById);
 const applyShelterStatusReportMock = vi.mocked(applyShelterStatusReport);
 const getOperationalStatusByPoiIdMock = vi.mocked(getOperationalStatusByPoiId);
+const getStatusEvidenceForPoiMock = vi.mocked(getStatusEvidenceForPoi);
 
 const CITIZEN = { id: "citizen-1", role: "CITIZEN" };
 const OPERATOR = { id: "operator-1", role: "OPERATOR" };
@@ -171,5 +176,112 @@ describe("POST /api/critical-pois/[id]/operational-status — validacion", () =>
     expect(report.hasWater).toBe(true);
     expect(report.hasElectricity).toBeUndefined();
     expect(report.capacityTotal).toBeUndefined();
+  });
+});
+
+/**
+ * GET /api/critical-pois/[id]/operational-status no tiene `requireOperator()`
+ * (a diferencia del POST de arriba) — por diseno es publico, pero por eso
+ * mismo nunca debe devolver operatorName/contactPhone/contactNotes, ni en
+ * `operationalStatus` ni escondidos dentro de `evidence[].payload` (que
+ * espeja el reporte de fuente original). Regresion del hallazgo de la
+ * auditoria Fase 2.
+ */
+describe("GET /api/critical-pois/[id]/operational-status — redaccion de datos de contacto (sin autenticacion)", () => {
+  const FULL_STATUS = {
+    id: "status-1",
+    poiId: SHELTER_POI.id,
+    shelterStatus: "available",
+    capacityStatus: "ok",
+    operatorName: "Juan Perez",
+    contactPhone: "+56 9 1234 5678",
+    contactNotes: "Llamar solo despues de las 8am",
+    sourceType: "manual_operator",
+    sourceName: "Operador ARGUS",
+    confidence: 70,
+    verificationStatus: "unverified",
+    lastUpdatedAt: "2026-07-18T00:00:00.000Z",
+    isStale: false,
+    publicationStatus: "active",
+    createdAt: "2026-07-18T00:00:00.000Z",
+  };
+
+  const EVIDENCE_WITH_CONTACT_PAYLOAD = {
+    id: "evidence-1",
+    poiId: SHELTER_POI.id,
+    eventType: "capacity_updated",
+    sourceType: "manual_operator",
+    sourceName: "Operador ARGUS",
+    confidenceScore: 70,
+    payload: {
+      sourceType: "manual_operator",
+      sourceName: "Operador ARGUS",
+      confidenceScore: 70,
+      operatorName: "Juan Perez",
+      contactPhone: "+56 9 1234 5678",
+      contactNotes: "Llamar solo despues de las 8am",
+      capacityTotal: 100,
+      // Clave desconocida/futura, no listada en el allowlist ni en el
+      // denylist anterior — prueba que la redaccion es allowlist (todo lo
+      // no reconocido se descarta), no denylist (solo se descartan 3
+      // nombres conocidos).
+      internalDebugNote: "nota interna que nunca deberia salir",
+    },
+    createdAt: "2026-07-18T00:00:00.000Z",
+  };
+
+  function getRequest(id: string) {
+    return new Request(`http://localhost/api/critical-pois/${id}/operational-status`, { method: "GET" });
+  }
+
+  it("nunca expone operatorName/contactPhone/contactNotes en operationalStatus, ni en evidence[].payload", async () => {
+    getCriticalPoiByIdMock.mockResolvedValue(SHELTER_POI as never);
+    getOperationalStatusByPoiIdMock.mockResolvedValue(FULL_STATUS as never);
+    getStatusEvidenceForPoiMock.mockResolvedValue([EVIDENCE_WITH_CONTACT_PAYLOAD] as never);
+
+    const response = await operationalStatusGet(getRequest(SHELTER_POI.id), ctx(SHELTER_POI.id));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const serialized = JSON.stringify(body);
+
+    expect(body.operationalStatus.operatorName).toBeUndefined();
+    expect(body.operationalStatus.contactPhone).toBeUndefined();
+    expect(body.operationalStatus.contactNotes).toBeUndefined();
+    expect(body.evidence[0].payload.operatorName).toBeUndefined();
+    expect(body.evidence[0].payload.contactPhone).toBeUndefined();
+    expect(body.evidence[0].payload.contactNotes).toBeUndefined();
+    // Cinturon y tirantes: ninguno de los 3 valores reales aparece en ningun
+    // lado de la respuesta serializada, sin importar la clave.
+    expect(serialized).not.toContain("Juan Perez");
+    expect(serialized).not.toContain("+56 9 1234 5678");
+    expect(serialized).not.toContain("Llamar solo despues de las 8am");
+    // Prueba de allowlist (no denylist): una clave desconocida en el payload
+    // tambien queda afuera, no solo las 3 nombradas explicitamente.
+    expect(body.evidence[0].payload.internalDebugNote).toBeUndefined();
+    expect(serialized).not.toContain("internalDebugNote");
+    expect(serialized).not.toContain("nota interna que nunca deberia salir");
+
+    // El resto de los campos, no sensibles, se conserva.
+    expect(body.operationalStatus.shelterStatus).toBe("available");
+    expect(body.evidence[0].payload.capacityTotal).toBe(100);
+  });
+
+  it("operationalStatus ausente -> null, nunca revienta por falta de reporte", async () => {
+    getCriticalPoiByIdMock.mockResolvedValue(SHELTER_POI as never);
+    getOperationalStatusByPoiIdMock.mockResolvedValue(null);
+    getStatusEvidenceForPoiMock.mockResolvedValue([]);
+
+    const response = await operationalStatusGet(getRequest(SHELTER_POI.id), ctx(SHELTER_POI.id));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.operationalStatus).toBeNull();
+    expect(body.evidence).toEqual([]);
+  });
+
+  it("POI no es shelter -> 404, nunca llama al servicio de estado", async () => {
+    getCriticalPoiByIdMock.mockResolvedValue(HOSPITAL_POI as never);
+    const response = await operationalStatusGet(getRequest(HOSPITAL_POI.id), ctx(HOSPITAL_POI.id));
+    expect(response.status).toBe(404);
+    expect(getOperationalStatusByPoiIdMock).not.toHaveBeenCalled();
   });
 });

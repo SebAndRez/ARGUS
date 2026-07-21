@@ -37,6 +37,34 @@ const auditLogCreate = vi.mocked(prisma.auditLog.create);
 
 const NOW = new Date("2026-07-17T12:00:00.000Z");
 
+/**
+ * The Fusion Engine is off by default (`ARGUS_ENABLE_FUSION_ENGINE`, see
+ * masterIncidentEngine.ts) until cycle-prevention/concurrency/notification-
+ * throttling/privacy behavior gets test coverage. Every test exercising real
+ * correlation must opt in explicitly; `withEnvAsync` restores the previous
+ * value afterwards regardless of pass/fail (mirrors tests/jobs/jobLock.test.ts).
+ */
+async function withEnvAsync<T>(overrides: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
+  const saved: Record<string, string | undefined> = {};
+  for (const key of Object.keys(overrides)) saved[key] = process.env[key];
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+function withFusionEngineEnabled<T>(fn: () => Promise<T>): Promise<T> {
+  return withEnvAsync({ ARGUS_ENABLE_FUSION_ENGINE: "true" }, fn);
+}
+
 function buildRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "anchor-1",
@@ -91,13 +119,54 @@ beforeEach(() => {
   auditLogCreate.mockResolvedValue({} as never);
 });
 
+describe("ARGUS_ENABLE_FUSION_ENGINE flag (default off — release audit gate)", () => {
+  it("disabled by default: does not touch the database and returns an empty summary", async () => {
+    const anchor = buildRow();
+    const companion = buildRow({ id: "companion-1", domain: "flood" });
+    mockFindManyDispatch([anchor], [companion]);
+
+    const summary = await withEnvAsync({ ARGUS_ENABLE_FUSION_ENGINE: undefined }, () => runMasterIncidentCorrelation(NOW));
+
+    expect(summary).toEqual({
+      groupsEvaluated: 0,
+      parentsCreated: 0,
+      parentsUpdated: 0,
+      relationsCreated: 0,
+      sheltersLinked: 0,
+      moduleActivationsLogged: 0,
+      errors: [],
+    });
+    expect(findMany).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    expect(relationCreate).not.toHaveBeenCalled();
+  });
+
+  it('explicitly "false" behaves the same as unset (stays disabled)', async () => {
+    const summary = await withEnvAsync({ ARGUS_ENABLE_FUSION_ENGINE: "false" }, () => runMasterIncidentCorrelation(NOW));
+    expect(summary.groupsEvaluated).toBe(0);
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it('enabled when explicitly "true": runs correlation and touches the database', async () => {
+    const anchor = buildRow();
+    const companion = buildRow({ id: "companion-1", domain: "flood" });
+    mockFindManyDispatch([anchor], [companion]);
+
+    const summary = await withFusionEngineEnabled(() => runMasterIncidentCorrelation(NOW));
+
+    expect(summary.parentsCreated).toBe(1);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("runMasterIncidentCorrelation", () => {
   it("groups a severe-weather anchor with a different-domain companion into one parent incident", async () => {
     const anchor = buildRow();
     const companion = buildRow({ id: "companion-1", domain: "flood", title: "Inundacion Valparaiso" });
     mockFindManyDispatch([anchor], [companion]);
 
-    const summary = await runMasterIncidentCorrelation(NOW);
+    const summary = await withFusionEngineEnabled(() => runMasterIncidentCorrelation(NOW));
 
     expect(summary.parentsCreated).toBe(1);
     expect(summary.parentsUpdated).toBe(0);
@@ -119,7 +188,7 @@ describe("runMasterIncidentCorrelation", () => {
     const anchor = buildRow();
     mockFindManyDispatch([anchor], []);
 
-    const summary = await runMasterIncidentCorrelation(NOW);
+    const summary = await withFusionEngineEnabled(() => runMasterIncidentCorrelation(NOW));
 
     expect(summary.parentsCreated).toBe(0);
     expect(summary.relationsCreated).toBe(0);
@@ -141,7 +210,7 @@ describe("runMasterIncidentCorrelation", () => {
       return [];
     }) as never);
 
-    await runMasterIncidentCorrelation(NOW);
+    await withFusionEngineEnabled(() => runMasterIncidentCorrelation(NOW));
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -153,7 +222,7 @@ describe("runMasterIncidentCorrelation", () => {
     relationFindFirst.mockResolvedValue({ id: "existing-relation" } as never);
     auditLogFindFirst.mockResolvedValue({ metadata: JSON.stringify({ modules: ["hermes", "arca", "atlas", "vesta"] }) } as never);
 
-    const summary = await runMasterIncidentCorrelation(NOW);
+    const summary = await withFusionEngineEnabled(() => runMasterIncidentCorrelation(NOW));
 
     expect(create).not.toHaveBeenCalled();
     expect(update).toHaveBeenCalledTimes(1);

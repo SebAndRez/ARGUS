@@ -24,6 +24,19 @@ import {
 
 export type JobLockName = "global-watch" | "chile-alerts" | "senapred-ingestion" | "codigo-azul-shelters";
 
+/**
+ * Preview deployments share `CRON_SECRET` with Production in this Vercel
+ * project (single project, both environments read the same secret) — this
+ * is the only additional layer stopping a Preview URL from executing a
+ * real job against the shared database if that secret ever leaks or gets
+ * replayed. Checked first, before the secret comparison, in every
+ * `/api/jobs/*` route. Production, local dev, and tests are unaffected —
+ * `VERCEL_ENV` is only ever `"preview"` on an actual Preview deployment.
+ */
+export function isPreviewDeployment(): boolean {
+  return process.env.VERCEL_ENV === "preview";
+}
+
 export interface JobLockRule {
   name: JobLockName;
   /** Prefijo de clave — Prompt 13 §6: una clave independiente por pipeline. */

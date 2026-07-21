@@ -69,6 +69,7 @@ afterEach(() => {
   resetMemoryJobLocksForTests();
   resetMemoryRateLimitBackendForTests();
   delete process.env.CRON_SECRET;
+  delete process.env.VERCEL_ENV;
 });
 
 describe("POST /api/knowledge-intake/jobs/run-codigo-azul-shelters — manual (operador)", () => {
@@ -137,6 +138,14 @@ describe("GET/POST /api/jobs/run-codigo-azul-shelters — programado (secreto de
     process.env.CRON_SECRET = CRON_SECRET;
     const response = await cronRunPost(cronRequest({ authorization: `Bearer ${CRON_SECRET}`, "Idempotency-Key": "clave con espacios !!" }));
     expect(response.status).toBe(400);
+    expect(runCodigoAzulIngestionMock).not.toHaveBeenCalled();
+  });
+
+  it("VERCEL_ENV=preview -> 403 aunque el secreto sea correcto, nunca ejecuta la ingesta (CRON_SECRET compartido con Production)", async () => {
+    process.env.CRON_SECRET = CRON_SECRET;
+    process.env.VERCEL_ENV = "preview";
+    const response = await cronRunPost(cronRequest({ authorization: `Bearer ${CRON_SECRET}` }));
+    expect(response.status).toBe(403);
     expect(runCodigoAzulIngestionMock).not.toHaveBeenCalled();
   });
 

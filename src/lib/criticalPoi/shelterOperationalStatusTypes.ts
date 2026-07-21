@@ -185,3 +185,117 @@ export const shelterSourceAuthorityRank: Record<ShelterSourceType, number> = {
 export interface CriticalPoiWithOperationalStatus extends CriticalPoi {
   operationalStatus?: ShelterOperationalStatus;
 }
+
+/** Version publica de `ShelterOperationalStatus` — nunca incluye datos de contacto del operador. */
+export type PublicShelterOperationalStatus = Omit<ShelterOperationalStatus, "operatorName" | "contactPhone" | "contactNotes">;
+
+/** `CriticalPoi` (categoria "shelter") + estado operacional PUBLICO, para respuestas sin autenticacion (ver `/api/critical-pois`). */
+export interface PublicCriticalPoiWithOperationalStatus extends CriticalPoi {
+  operationalStatus?: PublicShelterOperationalStatus;
+}
+
+export type PublicShelterStatusEvidence = Omit<ShelterStatusEvidence, "payload"> & { payload?: Record<string, unknown> };
+
+/**
+ * Quita operatorName/contactPhone/contactNotes antes de que un estado
+ * operacional llegue a una respuesta publica (sin autenticacion) — esos 3
+ * campos solo son para el flujo de operador (`POST
+ * /api/critical-pois/[id]/operational-status`, protegido con
+ * `requireOperator()`).
+ */
+export function toPublicShelterOperationalStatus(status: ShelterOperationalStatus): PublicShelterOperationalStatus {
+  return {
+    id: status.id,
+    poiId: status.poiId,
+    shelterStatus: status.shelterStatus,
+    capacityStatus: status.capacityStatus,
+    capacityTotal: status.capacityTotal,
+    occupancyCurrent: status.occupancyCurrent,
+    capacityDeclared: status.capacityDeclared,
+    capacityAvailable: status.capacityAvailable,
+    occupancyPercentage: status.occupancyPercentage,
+    hasWater: status.hasWater,
+    hasElectricity: status.hasElectricity,
+    hasFood: status.hasFood,
+    hasMedical: status.hasMedical,
+    hasHeating: status.hasHeating,
+    hasBathrooms: status.hasBathrooms,
+    hasShowers: status.hasShowers,
+    isAccessible: status.isAccessible,
+    allowsPets: status.allowsPets,
+    hasConnectivity: status.hasConnectivity,
+    operatingHours: status.operatingHours,
+    routeStatus: status.routeStatus,
+    sourceType: status.sourceType,
+    sourceName: status.sourceName,
+    sourceUrl: status.sourceUrl,
+    sourcePublishedAt: status.sourcePublishedAt,
+    confidence: status.confidence,
+    verificationStatus: status.verificationStatus,
+    lastUpdatedAt: status.lastUpdatedAt,
+    lastVerifiedAt: status.lastVerifiedAt,
+    isStale: status.isStale,
+    linkedIncidentId: status.linkedIncidentId,
+    publicationStatus: status.publicationStatus,
+    createdAt: status.createdAt,
+  };
+}
+
+/**
+ * Allowlist explicita de `evidence.payload` — nunca un denylist. `payload` es
+ * el reporte de fuente original serializado (`toJson(report)` en
+ * `shelterOperationalStatusService.ts`, mismo shape que
+ * `ShelterOperationalStatusReport`); si esa interfaz alguna vez suma un campo
+ * nuevo (sensible o no), un denylist lo dejaria pasar sin querer. Con
+ * allowlist, un campo nuevo queda afuera hasta que alguien lo agregue aca a
+ * proposito — falla cerrado, no abierto. Deliberadamente excluye
+ * operatorName/contactPhone/contactNotes.
+ */
+const PUBLIC_SHELTER_REPORT_PAYLOAD_KEYS = [
+  "shelterStatus",
+  "capacityTotal",
+  "occupancyCurrent",
+  "capacityDeclared",
+  "hasWater",
+  "hasElectricity",
+  "hasFood",
+  "hasMedical",
+  "hasHeating",
+  "hasBathrooms",
+  "hasShowers",
+  "isAccessible",
+  "allowsPets",
+  "hasConnectivity",
+  "operatingHours",
+  "routeStatus",
+  "verificationStatus",
+  "lastVerifiedAt",
+  "linkedIncidentId",
+  "sourceType",
+  "sourceName",
+  "sourceUrl",
+  "sourcePublishedAt",
+  "confidenceScore",
+] as const;
+
+export function toPublicShelterStatusEvidence(evidence: ShelterStatusEvidence): PublicShelterStatusEvidence {
+  if (!evidence.payload) {
+    return { ...evidence, payload: undefined };
+  }
+  const sanitizedPayload: Record<string, unknown> = {};
+  for (const key of PUBLIC_SHELTER_REPORT_PAYLOAD_KEYS) {
+    if (key in evidence.payload) sanitizedPayload[key] = evidence.payload[key];
+  }
+  return {
+    id: evidence.id,
+    poiId: evidence.poiId,
+    eventType: evidence.eventType,
+    sourceType: evidence.sourceType,
+    sourceName: evidence.sourceName,
+    sourceUrl: evidence.sourceUrl,
+    sourcePublishedAt: evidence.sourcePublishedAt,
+    confidenceScore: evidence.confidenceScore,
+    payload: sanitizedPayload,
+    createdAt: evidence.createdAt,
+  };
+}

@@ -49,7 +49,7 @@ vi.mock("@/lib/knowledge-intake/persistence/knowledgePersistenceService", () => 
   saveKnowledgeEvidenceIfNew: vi.fn().mockResolvedValue({ action: "inserted", evidence: {} }),
   upsertKnowledgeIncidentByExternalId: vi.fn().mockImplementation(async (incident: { id: string }) => ({
     action: "inserted",
-    incident: { id: `persisted-${incident.id}`, ...incident },
+    incident: { ...incident, id: `persisted-${incident.id}` },
   })),
   getRecentIngestionRunsBySource: vi.fn().mockResolvedValue(new Map()),
   findWildfireCorrelationCandidates: vi.fn().mockResolvedValue([]),

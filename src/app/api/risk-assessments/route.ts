@@ -41,6 +41,29 @@ function jsonArray(value: Prisma.JsonValue | null): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+/**
+ * `metadata` se escribe como `riskAssessmentToJson({ ...assessment, ... })`
+ * (ver `persistAssessment`) — es decir, contiene una copia completa del
+ * assessment, no solo `historicalContext`. Pero todos los demas campos de
+ * `ArgusRiskAssessment` ya vienen de columnas propias de la tabla (ver el
+ * literal de retorno de `mapStoredAssessment`), asi que la unica razon real
+ * para leer `metadata` es recuperar `historicalContext`, que no tiene
+ * columna dedicada. Extraccion explicita con validacion de forma — nunca un
+ * spread del objeto completo, que dejaria pasar cualquier clave presente en
+ * `metadata` sin querer.
+ */
+function extractHistoricalContext(metadata: Record<string, unknown>): ArgusRiskAssessment["historicalContext"] {
+  const candidate = metadata.historicalContext;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return undefined;
+  const { explanation, facts, documents } = candidate as Record<string, unknown>;
+  if (typeof explanation !== "string" || !Array.isArray(facts) || !Array.isArray(documents)) return undefined;
+  return {
+    explanation,
+    facts: facts as HazardKnowledgeFact[],
+    documents: documents as HazardKnowledgeDocumentSummary[],
+  };
+}
+
 function mapStoredAssessment(assessment: {
   id: string;
   riskType: string;
@@ -63,7 +86,7 @@ function mapStoredAssessment(assessment: {
   const metadata = jsonObject(assessment.metadata);
 
   return {
-    ...(metadata as Partial<ArgusRiskAssessment>),
+    historicalContext: extractHistoricalContext(metadata),
     id: assessment.id,
     riskType: assessment.riskType as ArgusRiskAssessment["riskType"],
     status: assessment.status as ArgusRiskAssessment["status"],

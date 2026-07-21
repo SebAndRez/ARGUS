@@ -182,11 +182,12 @@ describe("resolveDemoFallback (Prompt 3 fail-closed fallback)", () => {
 
   it("con datos reales presentes: nunca invoca el fallback, incluso si demo esta permitido", () => {
     let fallbackCalls = 0;
-    const result = resolveDemoFallback<CrisisEvent>([realEvent()], true, () => {
+    const event = realEvent();
+    const result = resolveDemoFallback<CrisisEvent>([event], true, () => {
       fallbackCalls += 1;
       return [demoEventCritical()];
     });
-    expect(result).toEqual([realEvent()]);
+    expect(result).toEqual([event]);
     expect(fallbackCalls).toBe(0);
   });
 });

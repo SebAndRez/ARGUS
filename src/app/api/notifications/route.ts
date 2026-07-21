@@ -369,7 +369,29 @@ async function getShelterOperationalAlerts(): Promise<ShelterOperationalAlertIte
           { routeStatus: "blocked" },
         ],
       },
-      include: { poi: true },
+      // select explicito (en vez de `include: { poi: true }` sobre el modelo
+      // completo) para no traer operatorName/contactPhone/contactNotes a
+      // memoria en esta ruta publica sin autenticacion — nunca se usaban en
+      // el mapeo de abajo, pero antes se traian igual.
+      select: {
+        poiId: true,
+        shelterStatus: true,
+        routeStatus: true,
+        isStale: true,
+        sourceType: true,
+        sourceName: true,
+        confidence: true,
+        lastUpdatedAt: true,
+        poi: {
+          select: {
+            category: true,
+            name: true,
+            latitude: true,
+            longitude: true,
+            countryCode: true,
+          },
+        },
+      },
       take: 100,
     });
 
@@ -431,6 +453,7 @@ async function getConnectivityAlerts(): Promise<ConnectivityAlertItem[]> {
         const latestEvidence = await prisma.telecomConnectivityEvidence.findFirst({
           where: { regionKey, subjectType: "region" },
           orderBy: { createdAt: "desc" },
+          select: { eventType: true },
         });
         const notableTypes = new Set(["activated", "expanded", "ended", "degraded", "restored"]);
         if (latestEvidence && notableTypes.has(latestEvidence.eventType)) {
@@ -466,6 +489,7 @@ async function getConnectivityAlerts(): Promise<ConnectivityAlertItem[]> {
 
     const recentPointEvidence = await prisma.telecomConnectivityEvidence.findMany({
       where: { subjectType: "poi", eventType: "point_added", createdAt: { gte: new Date(now.getTime() - 24 * 3_600_000) } },
+      select: { poiId: true, sourceType: true, sourceName: true, confidenceScore: true, createdAt: true },
       take: 50,
     });
     for (const evidence of recentPointEvidence) {

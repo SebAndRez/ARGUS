@@ -97,6 +97,7 @@ afterEach(() => {
   resetMemoryJobLocksForTests();
   resetMemoryRateLimitBackendForTests();
   delete process.env.CRON_SECRET;
+  delete process.env.VERCEL_ENV;
 });
 
 describe("lock no adquirido -> motor no llamado (Global Watch)", () => {
@@ -293,6 +294,39 @@ describe("Caso 12 — dos pipelines distintos sin lock compartido", () => {
     expect(chileAlertsResponse.status).toBe(200);
 
     if (globalWatchLock.acquired) await globalWatchLock.release();
+  });
+});
+
+describe("Preview deployments no pueden ejecutar jobs (CRON_SECRET compartido entre Preview y Production en Vercel)", () => {
+  it("run-global-watch: VERCEL_ENV=preview -> 403 aunque el secreto sea correcto, runGlobalWatch nunca se llama", async () => {
+    process.env.VERCEL_ENV = "preview";
+    const response = await jobsGlobalWatchGet(cronRequest("http://localhost/api/jobs/run-global-watch"));
+    expect(response.status).toBe(403);
+    expect(runGlobalWatchMock).not.toHaveBeenCalled();
+  });
+
+  it("run-chile-alerts: VERCEL_ENV=preview -> 403 aunque el secreto sea correcto, nunca promueve alertas", async () => {
+    process.env.VERCEL_ENV = "preview";
+    const response = await jobsChileAlertsGet(cronRequest("http://localhost/api/jobs/run-chile-alerts"));
+    expect(response.status).toBe(403);
+    expect(promoteChileOfficialAlertsMock).not.toHaveBeenCalled();
+  });
+
+  it("VERCEL_ENV=development no se ve afectado (el guard es exclusivo de preview)", async () => {
+    // Not "production": that value also flips determineRateLimitBackendKind()
+    // to require a real Upstash backend (unrelated to this guard), which
+    // would 503 here without Upstash test credentials configured — "development"
+    // isolates the preview-only check from that orthogonal behavior.
+    process.env.VERCEL_ENV = "development";
+    const response = await jobsGlobalWatchGet(cronRequest("http://localhost/api/jobs/run-global-watch"));
+    expect(response.status).toBe(200);
+    expect(runGlobalWatchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("VERCEL_ENV ausente (desarrollo local/tests) no se ve afectado", async () => {
+    delete process.env.VERCEL_ENV;
+    const response = await jobsChileAlertsGet(cronRequest("http://localhost/api/jobs/run-chile-alerts"));
+    expect(response.status).toBe(200);
   });
 });
 

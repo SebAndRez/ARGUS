@@ -13,6 +13,8 @@ import {
   SHELTER_SOURCE_TYPE_VALUES,
   SHELTER_STATUS_VALUES,
   SHELTER_VERIFICATION_STATUS_VALUES,
+  toPublicShelterOperationalStatus,
+  toPublicShelterStatusEvidence,
   type ShelterOperationalStatusReport,
 } from "@/lib/criticalPoi/shelterOperationalStatusTypes";
 import { requireOperator } from "@/lib/security/apiGuards";
@@ -194,6 +196,12 @@ export async function POST(request: Request, ctx: RouteContext) {
   return NextResponse.json({ status: "ok", applied: applies, eventType, operationalStatus: result });
 }
 
+/**
+ * Sin autenticacion (a diferencia del POST de arriba, que exige
+ * `requireOperator()`) — por eso tanto `operationalStatus` como cada
+ * `evidence[].payload` se redactan antes de responder: nunca deben salir
+ * operatorName/contactPhone/contactNotes por esta via publica.
+ */
 export async function GET(_request: Request, ctx: RouteContext) {
   const { id: poiId } = await ctx.params;
   const poi = await getCriticalPoiById(poiId);
@@ -206,5 +214,9 @@ export async function GET(_request: Request, ctx: RouteContext) {
     getStatusEvidenceForPoi(poiId, 50),
   ]);
 
-  return NextResponse.json({ poi, operationalStatus, evidence });
+  return NextResponse.json({
+    poi,
+    operationalStatus: operationalStatus ? toPublicShelterOperationalStatus(operationalStatus) : null,
+    evidence: evidence.map(toPublicShelterStatusEvidence),
+  });
 }
