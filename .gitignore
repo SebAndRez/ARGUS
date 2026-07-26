@@ -52,3 +52,153 @@ prisma/dev.db-journal
 temp_*.js
 dbsetup*.txt
 test_output.txt
+
+# ==================================================
+# ARGUS — INTERNAL AND SENSITIVE DOCUMENTATION
+# ==================================================
+# See docs/SECURITY_AND_DOCUMENT_HANDLING.md for the full policy.
+# The repository stays public; only the paths below are excluded. A
+# `public/` subfolder inside any ignored directory is the escape hatch for
+# a future sanitized version of that material.
+
+# Foundational doctrine documents (Filosofía, Doctrina, Modelo de Dominio,
+# Diccionario) — internal by default. Everything in this folder is ignored
+# except a sanitized README explaining where the real files live.
+docs/files/*
+!docs/files/README.md
+
+# Internal architecture docs (canonical/incident design, engine and
+# data-model implementation detail, migration plans) plus the private/
+# convention for new sensitive architecture material, including the
+# foundational Data Architecture v1.0 / v1.1 documents.
+docs/architecture/
+!docs/architecture/public/
+!docs/architecture/public/**
+
+# Internal/highly-sensitive audits (P0/P1 findings, endpoint matrices,
+# system maps, technical debt, RLS gaps — never for public repos)
+docs/audit/
+docs/audits/
+docs/final-audit/
+!docs/audit/public/
+!docs/audit/public/**
+!docs/audits/public/
+!docs/audits/public/**
+!docs/final-audit/public/
+!docs/final-audit/public/**
+
+# Security architecture, permissions model, rate limiting, seed safety
+docs/security/
+!docs/security/public/
+!docs/security/public/**
+
+# Internal/tactical operational documentation (runbooks, SLOs,
+# observability, telemetry dictionary, source activation backlog)
+docs/operations/
+!docs/operations/public/
+!docs/operations/public/**
+
+# Internal mobile app and module architecture/specs
+docs/mobile/
+docs/modules/
+
+# Internal product status/roadmap material
+docs/product/
+
+# Internal maintenance and technical-debt tracking
+docs/maintenance/
+
+# Internal testing baseline (documents P0 security-fix coverage)
+docs/testing/
+
+# Generic internal/private catch-alls
+docs/internal/
+docs/private/
+docs/database/private/
+docs/migrations/private/
+docs/strategy/private/
+
+# Legal drafts (moved out of the tracked docs/legal/ root)
+docs/legal/private/
+
+# Individual internal/highly-sensitive documents that live directly under
+# docs/ root alongside legitimate public docs (PUBLIC_CHANGELOG.md,
+# ARGUS_USER_GUIDE.md, SECURITY_AND_DOCUMENT_HANDLING.md stay tracked).
+# Auth, identity, access-control and privacy/RLS implementation detail:
+docs/ARGUS_AUTH.md
+docs/ARGUS_AUTH_GATE_AND_IDENTITY.md
+docs/ARGUS_CONSENT_MODEL.md
+docs/ARGUS_DATA_RIGHTS_PLAN.md
+docs/ARGUS_IDENTITY_ACCOUNT_POLICY.md
+docs/ARGUS_OPERATOR_ACCESS.md
+docs/ARGUS_PLATFORM_LOCK.md
+docs/ARGUS_PRIVACY_BASELINE.md
+docs/ARGUS_PROFILE.md
+docs/ARGUS_PROFILE_PRIVACY_AND_RLS.md
+docs/ARGUS_PROFILE_TODO.md
+docs/ARGUS_RELEASE_AUDIT.md
+docs/ARGUS_SECURITY_AUDIT.md
+docs/ARGUS_SOURCE_OPERATIONS_AUDIT.md
+docs/SUPABASE_MIGRATION.md
+docs/SUPABASE_RLS_PLAN.md
+docs/SUPABASE_RLS_STRATEGY.md
+# Internal product/architecture/process docs:
+docs/ARGUS_COMMAND_CENTER.md
+docs/ARGUS_CURATED_SOURCE_CORPUS.md
+docs/ARGUS_KNOWLEDGE_BASE.md
+docs/ARGUS_KNOWLEDGE_INTAKE_ENGINE.md
+docs/ARGUS_MAP_SYMBOL_SYSTEM.md
+docs/ARGUS_MOBILE_APP_READINESS.md
+docs/ARGUS_MOBILE_QA.md
+docs/ARGUS_MOBILE_QA_CHECKLIST.md
+docs/ARGUS_MOBILE_SAFETY_AGENT.md
+docs/ARGUS_OFFICIAL_ROUTES_PLAN.md
+docs/ARGUS_PREDICTIVE_ENGINE.md
+docs/ARGUS_PRODUCT_DIRECTION.md
+docs/ARGUS_PROFILE_QA.md
+docs/ARGUS_PWA_CHECKLIST.md
+docs/ARGUS_RELEASE_GATE.md
+docs/ARGUS_RELEASE_TODO.md
+docs/ARGUS_SENSOR_SAFETY_SUITE.md
+docs/ARGUS_SOURCE_GOVERNANCE.md
+docs/ARGUS_SOURCE_RELIABILITY.md
+docs/ARGUS_TRUST_ACHIEVEMENTS.md
+docs/ARGUS_VISUAL_QA_CHECKLIST.md
+docs/fenix-twin.md
+
+# Sensitive document suffixes (explicit, not blanket — do not add *.md/*.docx
+# globally, this repo has legitimate public documentation under docs/)
+*.local.docx
+*.private.docx
+*.internal.docx
+*.sensitive.docx
+*.private.pdf
+*.internal.pdf
+*.sensitive.pdf
+*.audit.md
+*.audit.json
+*.security-report.*
+
+# Database exports, backups, and packaged audit deliverables
+*.dump
+*.backup
+*.bak
+*.sql.gz
+*.database-dump.*
+docs/private/**/*.zip
+docs/audits/**/*.zip
+docs/files/**/*.zip
+docs/architecture/private/**/*.zip
+/ARGUS_DATABASE_AUDIT_PACKAGE.zip
+
+# Secrets and local environments beyond what's already covered above
+*.p12
+*.pfx
+*.crt
+*.cer
+credentials.*
+secrets.*
+service-account*.json
+supabase*.env
+vercel*.env
+database*.env

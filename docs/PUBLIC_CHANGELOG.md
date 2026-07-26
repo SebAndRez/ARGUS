@@ -1,5 +1,24 @@
 # ARGUS Public Changelog
 
+## 2026-07-21 - pending-b81f110 - ARGUS 1.0.6.5
+
+**Archivos modificados:** 7
+
+**Resumen publico:**  
+Se actualizaron 7 archivos relacionados con Reportes ciudadanos.
+
+**Cambios principales:**
+- Se mejoro la lectura y gestion de reportes.
+- Se actualizaron eventos o fuentes externas.
+
+**Modulos afectados:**
+- Reportes ciudadanos
+
+**En simple:**  
+Esta actualizacion ayuda a que los reportes sean mas claros, ordenados y faciles de revisar.
+
+---
+
 ## 2026-07-21 - pending-367ee33 - ARGUS 1.0.5.0
 
 **Archivos modificados:** 22

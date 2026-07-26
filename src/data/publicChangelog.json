@@ -1,5 +1,21 @@
 [
   {
+    "changeId": "b81f1106d097",
+    "date": "2026-07-21",
+    "commit": "pending-b81f110",
+    "title": "ARGUS 1.0.6.5",
+    "fileCount": 7,
+    "summary": "Se actualizaron 7 archivos relacionados con Reportes ciudadanos.",
+    "changes": [
+      "Se mejoro la lectura y gestion de reportes.",
+      "Se actualizaron eventos o fuentes externas."
+    ],
+    "affectedModules": [
+      "Reportes ciudadanos"
+    ],
+    "simpleExplanation": "Esta actualizacion ayuda a que los reportes sean mas claros, ordenados y faciles de revisar."
+  },
+  {
     "changeId": "367ee336af06",
     "date": "2026-07-21",
     "commit": "pending-367ee33",

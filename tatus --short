@@ -1,0 +1,133 @@
+warning: in the working copy of 'src/modules/atlas/components/AtlasDashboard.tsx', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/.gitignore b/.gitignore[m
+[1mindex a7f0045..5178d86 100644[m
+[1m--- a/.gitignore[m
+[1m+++ b/.gitignore[m
+[36m@@ -52,3 +52,73 @@[m [mprisma/dev.db-journal[m
+ temp_*.js[m
+ dbsetup*.txt[m
+ test_output.txt[m
+[32m+[m
+[32m+[m[32m# ==================================================[m
+[32m+[m[32m# ARGUS — INTERNAL AND SENSITIVE DOCUMENTATION[m
+[32m+[m[32m# ==================================================[m
+[32m+[m[32m# See docs/SECURITY_AND_DOCUMENT_HANDLING.md for the full policy.[m
+[32m+[m
+[32m+[m[32m# Foundational doctrine documents (Filosofía, Doctrina, Modelo de Dominio,[m
+[32m+[m[32m# Diccionario) — internal by default. Strategy B: ignore everything in this[m
+[32m+[m[32m# folder except a sanitized README explaining where the real files live.[m
+[32m+[m[32mdocs/files/*[m
+[32m+[m[32m!docs/files/README.md[m
+[32m+[m
+[32m+[m[32m# Internal database/architecture audits (contain P0/P1 security findings,[m
+[32m+[m[32m# RLS gaps, endpoint-level vulnerabilities — never for public repos)[m
+[32m+[m[32mdocs/audits/[m
+[32m+[m[32mdocs/security/[m
+[32m+[m[32mdocs/internal/[m
+[32m+[m[32mdocs/private/[m
+[32m+[m
+[32m+[m[32m# Private architecture convention (new sensitive architecture docs going[m
+[32m+[m[32m# forward should be created under this path; see report for the two[m
+[32m+[m[32m# exceptions that currently live outside it for path-continuity reasons)[m
+[32m+[m[32mdocs/architecture/private/[m
+[32m+[m[32mdocs/architecture/ARGUS_DATA_ARCHITECTURE.md[m
+[32m+[m[32mdocs/architecture/ARGUS_DATA_ARCHITECTURE_v1.1.md[m
+[32m+[m
+[32m+[m[32m# Private operational/migration/strategy material[m
+[32m+[m[32mdocs/database/private/[m
+[32m+[m[32mdocs/migrations/private/[m
+[32m+[m[32mdocs/operations/private/[m
+[32m+[m[32mdocs/strategy/private/[m
+[32m+[m
+[32m+[m[32m# Sanitized public exception for audits, if one is ever produced manually[m
+[32m+[m[32m!docs/audits/public/[m
+[32m+[m
+[32m+[m[32m# Sensitive document suffixes (explicit, not blanket — do not add *.md/*.docx[m
+[32m+[m[32m# globally, this repo has legitimate public documentation under docs/)[m
+[32m+[m[32m*.local.docx[m
+[32m+[m[32m*.private.docx[m
+[32m+[m[32m*.internal.docx[m
+[32m+[m[32m*.sensitive.docx[m
+[32m+[m[32m*.private.pdf[m
+[32m+[m[32m*.internal.pdf[m
+[32m+[m[32m*.sensitive.pdf[m
+[32m+[m[32m*.audit.md[m
+[32m+[m[32m*.audit.json[m
+[32m+[m[32m*.security-report.*[m
+[32m+[m
+[32m+[m[32m# Database exports, backups, and packaged audit deliverables[m
+[32m+[m[32m*.dump[m
+[32m+[m[32m*.backup[m
+[32m+[m[32m*.bak[m
+[32m+[m[32m*.sql.gz[m
+[32m+[m[32m*.database-dump.*[m
+[32m+[m[32mdocs/private/**/*.zip[m
+[32m+[m[32mdocs/audits/**/*.zip[m
+[32m+[m[32mdocs/files/**/*.zip[m
+[32m+[m[32m/ARGUS_DATABASE_AUDIT_PACKAGE.zip[m
+[32m+[m
+[32m+[m[32m# Secrets and local environments beyond what's already covered above[m
+[32m+[m[32m*.p12[m
+[32m+[m[32m*.pfx[m
+[32m+[m[32m*.crt[m
+[32m+[m[32m*.cer[m
+[32m+[m[32mcredentials.*[m
+[32m+[m[32msecrets.*[m
+[32m+[m[32mservice-account*.json[m
+[32m+[m[32msupabase*.env[m
+[32m+[m[32mvercel*.env[m
+[32m+[m[32mdatabase*.env[m
+[1mdiff --git a/src/modules/atlas/components/AtlasDashboard.tsx b/src/modules/atlas/components/AtlasDashboard.tsx[m
+[1mindex 7af7224..bc8b44a 100644[m
+[1m--- a/src/modules/atlas/components/AtlasDashboard.tsx[m
+[1m+++ b/src/modules/atlas/components/AtlasDashboard.tsx[m
+[36m@@ -5,7 +5,9 @@[m [mimport Link from "next/link";[m
+ import { useSearchParams } from "next/navigation";[m
+ import DashboardCommandPanel from "@/components/dashboard/DashboardCommandPanel";[m
+ import CanonicalIncidentPanel from "@/components/modules/CanonicalIncidentPanel";[m
+[32m+[m[32mimport OperationalContextPanel from "@/components/operationalContext/OperationalContextPanel";[m
+ import { useCanonicalModuleIncidents } from "@/hooks/useCanonicalModuleIncidents";[m
+[32m+[m[32mimport { useOperationalContext } from "@/hooks/useOperationalContext";[m
+ import CommandCenterPanel from "@/components/command/CommandCenterPanel";[m
+ import EventDetailPanel from "@/components/map/EventDetailPanel";[m
+ import VisualSourcePopup from "@/components/map/VisualSourcePopup";[m
+[36m@@ -120,6 +122,12 @@[m [mexport default function AtlasDashboard() {[m
+     searchParams.get("incidentId")[m
+   );[m
+   const canonicalIncidents = useCanonicalModuleIncidents("argus-atlas", {});[m
+[32m+[m[32m  // ARGUS Operational Context Engine (Fase 12) — cuando el operador selecciona[m
+[32m+[m[32m  // un incidente canónico, ATLAS pasa automáticamente a modo operacional: se[m
+[32m+[m[32m  // resuelven y activan solas las capas relevantes (ver el useEffect más[m
+[32m+[m[32m  // abajo) y se muestra el panel de recursos priorizados, sin que el[m
+[32m+[m[32m  // operador tenga que buscarlos capa por capa.[m
+[32m+[m[32m  const operationalContext = useOperationalContext(selectedCanonicalIncidentId);[m
+ [m
+   const [events, setEvents] = useState<CrisisEvent[]>([]);[m
+   const [eventsLoaded, setEventsLoaded] = useState(false);[m
+[36m@@ -151,6 +159,16 @@[m [mexport default function AtlasDashboard() {[m
+     // eslint-disable-next-line react-hooks/exhaustive-deps[m
+   }, [atlasAccess.canEnter, sessionLoading]);[m
+ [m
+[32m+[m[32m  // Fase 6 (Automatic Layer Activation): solo mezcla las capas que el motor[m
+[32m+[m[32m  // marcó relevantes para este incidente — nunca reemplaza el estado[m
+[32m+[m[32m  // completo de capas ni apaga lo que el operador ya tenía prendido.[m
+[32m+[m[32m  useEffect(() => {[m
+[32m+[m[32m    if (operationalContext?.state !== "available") return;[m
+[32m+[m[32m    const patch = operationalContext.data.layerActivationPatch;[m
+[32m+[m[32m    if (Object.keys(patch).length === 0) return;[m
+[32m+[m[32m    setLayerSettings((current) => ({ ...current, ...patch }));[m
+[32m+[m[32m  }, [operationalContext]);[m
+[32m+[m
+   useEffect(() => {[m
+     async function loadEvents() {[m
+       try {[m
+[36m@@ -458,6 +476,9 @@[m [mexport default function AtlasDashboard() {[m
+               </Link>[m
+             )}[m
+           </div>[m
+[32m+[m[32m          {operationalContext && operationalContext.state !== "not_activated" && ([m
+[32m+[m[32m            <OperationalContextPanel result={operationalContext} />[m
+[32m+[m[32m          )}[m
+           <AtlasIncidentFeed incidents={incidentFeed} onSelect={(incident) => incident.sourceEvent && selectEvent(incident.sourceEvent)} />[m
+           <AtlasAlertQueue alerts={alertQueue} />[m
+           <EventDetailPanel event={selectedEvent} onCenter={setSelectedEvent} />[m

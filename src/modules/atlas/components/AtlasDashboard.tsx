@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import DashboardCommandPanel from "@/components/dashboard/DashboardCommandPanel";
 import CanonicalIncidentPanel from "@/components/modules/CanonicalIncidentPanel";
+import OperationalContextPanel from "@/components/operationalContext/OperationalContextPanel";
 import { useCanonicalModuleIncidents } from "@/hooks/useCanonicalModuleIncidents";
+import { useOperationalContext } from "@/hooks/useOperationalContext";
 import CommandCenterPanel from "@/components/command/CommandCenterPanel";
 import EventDetailPanel from "@/components/map/EventDetailPanel";
 import VisualSourcePopup from "@/components/map/VisualSourcePopup";
@@ -120,6 +122,12 @@ export default function AtlasDashboard() {
     searchParams.get("incidentId")
   );
   const canonicalIncidents = useCanonicalModuleIncidents("argus-atlas", {});
+  // ARGUS Operational Context Engine (Fase 12) — cuando el operador selecciona
+  // un incidente canónico, ATLAS pasa automáticamente a modo operacional: se
+  // resuelven y activan solas las capas relevantes (ver el useEffect más
+  // abajo) y se muestra el panel de recursos priorizados, sin que el
+  // operador tenga que buscarlos capa por capa.
+  const operationalContext = useOperationalContext(selectedCanonicalIncidentId);
 
   const [events, setEvents] = useState<CrisisEvent[]>([]);
   const [eventsLoaded, setEventsLoaded] = useState(false);
@@ -150,6 +158,16 @@ export default function AtlasDashboard() {
     // Log once per resolved session, not on every re-render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [atlasAccess.canEnter, sessionLoading]);
+
+  // Fase 6 (Automatic Layer Activation): solo mezcla las capas que el motor
+  // marcó relevantes para este incidente — nunca reemplaza el estado
+  // completo de capas ni apaga lo que el operador ya tenía prendido.
+  useEffect(() => {
+    if (operationalContext?.state !== "available") return;
+    const patch = operationalContext.data.layerActivationPatch;
+    if (Object.keys(patch).length === 0) return;
+    setLayerSettings((current) => ({ ...current, ...patch }));
+  }, [operationalContext]);
 
   useEffect(() => {
     async function loadEvents() {
@@ -458,6 +476,9 @@ export default function AtlasDashboard() {
               </Link>
             )}
           </div>
+          {operationalContext && operationalContext.state !== "not_activated" && (
+            <OperationalContextPanel result={operationalContext} />
+          )}
           <AtlasIncidentFeed incidents={incidentFeed} onSelect={(incident) => incident.sourceEvent && selectEvent(incident.sourceEvent)} />
           <AtlasAlertQueue alerts={alertQueue} />
           <EventDetailPanel event={selectedEvent} onCenter={setSelectedEvent} />
