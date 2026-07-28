@@ -1,0 +1,178 @@
+-- NOT EXECUTED
+-- TARGET MIGRATION DRAFT
+-- HUMAN REVIEW REQUIRED
+--
+-- Remediation draft for the EXISTING drift documented in
+-- docs/architecture/private/ARGUS_RLS_AUTO_ENABLE_REMEDIATION_v1.0.md and
+-- docs/architecture/private/ARGUS_CURRENT_RLS_CONTAINMENT_PLAN_v1.0.md:
+--
+--   1. An undocumented function public.rls_auto_enable() exists in the
+--      CURRENT production database, outside all version control (not in
+--      prisma/schema.prisma, not in any of the 13 local migrations).
+--      It is plpgsql, SECURITY DEFINER, no arguments, and confirmed
+--      reachable via POST /rest/v1/rpc/rls_auto_enable by BOTH the `anon`
+--      and `authenticated` PostgREST roles.
+--   2. 8 of the 33 current tables (CriticalPoi, CriticalPoiOperationalStatus,
+--      ExternalEvent, IngestionRun, KnowledgeIncident, RiskAssessment,
+--      TelecomConnectivityStatus, TelecomConnectivityEvidence) now show
+--      at least one RLS policy where the original Gap Analysis found zero —
+--      contents of those policies are UNKNOWN (pg_policies was never read;
+--      execute_sql was declined in every session that produced the source
+--      documents above).
+--   3. The remaining 25 of 33 current tables + _prisma_migrations still
+--      have RLS enabled with ZERO policies (deny-by-default for
+--      anon/authenticated via PostgREST, but also meaning "RLS enabled,
+--      no policy" is not obviously distinguishable from "someone forgot
+--      to write the policy").
+--
+-- Nothing in this file has been executed. It requires execute_sql READ
+-- access that was NOT authorized in the sessions that produced the two
+-- source documents above, and remains not authorized in this session
+-- (this agent is under an explicit instruction to never execute SQL against
+-- any database). Every block below is a proposal for a human with
+-- execute_sql read access, followed by administrative access, to carry out
+-- in a separate, explicitly authorized session.
+
+-- ============================================================
+-- STEP 1 — Inspection (read-only; requires execute_sql, NOT run here)
+-- ============================================================
+
+-- 1.1 Full definition, owner, security-definer flag, and search_path of the
+--     function — the single most important query in this file, since the
+--     function's actual body has never been captured. This MUST be run and
+--     its output archived (append to this file as a comment, or to
+--     ARGUS_RLS_AUTO_ENABLE_REMEDIATION_v1.0.md §"Anexo") BEFORE any DROP
+--     or REVOKE below is executed, per that document's own rollback plan
+--     (§9): capture-before-drop is bloqueante, not optional.
+-- SELECT
+--   n.nspname AS schema,
+--   p.proname AS name,
+--   pg_get_userbyid(p.proowner) AS owner,
+--   p.prosecdef AS security_definer,
+--   p.proconfig AS config,                 -- reveals search_path if fixed
+--   pg_get_functiondef(p.oid) AS definition
+-- FROM pg_proc p
+-- JOIN pg_namespace n ON n.oid = p.pronamespace
+-- WHERE p.proname = 'rls_auto_enable' AND n.nspname = 'public';
+
+-- 1.2 Exact EXECUTE grantees today (confirm anon/authenticated, check for
+--     any additional grantee not yet documented).
+-- SELECT grantee, privilege_type
+-- FROM information_schema.routine_privileges
+-- WHERE routine_name = 'rls_auto_enable' AND routine_schema = 'public';
+
+-- 1.3 Content of the policies on the 8 tables with an unexplained policy
+--     (highest priority: KnowledgeIncident, the highest-impact table in the
+--     current system — mapa, VIGIA, notificaciones).
+-- SELECT schemaname, tablename, policyname, permissive, roles, cmd, qual, with_check
+-- FROM pg_policies
+-- WHERE schemaname = 'public'
+--   AND tablename IN (
+--     'CriticalPoi', 'CriticalPoiOperationalStatus', 'ExternalEvent',
+--     'IngestionRun', 'KnowledgeIncident', 'RiskAssessment',
+--     'TelecomConnectivityStatus', 'TelecomConnectivityEvidence'
+--   );
+-- If any policy found here reads `USING (true)`, treat it as equivalent in
+-- practice to "no policy" for defense purposes (RLS enabled + permissive
+-- true-policy = same exposure as no RLS at all for any role not already
+-- blocked by ownership/BYPASSRLS), and prioritize replacing it.
+
+-- ============================================================
+-- STEP 2 — Version control / revoke plan (choose ONE path after Step 1
+--          results are reviewed by a human)
+-- ============================================================
+
+-- Path A (recommended per ARGUS_RLS_AUTO_ENABLE_REMEDIATION_v1.0.md §8):
+-- eliminate the function. Zero confirmed legitimate callers in application
+-- code (the app does not use @supabase/supabase-js at all), its apparent
+-- purpose (bulk-enabling RLS) is already satisfied (all 34 tables already
+-- show rls_enabled=true), and leaving it reachable via public RPC is a
+-- gratuitous attack surface.
+--
+-- REQUIRES Step 1.1 output captured and archived FIRST (rollback
+-- precondition — DROP FUNCTION is not reversible without it):
+-- DROP FUNCTION public.rls_auto_enable();
+
+-- Path B (only if a human confirms an active legitimate use in Step 1 that
+-- Path A's investigation did not anticipate): bring it under version
+-- control instead of dropping it.
+-- REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM anon;
+-- REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM authenticated;
+-- REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM PUBLIC;
+-- ALTER FUNCTION public.rls_auto_enable() SET search_path = pg_catalog, public;
+-- ALTER FUNCTION public.rls_auto_enable() OWNER TO migration_owner;
+-- -- Grant EXECUTE only to the one administrative role that has the
+-- -- confirmed legitimate use, never to anon/authenticated/app_api:
+-- -- GRANT EXECUTE ON FUNCTION public.rls_auto_enable() TO migration_owner;
+-- -- Then commit the function's captured definition (Step 1.1 output) as a
+-- -- versioned migration file in this repository, so it is never
+-- -- undocumented again.
+
+-- ============================================================
+-- STEP 3 — Plan for the 33 current tables with RLS-enabled-no-policy
+-- ============================================================
+-- Two explicit, non-ambiguous options per table — never leave a table in
+-- an undocumented middle state. Decision is per-table, made by a human
+-- after Step 1.3 results are known.
+
+-- Option 1 — Add a real policy matching current app access patterns.
+-- The current application connects as a single full-privilege role via
+-- DATABASE_URL/DIRECT_URL (no @supabase/supabase-js, no anon/authenticated
+-- PostgREST access from application code — ARGUS_CURRENT_DATABASE_BASELINE
+-- _v1.0.md §6). For any of the 25 zero-policy tables where a human decides
+-- explicit containment is warranted before the target migration lands,
+-- the minimal safe policy is "deny all to anon/authenticated, allow all to
+-- the single application role" — expressed as, e.g. (illustrative only,
+-- adjust <app_role> to the actual current DATABASE_URL role name once
+-- confirmed via execute_sql):
+--
+-- ALTER TABLE public."KnowledgeIncident" FORCE ROW LEVEL SECURITY;
+-- CREATE POLICY current_app_only ON public."KnowledgeIncident"
+--   FOR ALL
+--   TO <app_role>
+--   USING (true)
+--   WITH CHECK (true);
+-- -- NOTE: this USING (true) is scoped to a single named, non-public role
+-- -- (<app_role>), never to anon/authenticated/PUBLIC — it is not the
+-- -- prohibited pattern from the mandate ("never write a USING (true)
+-- -- policy on any sensitive table" refers to policies reachable by
+-- -- untrusted roles; a policy restricted TO a single trusted server role
+-- -- is a different risk profile, but MUST still be reviewed by a human
+-- -- before use, and is superseded entirely once Wave 020-100 land the
+-- -- target schema's real per-dimension policies).
+
+-- Option 2 — Explicitly document why zero-policy is intentional per role.
+-- For any current table where a human decides no interim policy is
+-- warranted (e.g. because the target migration for that data lands soon
+-- enough that interim hardening is not worth the risk of misconfiguring a
+-- production policy by hand), the decision itself must be written down
+-- here, not left silent:
+--
+-- Tables with 0 rows and 0 confirmed consumers (Sanction, HelpRequest,
+-- ExternalEventCorrelation, KnowledgeLesson, KnowledgeDocument,
+-- KnowledgeDocumentChunk, KnowledgeEmbeddingRecord, KnowledgeAdminReview,
+-- EmergencyContact (VESTA), TelecomConnectivityStatus,
+-- TelecomConnectivityEvidence, IncidentRelation — see
+-- ARGUS_BACKFILL_CATALOG_v1.0.md for the full empty-table list): explicit
+-- decision = NO interim policy added. Rationale: zero rows means zero
+-- exposure regardless of policy state; RLS-enabled-no-policy already
+-- denies anon/authenticated by default (PostgREST never grants table
+-- access to a role without an explicit policy); the only residual risk is
+-- the single full-privilege application role, which is unaffected by RLS
+-- policy content (not subject to RLS unless it lacks ownership/BYPASSRLS,
+-- which is unverified — see Step 1 equivalent for the app role, out of
+-- scope of this file).
+
+-- ============================================================
+-- STEP 4 — Post-remediation validation (re-run after Step 2/3 applied)
+-- ============================================================
+-- SELECT routine_name, security_type
+-- FROM information_schema.routines
+-- WHERE routine_schema = 'public' AND routine_name = 'rls_auto_enable';
+-- -- Expected after Path A: 0 rows (function dropped).
+-- -- Expected after Path B: 1 row, security_type unchanged, but grantee
+-- -- list (routine_privileges) must no longer include anon/authenticated.
+
+-- Nothing above was executed. See
+-- docs/architecture/private/ARGUS_RLS_AUTO_ENABLE_REMEDIATION_v1.0.md for
+-- the full narrative chain of custody of this finding.
