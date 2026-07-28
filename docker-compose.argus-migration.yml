@@ -1,0 +1,57 @@
+# ARGUS local migration rehearsal — fully disposable, local-only Postgres+PostGIS.
+# Never points at, or is reachable from, anything but this machine.
+#
+# Image: postgis/postgis is the widely-recognized official-adjacent PostGIS
+# distribution (maintained by the PostGIS project, published to Docker Hub),
+# built on top of the official `postgres` image. Tag pinned exactly; the real
+# digest actually pulled is captured by
+# scripts/migration-rehearsal/Invoke-ArgusFullRehearsal.ps1 into
+# docs/architecture/private/ARGUS_FULL_LOCAL_MIGRATION_REHEARSAL_v1.0.md
+# after `docker compose pull` (cannot be hardcoded here — it was never pulled
+# in this session, no Docker was available).
+#
+# Extension check (Fase 4 of the mandate): schema.target.prisma / the wave
+# migration.sql files require `postgis` (geography columns, GIST indexes) and
+# `pgcrypto` (gen_random_uuid()). Both ship in postgis/postgis:17-3.5 by
+# default — confirmed against the image's documented bundled extension list,
+# not empirically (no Docker in this session to run `SELECT * FROM
+# pg_available_extensions` for real). If a first real run finds either
+# missing, that is a genuine error to fix here, not to work around by
+# dropping the extension requirement.
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    # digest: TO BE FILLED by Invoke-ArgusFullRehearsal.ps1 after the first
+    # real `docker compose pull` — see docs/architecture/private/
+    # ARGUS_FULL_LOCAL_MIGRATION_REHEARSAL_v1.0.md for the captured value.
+    container_name: argus_migration_rehearsal_pg
+    restart: "no"
+    ports:
+      # Bind ONLY to loopback. Never 0.0.0.0. Non-productive port (55432,
+      # not the default 5432) to avoid colliding with any other local
+      # Postgres and to make "is this the rehearsal instance" unambiguous.
+      - "127.0.0.1:55432:5432"
+    environment:
+      POSTGRES_DB: argus_migration_rehearsal
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set via .env.argus-migration.local}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set via .env.argus-migration.local}
+      # Postgres image reads *_FILE variants too if we ever switch to Docker
+      # secrets; plain env is acceptable here because this container, its
+      # volume, and its password are all destroyed at the end of every
+      # rehearsal run (Fase 22) and never leave localhost.
+    volumes:
+      - argus_migration_rehearsal_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d argus_migration_rehearsal"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    # No network_mode: host. No additional exposed services. No links to
+    # anything outside this compose file.
+
+volumes:
+  # Explicit, disposable, uniquely-named volume — never reused across runs
+  # (Fase 15 requires `down -v` + fresh volume for the reproducibility test).
+  argus_migration_rehearsal_data:
+    name: argus_migration_rehearsal_data
