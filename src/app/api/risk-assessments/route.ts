@@ -1,6 +1,10 @@
 import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/services/authService";
+import { hasAnyRole } from "@/lib/security/rbac";
+import { OPERATOR_ROLES } from "@/lib/security/apiGuards";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 import { generateRiskAssessments, riskAssessmentToJson } from "@/lib/prediction/riskEngine";
 import { calculateArgusConfidenceFromEvidence } from "@/lib/prediction/confirmationScoring";
 import type {
@@ -399,14 +403,25 @@ function reportRiskType(category: string): ArgusRiskAssessment["riskType"] {
   return "general_escalation";
 }
 
-function createCitizenReportAssessment(report: {
-  id: string;
-  title: string;
-  category: string;
-  severity: string;
-  createdAt: Date;
-  updatedAt: Date;
-}): ArgusRiskAssessment {
+/**
+ * `report.title` is free text the citizen typed — `incidentDto.ts` (used by
+ * `GET /api/reports`/`GET /api/events`) explicitly never exposes it to
+ * non-operator callers ("pueden contener direcciones o nombres"). This
+ * endpoint has no session gating at all today, so it must apply the same
+ * redaction: `canViewFull` (OPERATOR+) gets the real title, everyone else
+ * gets a category-based title, matching `toPublicReportMapEvent`.
+ */
+function createCitizenReportAssessment(
+  report: {
+    id: string;
+    title: string;
+    category: string;
+    severity: string;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+  canViewFull: boolean
+): ArgusRiskAssessment {
   const evidence: ArgusRiskEvidence[] = [
     {
       id: `citizen_report:${report.id}`,
@@ -430,7 +445,9 @@ function createCitizenReportAssessment(report: {
     probabilityScore: Math.min(45, confirmation.confidence),
     confidence: Math.min(45, confirmation.confidence),
     severity: report.severity.toLowerCase(),
-    title: `Verificacion ARGUS: ${report.title}`,
+    title: canViewFull
+      ? `Verificacion ARGUS: ${report.title}`
+      : `Verificacion ARGUS: reporte ciudadano (${report.category})`,
     summary:
       "Hipotesis inicial basada en reporte ciudadano. No es confirmacion exacta y requiere fuentes adicionales.",
     recommendedAction:
@@ -492,6 +509,19 @@ function createExternalEventSourceAssessment(
 }
 
 export async function GET(request: NextRequest) {
+  const user = await getCurrentUser();
+  const canViewFull = hasAnyRole(user, OPERATOR_ROLES);
+
+  // Same policy as GET /api/reports, GET /api/help-requests, GET /api/events
+  // and GET /api/notifications (PRIV-FINAL-001 §16): this route can surface
+  // citizen-report-derived content, so anonymous callers get the same rate
+  // limit as those siblings — authenticated operators never do.
+  if (!user) {
+    const outcome = await enforceRateLimit({ policy: "public_incident_read", request });
+    const blocked = rateLimitResponseForOutcome(outcome);
+    if (blocked) return blocked;
+  }
+
   const riskType = request.nextUrl.searchParams.get("riskType")?.trim();
   const sourceId = request.nextUrl.searchParams.get("sourceId")?.trim();
   const externalEventId = request.nextUrl.searchParams
@@ -534,17 +564,23 @@ export async function GET(request: NextRequest) {
     }
 
     if (reportId) {
-      const report = await prisma.report.findUnique({ where: { id: reportId } });
+      const report = await prisma.report.findUnique({
+        where: { id: reportId },
+        select: { id: true, title: true, category: true, severity: true, createdAt: true, updatedAt: true },
+      });
       const fallbackAssessment = report
-        ? createCitizenReportAssessment(report)
-        : createCitizenReportAssessment({
-            id: reportId,
-            title: "Reporte ciudadano demo",
-            category: "general",
-            severity: "LOW",
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          });
+        ? createCitizenReportAssessment(report, canViewFull)
+        : createCitizenReportAssessment(
+            {
+              id: reportId,
+              title: "Reporte ciudadano demo",
+              category: "general",
+              severity: "LOW",
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+            canViewFull
+          );
 
       return NextResponse.json({
         count: 1,

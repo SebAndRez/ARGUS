@@ -4,6 +4,10 @@ import { curatedConflictEvents } from "@/data/conflictZones";
 import { demoRoutes } from "@/data/demoRoutes";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/services/authService";
+import { hasAnyRole } from "@/lib/security/rbac";
+import { OPERATOR_ROLES } from "@/lib/security/apiGuards";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
+import { toPublicHelpRequestMapEvent, toPublicReportMapEvent } from "@/lib/security/incidentDto";
 import { isDemoDataAllowed } from "@/lib/security/productionGuard";
 import { logOperationalEvent } from "@/lib/observability/operationalEvents";
 import { getPredictiveNotificationPackets } from "@/lib/predictive-core/predictiveFeed";
@@ -58,18 +62,36 @@ function parseReadIds(value: string | null) {
     .slice(0, 500);
 }
 
-async function getPersistedEvents(): Promise<CrisisEvent[]> {
+/**
+ * `canViewFull` mirrors the same OPERATOR+ gate already used by
+ * `GET /api/reports`, `GET /api/help-requests` and `GET /api/events`
+ * (PRIV-FINAL-001): non-operator/anonymous callers only ever receive the
+ * redacted `toPublicReportMapEvent`/`toPublicHelpRequestMapEvent` projection
+ * (approximate coordinates, no free-text title/description, restricted
+ * HelpRequests excluded). Before this fix, this was the only one of the four
+ * routes reading `Report`/`HelpRequest` that skipped that redaction entirely.
+ */
+async function getPersistedEvents(canViewFull: boolean): Promise<CrisisEvent[]> {
   try {
     const [reports, helpRequests] = await Promise.all([
       prisma.report.findMany({
+        include: { user: { select: { publicAlias: true } } },
         orderBy: { createdAt: "desc" },
         take: 80,
       }),
       prisma.helpRequest.findMany({
+        include: { user: { select: { publicAlias: true } } },
         orderBy: { createdAt: "desc" },
         take: 80,
       }),
     ]);
+
+    if (!canViewFull) {
+      return [
+        ...reports.map(toPublicReportMapEvent).filter((event) => event !== null),
+        ...helpRequests.map(toPublicHelpRequestMapEvent).filter((event) => event !== null),
+      ];
+    }
 
     return [
       ...reports.map((report) => ({
@@ -89,6 +111,7 @@ async function getPersistedEvents(): Promise<CrisisEvent[]> {
         aiRecommendation: report.aiRecommendation,
         aiConfidence: report.aiConfidence,
         falseReportRisk: report.falseReportRisk,
+        author: report.user.publicAlias,
         recordType: "Report" as const,
       })),
       ...helpRequests.map((request) => ({
@@ -109,6 +132,7 @@ async function getPersistedEvents(): Promise<CrisisEvent[]> {
         aiRecommendation: request.aiRecommendation,
         aiConfidence: request.aiConfidence,
         restrictedMode: request.restrictedMode,
+        author: request.user.publicAlias,
         recordType: "HelpRequest" as const,
       })),
     ];
@@ -543,11 +567,10 @@ function predictiveType(inputId: string): ArgusNotificationType {
 async function getPredictiveNotifications(readIds: string[]): Promise<ArgusNotification[]> {
   let packets: Awaited<ReturnType<typeof getPredictiveNotificationPackets>> = [];
   try {
-    // SEC-NEW-001: `GET /api/notifications` has no session/role check at
-    // all (confirmed — no `getCurrentUser()` call anywhere in this route's
-    // GET handler), so it must always request the redacted public
-    // projection from Predictive Core. Never pass "operator" here without
-    // first adding real session gating to this route.
+    // Deliberately still "public" even after this route gained session
+    // gating (SEC-GAP-01 fix): expanding Predictive Core's audience for
+    // OPERATOR+ callers is a separate product decision, not part of this
+    // hotfix's scope — keep it conservative until that's decided explicitly.
     packets = await getPredictiveNotificationPackets({ limit: 30, audience: "public" });
   } catch (error) {
     logOperationalEvent({
@@ -620,6 +643,19 @@ async function getPredictiveNotifications(readIds: string[]): Promise<ArgusNotif
 }
 
 export async function GET(request: NextRequest) {
+  const user = await getCurrentUser();
+  const canViewFull = hasAnyRole(user, OPERATOR_ROLES);
+
+  // Same policy as GET /api/reports, GET /api/help-requests and GET /api/events
+  // (PRIV-FINAL-001 §16): this route reads Report/HelpRequest directly, so it
+  // needs the same rate limit — only for anonymous callers, never for
+  // authenticated operators refreshing the operational dashboard.
+  if (!user) {
+    const outcome = await enforceRateLimit({ policy: "public_incident_read", request });
+    const blocked = rateLimitResponseForOutcome(outcome);
+    if (blocked) return blocked;
+  }
+
   const scope = request.nextUrl.searchParams.get("scope") as ArgusNotificationScope | null;
   const severity = request.nextUrl.searchParams.get("severity") as ArgusNotificationSeverity | null;
   const type = request.nextUrl.searchParams.get("type") as ArgusNotificationType | null;
@@ -646,7 +682,7 @@ export async function GET(request: NextRequest) {
     shelterAlerts,
     connectivityAlerts,
   ] = await Promise.all([
-    getPersistedEvents(),
+    getPersistedEvents(canViewFull),
     getExternalEvents(),
     getSourceHealth(),
     getPredictiveNotifications(readIds),
@@ -731,8 +767,13 @@ export async function GET(request: NextRequest) {
 
   notifications = prioritizeGlobalWatchNotifications(notifications, limit);
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     notifications,
     summary: buildNotificationSummary(notifications),
   });
+  if (canViewFull) {
+    // Never let a CDN/browser cache the full operator view of PII-bearing rows.
+    response.headers.set("Cache-Control", "private, no-store");
+  }
+  return response;
 }
