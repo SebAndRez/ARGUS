@@ -1,0 +1,108 @@
+name: ARGUS Database Rehearsal
+
+# Runs the full local (Docker/PostGIS) target-database migration rehearsal
+# in CI (Executable Migration Plan Fase 3). This workflow NEVER touches
+# production: it never sets DATABASE_URL/DIRECT_URL to anything but the
+# disposable container the rehearsal harness itself creates via
+# docker-compose.argus-migration.yml, and it never runs `prisma migrate
+# deploy`/`db push`/`db pull` against any real database. No production
+# secrets are read here — the job declares zero `secrets:` inputs.
+#
+# scripts/migration-rehearsal/Invoke-ArgusFullRehearsal.ps1 already
+# orchestrates, in one call: the 11-wave apply cycle, a same-volume
+# reapply (backfills exercised twice), the full 100->000 rollback, a
+# from-scratch second install, RLS runtime checks, physical validations,
+# `prisma validate`, and the repo test suites — see that script's header
+# comment for the exact phase-by-phase breakdown. This workflow does not
+# reimplement any of that; it only invokes it and fails the job if it
+# fails.
+
+on:
+  pull_request:
+    paths:
+      - "prisma/schema.target.prisma"
+      - "prisma/target-migrations/**"
+      - "scripts/migration-rehearsal/**"
+      - "scripts/database-target/**"
+      - "src/lib/database-target/**"
+      - "tests/database-target/**"
+      - "docker-compose.argus-migration.yml"
+      - ".github/workflows/argus-database-rehearsal.yml"
+  workflow_dispatch: {}
+
+jobs:
+  rehearsal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # No `secrets:`/`env:` block reads any production credential. The only
+    # database this job ever talks to is the disposable, loopback-bound
+    # container the rehearsal harness creates and destroys itself.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies (reproducible)
+        run: npm ci
+
+      - name: Confirm prisma/schema.prisma and prisma/migrations/ are untouched (pre-run)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain -- prisma/schema.prisma prisma/migrations/)" ]; then
+            echo "::error::prisma/schema.prisma or prisma/migrations/ has a diff before the rehearsal even started — refusing to proceed."
+            git status --porcelain -- prisma/schema.prisma prisma/migrations/
+            exit 1
+          fi
+
+      - name: Confirm Docker is available
+        shell: bash
+        run: docker info
+
+      - name: prisma validate --schema prisma/schema.target.prisma
+        run: npm run db:target:validate
+
+      - name: Unit/contract tests (tests/database-target/)
+        run: npm run db:target:test
+
+      - name: Anti-remote-connection guard (assert-local-only.mjs unit tests)
+        run: npx vitest run tests/database-target/target-migration-rehearsal-local-only-guard.test.ts tests/database-target/target-client-factory-anti-remote.test.ts
+
+      - name: Full rehearsal — 11 waves, backfill x2, rollback, reinstall from scratch, RLS + physical + prisma + repo tests
+        shell: pwsh
+        run: |
+          ./scripts/migration-rehearsal/Invoke-ArgusFullRehearsal.ps1
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Full rehearsal failed — see migration-rehearsal-logs/ and migration-rehearsal-artifacts/ (uploaded below)."
+            exit 1
+          }
+
+      - name: Confirm prisma/schema.prisma and prisma/migrations/ are STILL untouched (post-run)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain -- prisma/schema.prisma prisma/migrations/)" ]; then
+            echo "::error::prisma/schema.prisma or prisma/migrations/ was modified by the rehearsal — this must never happen."
+            git status --porcelain -- prisma/schema.prisma prisma/migrations/
+            exit 1
+          fi
+
+      # Fase 3 requirement: logs/artifacts are uploaded ONLY when the job
+      # failed — never on a green run, and never containing production
+      # data (the rehearsal database is synthetic/disposable).
+      - name: Upload rehearsal logs (failure only)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: argus-database-rehearsal-logs
+          path: |
+            migration-rehearsal-logs/**
+            migration-rehearsal-artifacts/**
+          retention-days: 14
+          if-no-files-found: warn
