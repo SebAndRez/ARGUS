@@ -488,7 +488,10 @@ GRANT SELECT ON security.access_policies, security.permissions, security.access_
 GRANT SELECT, INSERT ON security.contextual_accesses, security.access_decisions,
   security.audit_logs, security.security_events TO app_api, ingest_worker, jobs_worker;
 -- audit_reader: read-only on the two audit-grade tables, nothing else in
--- this wave.
+-- this wave. GRANT SELECT ON ... alone is not reachable without schema
+-- USAGE too (rls-runtime-checks.sql Fase 12: "permission denied for schema
+-- security" without this).
+GRANT USAGE ON SCHEMA security TO audit_reader;
 GRANT SELECT ON security.audit_logs, security.access_decisions TO audit_reader;
 -- readonly_inspector: read-only on everything created in this wave.
 GRANT SELECT ON ALL TABLES IN SCHEMA governance TO readonly_inspector;

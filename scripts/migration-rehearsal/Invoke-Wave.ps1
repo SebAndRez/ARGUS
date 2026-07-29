@@ -76,6 +76,24 @@ try {
             throw "$waveName has no migration.sql - cannot apply."
         }
 
+        # rls_roles.sql / rls_policies.sql - only 010_foundation has these as
+        # separate files (shared functions like security.fn_is_owner() and the
+        # role posture every later wave's inline RLS policies depend on).
+        # Every other wave declares its own RLS inline in migration.sql. Order
+        # matters: roles before policies (rls_roles.sql's own header - policies
+        # reference the roles), both before backfill.sql.
+        $rlsRolesFile = Join-Path $WaveDir "rls_roles.sql"
+        $rlsPoliciesFile = Join-Path $WaveDir "rls_policies.sql"
+        $rlsValidationFile = Join-Path $WaveDir "rls_validation.sql"
+        if (Test-Path $rlsRolesFile) {
+            $o = Invoke-ArgusPsql -SqlFile $rlsRolesFile
+            Add-Step "rls_roles.sql" $o
+        }
+        if (Test-Path $rlsPoliciesFile) {
+            $o = Invoke-ArgusPsql -SqlFile $rlsPoliciesFile
+            Add-Step "rls_policies.sql" $o
+        }
+
         if (-not $SkipBackfill -and (Test-Path $backfillFile)) {
             $o = Invoke-ArgusPsql -SqlFile $backfillFile
             Add-Step "backfill.sql (1st run)" $o
@@ -89,6 +107,14 @@ try {
         if (Test-Path $validationFile) {
             $o = Invoke-ArgusPsql -SqlFile $validationFile
             Add-Step "validation.sql (post)" $o
+        }
+
+        if (Test-Path $rlsValidationFile) {
+            # SELECT-only, schema-wide (safe/idempotent at any point - see its
+            # own header), so AllowFailure is not needed here the way
+            # validation.sql's pre-run uses it.
+            $o = Invoke-ArgusPsql -SqlFile $rlsValidationFile
+            Add-Step "rls_validation.sql" $o
         }
     }
 

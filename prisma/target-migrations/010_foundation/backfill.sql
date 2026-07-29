@@ -52,12 +52,15 @@ ON CONFLICT (code) DO NOTHING;
 
 -- 1.4 governance.feature_flags — flag NAMES only, from .env.example, values
 -- never copied (environment-specific, out of scope for a schema backfill).
-INSERT INTO governance.feature_flags (code, description)
+-- governance.feature_flags has no description column (see migration.sql /
+-- schema.target.prisma FeatureFlag: id, code, is_enabled only) - code is
+-- the sole seeded column here.
+INSERT INTO governance.feature_flags (code)
 VALUES
-  ('ARGUS_ALLOW_DEMO_DATA', 'Legacy env flag name, value not migrated'),
-  ('ARGUS_ENABLE_FUSION_ENGINE', 'Legacy env flag name, value not migrated'),
-  ('ARGUS_EVENTS_DEMO_MODE', 'Legacy env flag name, value not migrated'),
-  ('NEXT_PUBLIC_ARGUS_ENABLE_DEMO_ROLES', 'Legacy env flag name, value not migrated')
+  ('ARGUS_ALLOW_DEMO_DATA'),
+  ('ARGUS_ENABLE_FUSION_ENGINE'),
+  ('ARGUS_EVENTS_DEMO_MODE'),
+  ('NEXT_PUBLIC_ARGUS_ENABLE_DEMO_ROLES')
 ON CONFLICT (code) DO NOTHING;
 
 -- ============================================================
@@ -73,7 +76,12 @@ ALTER TABLE security.audit_logs ADD COLUMN IF NOT EXISTS legacy_source varchar(1
 ALTER TABLE security.audit_logs ADD COLUMN IF NOT EXISTS legacy_record_id text NULL;
 ALTER TABLE security.audit_logs ADD COLUMN IF NOT EXISTS migration_confidence varchar(10) NULL;
 ALTER TABLE security.audit_logs ADD COLUMN IF NOT EXISTS migration_review_status varchar(30) NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_audit_logs_legacy ON security.audit_logs (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL;
+-- audit_logs is partitioned by occurred_at (D-02) - a unique index on a
+-- partitioned table must include every partition key column, so occurred_at
+-- is added here even though (legacy_source, legacy_record_id) alone is the
+-- intended idempotency key (a given legacy_record_id always carries the same
+-- occurred_at, so this is not a semantic weakening in practice).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_audit_logs_legacy ON security.audit_logs (legacy_source, legacy_record_id, occurred_at) WHERE legacy_record_id IS NOT NULL;
 
 -- SQL_COMPLEMENTARY_REQUIRED: the actual HMAC chain computation
 -- (integrity_algorithm='HMAC-SHA256', canonicalization_version=1) requires
@@ -82,16 +90,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_audit_logs_legacy ON security.audit_logs (l
 -- as a placeholder INSERT shape, chain computation deferred to
 -- implementation review.
 INSERT INTO security.audit_logs (
-  actor_type, actor_id, action, target_table, target_id, result,
+  actor_type, actor_id, action, target_table, target_id, classification, result,
   integrity_value, occurred_at,
   legacy_status, legacy_source, legacy_record_id, migration_confidence, migration_review_status
 )
 SELECT
-  'USER'::security.actor_type_enum,
+  -- security.actor_type_enum has no 'USER' label (see migration.sql:49-50:
+  -- PERSON/ORGANIZATION/SYSTEM/AUTOMATION_RULE/ANONYMOUS) - 'PERSON' is the
+  -- correct label for an end-user actor.
+  'PERSON'::security.actor_type_enum,
   COALESCE(al."actorUserId", '00000000-0000-0000-0000-000000000000')::uuid,
   al.action,
   al."targetType",
   COALESCE(al."targetId", '00000000-0000-0000-0000-000000000000')::uuid,
+  -- classification is NOT NULL with no default (migration.sql:395) - RESTRICTED
+  -- matches the conservative default used for audit-adjacent data elsewhere
+  -- in the package (e.g. 040_incident/backfill.sql's risk_assessments).
+  'RESTRICTED'::security.information_classification_enum,
   COALESCE(al.metadata, '{}'),
   encode(hmac(al.id || COALESCE(al.metadata, ''), 'PLACEHOLDER_KEY_REVIEW_REQUIRED', 'sha256'), 'hex'),
   al."createdAt",
@@ -102,7 +117,12 @@ SELECT
   'AUTO_MAPPED'
 FROM "AuditLog" al
 ORDER BY al."createdAt" ASC
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+-- Target matches uq_audit_logs_legacy exactly, including its WHERE predicate
+-- (a partial index can only arbitrate ON CONFLICT when the predicate is
+-- repeated here) - occurred_at was added to the index because audit_logs is
+-- partitioned by occurred_at and a unique index on a partitioned table must
+-- include every partition key column (see the index's own definition above).
+ON CONFLICT (legacy_source, legacy_record_id, occurred_at) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 -- NOTE: actor_id/target_id here assume the source ids are already valid
 -- uuids post-Wave-020 identity migration (User.id -> identity.people.id
 -- via legacy_record_id lookup) — a real run joins against

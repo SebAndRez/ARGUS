@@ -15,6 +15,28 @@ $Script:ArgusComposeFile = Join-Path $Script:ArgusRepoRoot "docker-compose.argus
 $Script:ArgusContainerName = "argus_migration_rehearsal_pg"
 $Script:ArgusPrivateDocsDir = Join-Path $Script:ArgusRepoRoot "docs\architecture\private"
 
+function Invoke-ArgusNative {
+    <#
+    Runs a native command that may write routine progress/status output to
+    stderr (docker, npx, ...). PowerShell 5.1 wraps redirected native stderr
+    lines (2>&1) in ErrorRecord objects, and with $ErrorActionPreference =
+    "Stop" (set above) the first such line throws a terminating error even
+    when the command's real exit code is 0 - this is what aborted
+    `docker compose pull` on its own progress output ("Pulling", "Downloading").
+    Runs the scriptblock under ErrorActionPreference = "Continue" so stderr
+    lines are captured as plain text instead, then restores "Stop". Callers
+    still check $LASTEXITCODE themselves.
+    #>
+    param([Parameter(Mandatory)][scriptblock]$ScriptBlock)
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $ScriptBlock
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
 function Write-ArgusLog {
     param(
         [Parameter(Mandatory)][string]$Message,
@@ -33,7 +55,13 @@ function New-ArgusLocalPassword {
     # 32 alnum chars - safe unescaped inside a postgresql:// URL and inside
     # docker-compose env interpolation, no URL-encoding edge cases.
     $bytes = New-Object byte[] 32
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+    }
+    finally {
+        $rng.Dispose()
+    }
     $chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
     $sb = New-Object System.Text.StringBuilder
     foreach ($b in $bytes) { [void]$sb.Append($chars[$b % $chars.Length]) }
@@ -122,9 +150,9 @@ function Invoke-ArgusPsql {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     if ($SqlFile) {
         if (-not (Test-Path $SqlFile)) { throw "SQL file not found: $SqlFile" }
-        $output = Get-Content -Raw -Path $SqlFile | & docker @psqlArgs 2>&1
+        $output = Invoke-ArgusNative { Get-Content -Raw -Path $SqlFile | & docker @psqlArgs 2>&1 }
     } else {
-        $output = $SqlText | & docker @psqlArgs 2>&1
+        $output = Invoke-ArgusNative { $SqlText | & docker @psqlArgs 2>&1 }
     }
     $exitCode = $LASTEXITCODE
     $sw.Stop()

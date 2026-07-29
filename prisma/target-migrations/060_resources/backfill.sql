@@ -50,35 +50,47 @@ CREATE TABLE IF NOT EXISTS migration_meta.critical_poi_review_queue (
 -- ============================================================
 
 -- 2.1 resource.resources (parent, 1:1 with facilities)
-INSERT INTO resource.resources (resource_type, status, classification, created_at,
+-- resource.resources has no classification column (migration.sql:44-56) - removed.
+INSERT INTO resource.resources (resource_type, status, created_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
-SELECT 'FACILITY'::resource.resource_type_enum,
+-- resource_type_enum lives in the governance schema, not resource
+-- (migration.sql:44-56, and 010_foundation/migration.sql:80-84)
+SELECT 'FACILITY'::governance.resource_type_enum,
   CASE cp.status WHEN 'active' THEN 'AVAILABLE'::resource.resource_status_enum ELSE 'UNAVAILABLE'::resource.resource_status_enum END,
-  'OPERATIONAL'::security.information_classification_enum, cp."createdAt",
+  cp."createdAt",
   'CriticalPoi', cp.id, 'HIGH', 'AUTO_MAPPED'
 FROM "CriticalPoi" cp
 JOIN "CriticalPoiOperationalStatus" cos ON cos."poiId" = cp.id
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 
 -- 2.2 resource.facilities (child)
-INSERT INTO resource.facilities (resource_id, capacity, occupancy, address,
+-- columns are capacity_total/occupancy_current, not capacity/occupancy
+-- (migration.sql:87-100); "address" does not exist on this table - removed.
+INSERT INTO resource.facilities (resource_id, capacity_total, occupancy_current,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
-SELECT r.id, COALESCE(cos."capacityTotal", cos."capacityDeclared", 0), COALESCE(cos."occupancyCurrent", 0), cp.address,
+SELECT r.id, COALESCE(cos."capacityTotal", cos."capacityDeclared", 0), COALESCE(cos."occupancyCurrent", 0),
   'CriticalPoi', cp.id, 'HIGH', 'AUTO_MAPPED'
 FROM "CriticalPoi" cp
 JOIN "CriticalPoiOperationalStatus" cos ON cos."poiId" = cp.id
 JOIN resource.resources r ON r.legacy_source = 'CriticalPoi' AND r.legacy_record_id = cp.id
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 
 -- 2.3 resource.inventories <- CriticalPoiOperationalStatus.capacityTotal/
 --     .occupancyCurrent/.capacityDeclared (108 rows, MIGRAR 1:1)
-INSERT INTO resource.inventories (supply_id, quantity, recorded_at,
-  legacy_source, legacy_record_id, migration_confidence, migration_review_status)
-SELECT NULL, -- SQL_COMPLEMENTARY_REQUIRED: supply_id needs a resource.supplies catalog row per capacity type, not modeled 1:1 from CriticalPoiOperationalStatus — flagged for implementation review
-  COALESCE(cos."capacityTotal", 0) - COALESCE(cos."occupancyCurrent", 0), cos."createdAt",
-  'CriticalPoiOperationalStatus', cos.id, 'MEDIUM', 'REQUIRES_REVIEW'
-FROM "CriticalPoiOperationalStatus" cos
-ON CONFLICT DO NOTHING;
+-- supply_id is NOT NULL with a real FK to resource.supplies
+-- (migration.sql:113-126) and there is no supplies catalog row to reference
+-- yet (see the SQL_COMPLEMENTARY_REQUIRED note this INSERT already carried) -
+-- inserting NULL there is a hard constraint violation, not just an
+-- incomplete mapping. Following the same "never guess" precedent as D-04/D-07
+-- elsewhere in this package, this INSERT is disabled until a real supplies
+-- catalog row exists to resolve supply_id against:
+-- INSERT INTO resource.inventories (supply_id, quantity, created_at,
+--   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
+-- SELECT <real supply_id>,
+--   COALESCE(cos."capacityTotal", 0) - COALESCE(cos."occupancyCurrent", 0), cos."createdAt",
+--   'CriticalPoiOperationalStatus', cos.id, 'MEDIUM', 'REQUIRES_REVIEW'
+-- FROM "CriticalPoiOperationalStatus" cos
+-- ON CONFLICT DO NOTHING;
 
 -- ============================================================
 -- 3. CriticalPoiStatusEvidence (108 rows) -> historical trail inside

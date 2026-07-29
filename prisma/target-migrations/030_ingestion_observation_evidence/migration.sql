@@ -57,11 +57,14 @@ CREATE TABLE IF NOT EXISTS ingest.providers (
 
 -- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS ingest.sources (
-  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name         varchar(255) NOT NULL,
-  provider_id  uuid NULL,
-  status       ingest.source_status_enum NOT NULL DEFAULT 'ACTIVE',
-  created_at   timestamptz NOT NULL DEFAULT now(),
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                varchar(255) NOT NULL,
+  provider_id         uuid NULL,
+  -- endpoint_signature: dedup/fusion key against the ~43-source code catalog
+  -- (DUP-003, see backfill.sql §1) - real schema column, not backfill scaffolding.
+  endpoint_signature  text NULL,
+  status              ingest.source_status_enum NOT NULL DEFAULT 'ACTIVE',
+  created_at          timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_sources_provider FOREIGN KEY (provider_id) REFERENCES ingest.providers(id) ON DELETE SET NULL
 );
 
@@ -407,6 +410,10 @@ CREATE POLICY corroborations_inherit ON evidence.corroborations
 -- ============================================================
 -- 5. Grants
 -- ============================================================
+-- GRANT ... ON ALL TABLES IN SCHEMA ingest alone is not reachable without
+-- schema USAGE too (rls-runtime-checks.sql Fase 12: "permission denied for
+-- schema ingest" without this).
+GRANT USAGE ON SCHEMA ingest TO ingest_worker;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA ingest TO ingest_worker;
 GRANT SELECT ON ALL TABLES IN SCHEMA ingest TO app_api, jobs_worker;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA evidence TO app_api;

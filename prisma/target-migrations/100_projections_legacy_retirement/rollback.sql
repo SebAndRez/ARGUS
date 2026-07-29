@@ -13,7 +13,10 @@ REVOKE EXECUTE ON FUNCTION proj.requester_view(uuid) FROM app_api;
 REVOKE EXECUTE ON FUNCTION proj.assigned_unit_view(uuid) FROM app_api;
 REVOKE EXECUTE ON FUNCTION proj.institutional_view(uuid, uuid) FROM app_api;
 REVOKE EXECUTE ON FUNCTION proj.nearby_professional_feed(uuid) FROM app_api;
-REVOKE EXECUTE ON FUNCTION proj.notification_feed_for_actor(uuid) FROM app_api;
+-- proj.notification_feed_for_actor(uuid) is disabled in migration.sql (no
+-- recipient identity column exists to support it) - it was never granted,
+-- so nothing to revoke; unlike DROP FUNCTION IF EXISTS below, REVOKE has no
+-- safe no-op form for a function that was never created.
 REVOKE SELECT ON ALL TABLES IN SCHEMA proj FROM app_api, ingest_worker, jobs_worker, readonly_inspector;
 REVOKE SELECT ON ALL TABLES IN SCHEMA knowledge FROM readonly_inspector, jobs_worker;
 REVOKE SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA knowledge FROM app_api;
@@ -34,6 +37,10 @@ DROP VIEW IF EXISTS proj.mission_timelines;
 DROP VIEW IF EXISTS proj.incident_timelines;
 DROP VIEW IF EXISTS proj.trust_profile_detail;
 DROP MATERIALIZED VIEW IF EXISTS proj.trust_profiles;
+
+-- Drop the MIGRATION_REVIEW_QUEUE view (backfill.sql) before any table it
+-- depends on, or those DROP TABLE statements fail with "other objects depend on it".
+DROP VIEW IF EXISTS knowledge.vw_migration_review_queue;
 
 -- knowledge.* — children before parents
 DROP TABLE IF EXISTS knowledge.simulation_results;

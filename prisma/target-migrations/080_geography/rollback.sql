@@ -19,6 +19,10 @@ REVOKE SELECT, INSERT, UPDATE ON geo.operational_zones, geo.operational_sectors,
   geo.reception_points, geo.meeting_points, geo.operational_routes, geo.perimeters FROM app_api;
 REVOKE SELECT ON geo.administrative_areas FROM app_api, ingest_worker, jobs_worker, readonly_inspector;
 
+-- Drop the MIGRATION_REVIEW_QUEUE view (backfill.sql, shares Wave 060's
+-- migration_meta.critical_poi_review_queue staging table).
+DROP VIEW IF EXISTS geo.vw_migration_review_queue;
+
 DROP TABLE IF EXISTS geo.perimeters;
 DROP TABLE IF EXISTS geo.operational_routes;
 DROP TABLE IF EXISTS geo.meeting_points;

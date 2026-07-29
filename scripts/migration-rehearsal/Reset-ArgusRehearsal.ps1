@@ -30,17 +30,17 @@ Assert-ArgusLocalOnly
 
 Push-Location $Script:ArgusRepoRoot
 try {
-    & docker compose -f $Script:ArgusComposeFile down -v 2>&1 | ForEach-Object { Write-ArgusLog $_ }
+    Invoke-ArgusNative { & docker compose --env-file $Script:ArgusEnvLocalFile -f $Script:ArgusComposeFile down -v 2>&1 } | ForEach-Object { Write-ArgusLog $_ }
 
     Write-ArgusLog "Pulling image (also captures real digest for the manifest)..."
-    & docker compose -f $Script:ArgusComposeFile pull 2>&1 | ForEach-Object { Write-ArgusLog $_ }
+    Invoke-ArgusNative { & docker compose --env-file $Script:ArgusEnvLocalFile -f $Script:ArgusComposeFile pull 2>&1 } | ForEach-Object { Write-ArgusLog $_ }
     $digest = & docker inspect --format='{{index .RepoDigests 0}}' postgis/postgis:17-3.5 2>$null
     if ($digest) {
         Write-ArgusLog "Pulled image digest: $digest"
     }
 
     Write-ArgusLog "Starting fresh container..."
-    & docker compose -f $Script:ArgusComposeFile up -d 2>&1 | ForEach-Object { Write-ArgusLog $_ }
+    Invoke-ArgusNative { & docker compose --env-file $Script:ArgusEnvLocalFile -f $Script:ArgusComposeFile up -d 2>&1 } | ForEach-Object { Write-ArgusLog $_ }
 
     Wait-ArgusPostgresHealthy -TimeoutSeconds 180
 

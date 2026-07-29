@@ -57,20 +57,20 @@ SELECT
   u.role, 'User', u.id, 'HIGH', 'AUTO_MAPPED',
   u."createdAt", u."updatedAt"
 FROM "User" u
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 
 -- 1.2 identity.user_accounts <- User (account half)
-INSERT INTO identity.user_accounts (person_id, status, auth_provider, last_login_at,
+INSERT INTO identity.user_accounts (person_id, email, status, auth_provider, last_login_at,
   legacy_status, legacy_source, legacy_record_id, migration_confidence, migration_review_status,
   created_at, updated_at)
 SELECT
-  p.id, CASE WHEN u."accountStatus" = 'ACTIVE' THEN 'ACTIVE'::identity.user_account_status_enum ELSE 'SUSPENDED'::identity.user_account_status_enum END,
+  p.id, u.email, CASE WHEN u."accountStatus" = 'ACTIVE' THEN 'ACTIVE'::identity.user_account_status_enum ELSE 'SUSPENDED'::identity.user_account_status_enum END,
   u."authProvider", u."lastLoginAt",
   u."accountStatus", 'User', u.id, 'HIGH', 'AUTO_MAPPED',
   u."createdAt", u."updatedAt"
 FROM "User" u
 JOIN identity.people p ON p.legacy_source = 'User' AND p.legacy_record_id = u.id
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 -- NOTE: user_account_status_enum's exact value set is drafted here as
 -- ACTIVE/SUSPENDED only for illustration — see migration.sql for the real
 -- enum values; any User.accountStatus value with no confident mapping
@@ -91,12 +91,12 @@ ON CONFLICT DO NOTHING;
 
 -- 1.4 identity.consents <- User.termsAcceptedAt/.privacyAcceptedAt (DERIVAR,
 -- timestamps only, no accepted-terms-version — partially NO_RECONSTRUCTABLE).
-INSERT INTO identity.consents (person_id, consent_type, granted_at, legacy_source, legacy_record_id, migration_confidence, migration_review_status)
+INSERT INTO identity.consents (person_id, purpose, granted_at, legacy_source, legacy_record_id, migration_confidence, migration_review_status)
 SELECT p.id, 'TERMS_OF_SERVICE', u."termsAcceptedAt", 'User', u.id, 'MEDIUM', 'REQUIRES_REVIEW'
 FROM "User" u JOIN identity.people p ON p.legacy_source = 'User' AND p.legacy_record_id = u.id
 WHERE u."termsAcceptedAt" IS NOT NULL
 ON CONFLICT DO NOTHING;
-INSERT INTO identity.consents (person_id, consent_type, granted_at, legacy_source, legacy_record_id, migration_confidence, migration_review_status)
+INSERT INTO identity.consents (person_id, purpose, granted_at, legacy_source, legacy_record_id, migration_confidence, migration_review_status)
 SELECT p.id, 'PRIVACY_POLICY', u."privacyAcceptedAt", 'User', u.id, 'MEDIUM', 'REQUIRES_REVIEW'
 FROM "User" u JOIN identity.people p ON p.legacy_source = 'User' AND p.legacy_record_id = u.id
 WHERE u."privacyAcceptedAt" IS NOT NULL
@@ -104,7 +104,7 @@ ON CONFLICT DO NOTHING;
 
 -- 1.5 identity.reputation_events <- User.trustScore/.strikes (DERIVAR,
 -- CURRENT VALUE ONLY — not a reconstructed event history, since none exists).
-INSERT INTO identity.reputation_events (person_id, domain, delta, reason, occurred_at,
+INSERT INTO identity.reputation_events (person_id, trust_domain, delta, reason, occurred_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
 SELECT p.id, 'GENERAL'::identity.trust_domain_enum, u."trustScore" - 70, -- 70 is the schema default baseline
   'Snapshot migration of legacy User.trustScore/.strikes — not an audited event history', u."updatedAt",
@@ -123,8 +123,10 @@ ON CONFLICT DO NOTHING;
 --    anywhere in this file targets institution.*; this assertion query
 --    documents that omission is deliberate, not accidental).
 -- ============================================================
-SELECT COUNT(*) AS institutional_memberships_created FROM institution.institutional_memberships
-WHERE legacy_source = 'User'; -- expect 0 (D-01: no synthetic memberships)
+-- institution.institutional_memberships has no legacy_source/legacy_record_id
+-- columns (migration.sql:261-273) - this wave never inserts into it, so the
+-- D-01 check is simply "this table has zero rows", not a legacy_source filter.
+SELECT COUNT(*) AS institutional_memberships_created FROM institution.institutional_memberships; -- expect 0 (D-01: no synthetic memberships)
 
 -- ============================================================
 -- 4. Row counts (before/after)
@@ -168,5 +170,5 @@ SELECT '020_identity', 'User', 'identity.user_accounts', 7, (SELECT COUNT(*) FRO
   CASE WHEN (SELECT COUNT(*) FROM identity.user_accounts WHERE legacy_source = 'User') = 7 THEN 'PASS' ELSE 'FAIL' END;
 INSERT INTO migration_meta.migration_checkpoints (wave, source_table, target_table, expected_count, actual_count, status, notes)
 VALUES ('020_identity', 'User', 'institution.institutional_memberships', 0,
-  (SELECT COUNT(*) FROM institution.institutional_memberships WHERE legacy_source = 'User'), 'PASS',
+  (SELECT COUNT(*) FROM institution.institutional_memberships), 'PASS',
   'D-01 closure criterion: must remain 0.');

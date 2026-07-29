@@ -47,7 +47,7 @@ if ($rlsFailures) {
 Write-ArgusLog "=== Fase 16: prisma validate --schema prisma/schema.target.prisma ==="
 Push-Location $Script:ArgusRepoRoot
 try {
-    $prismaOutput = & npx prisma validate --schema prisma/schema.target.prisma 2>&1
+    $prismaOutput = Invoke-ArgusNative { & npx prisma validate --schema prisma/schema.target.prisma 2>&1 }
     $summary.PrismaValidateExitCode = $LASTEXITCODE
     $summary.PrismaValidateOutput = $prismaOutput
     Write-ArgusLog "prisma validate exit=$LASTEXITCODE"
@@ -59,11 +59,11 @@ if (-not $SkipRepoTests) {
     Write-ArgusLog "=== Fase 17: repo test suites (target / P0 / rehearsal guard) ==="
     Push-Location $Script:ArgusRepoRoot
     try {
-        $targetTests = & npx vitest run tests/database-target/ 2>&1
+        $targetTests = Invoke-ArgusNative { & npx vitest run tests/database-target/ 2>&1 }
         $summary.TargetTestsExitCode = $LASTEXITCODE
         $summary.TargetTestsOutput = $targetTests | Select-Object -Last 20
 
-        $p0Tests = & npx vitest run tests/p0/notifications-endpoint-auth.test.ts tests/p0/risk-assessments-endpoint-auth.test.ts 2>&1
+        $p0Tests = Invoke-ArgusNative { & npx vitest run tests/p0/notifications-endpoint-auth.test.ts tests/p0/risk-assessments-endpoint-auth.test.ts 2>&1 }
         $summary.P0TestsExitCode = $LASTEXITCODE
         $summary.P0TestsOutput = $p0Tests | Select-Object -Last 20
     } finally {

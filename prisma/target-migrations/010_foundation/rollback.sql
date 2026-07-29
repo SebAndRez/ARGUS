@@ -30,6 +30,10 @@ REVOKE SELECT ON security.access_policies, security.permissions, security.access
   security.access_role_permissions FROM app_api, ingest_worker, jobs_worker;
 REVOKE SELECT ON ALL TABLES IN SCHEMA governance FROM app_api, ingest_worker, jobs_worker;
 
+-- Drop the MIGRATION_REVIEW_QUEUE view (backfill.sql) before security.audit_logs
+-- below, or that DROP TABLE fails with "other objects depend on it".
+DROP VIEW IF EXISTS governance.vw_migration_review_queue_010;
+
 -- ============================================================
 -- 2. Drop security schema tables (dependency order: children first)
 -- ============================================================
@@ -68,7 +72,23 @@ DROP TABLE IF EXISTS governance.operational_rules;
 DROP TABLE IF EXISTS governance.territorial_configurations;
 
 -- ============================================================
--- 4. Drop enums (guarded — only if no other schema's table still uses them;
+-- 4. Drop shared functions (rls_policies.sql) — standalone, not tied to any
+--    table's lifecycle, so they survive every DROP TABLE above. Must run
+--    before the enum drops below (fn_classification_allowed takes an
+--    information_classification_enum parameter, which would otherwise block
+--    that type's drop too) and before DROP SCHEMA IF EXISTS security further
+--    down, which fails ("schema not empty") while any of these still exist.
+-- ============================================================
+DROP FUNCTION IF EXISTS security.fn_is_owner(uuid, text, uuid);
+DROP FUNCTION IF EXISTS security.fn_has_active_membership(uuid, uuid);
+DROP FUNCTION IF EXISTS security.fn_has_active_assignment(uuid, uuid);
+DROP FUNCTION IF EXISTS security.fn_has_command_role(uuid, uuid);
+DROP FUNCTION IF EXISTS security.fn_has_accepted_collaboration(uuid, uuid);
+DROP FUNCTION IF EXISTS security.fn_classification_allowed(uuid, security.information_classification_enum);
+DROP FUNCTION IF EXISTS security.fn_has_emergency_access(uuid, uuid);
+
+-- ============================================================
+-- 5. Drop enums (guarded — only if no other schema's table still uses them;
 --    safe here because this rollback assumes 020-100 already rolled back)
 -- ============================================================
 DO $$ BEGIN DROP TYPE IF EXISTS security.security_event_status_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
@@ -94,13 +114,13 @@ DO $$ BEGIN DROP TYPE IF EXISTS security.actor_type_enum; EXCEPTION WHEN OTHERS 
 DO $$ BEGIN DROP TYPE IF EXISTS security.information_classification_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
--- 5. Drop schemas (only if empty)
+-- 6. Drop schemas (only if empty)
 -- ============================================================
 DROP SCHEMA IF EXISTS security;
 DROP SCHEMA IF EXISTS governance;
 
 -- ============================================================
--- 6. Extensions — NOT dropped here
+-- 7. Extensions — NOT dropped here
 -- ============================================================
 -- pgcrypto/postgis are left installed even on rollback of this wave: other
 -- waves' tables (geography columns from 080_geography onward, gen_random_uuid()

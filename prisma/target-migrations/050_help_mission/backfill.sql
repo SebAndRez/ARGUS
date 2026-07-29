@@ -34,7 +34,7 @@ SELECT p.id,
   'HelpRequest', hr.id, 'HIGH', 'AUTO_MAPPED'
 FROM "HelpRequest" hr
 JOIN identity.people p ON p.legacy_source = 'User' AND p.legacy_record_id = hr."userId"
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 -- 0 rows in "HelpRequest" today — this INSERT is a no-op by construction,
 -- kept executable (not commented out) so it is ready the moment real rows
 -- exist, per the D-04 precedent.
@@ -43,7 +43,8 @@ ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
 -- 2. help.affected_people <- HelpRequest (origin, distinguishing requester
 --    from affected — DIVIDIR, 0 rows).
 -- ============================================================
-INSERT INTO help.affected_people (help_request_id, person_id, affectation_status, created_at,
+-- column is "status" not "affectation_status" (migration.sql:185-193)
+INSERT INTO help.affected_people (help_request_id, person_id, status, created_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
 SELECT hreq.id, p.id, 'UNKNOWN'::help.affectation_status_enum, hr."createdAt",
   'HelpRequest', hr.id, 'MEDIUM', 'REQUIRES_REVIEW'

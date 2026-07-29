@@ -13,6 +13,11 @@ REVOKE SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA evidence FROM app_api;
 REVOKE SELECT ON ALL TABLES IN SCHEMA ingest FROM app_api, jobs_worker;
 REVOKE SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA ingest FROM ingest_worker;
 
+-- Drop the MIGRATION_REVIEW_QUEUE views (backfill.sql) before any table they
+-- depend on, or those DROP TABLE statements fail with "other objects depend on it".
+DROP VIEW IF EXISTS ingest.vw_migration_review_queue;
+DROP VIEW IF EXISTS evidence.vw_migration_review_queue;
+
 DROP TABLE IF EXISTS evidence.corroborations;
 DROP TABLE IF EXISTS evidence.contradictions;
 DROP TABLE IF EXISTS evidence.refutations;

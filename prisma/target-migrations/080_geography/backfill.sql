@@ -42,27 +42,29 @@ ALTER TABLE geo.reception_points ADD COLUMN IF NOT EXISTS migration_review_statu
 --    kept executable (not commented out) so they activate the moment that
 --    approval lands, consistent with D-06's precedent.
 -- ============================================================
-INSERT INTO geo.meeting_points (name, location,
+-- none of geo.meeting_points/.extraction_points/.reception_points has a
+-- "name" column (migration.sql:92-138) - removed from all three INSERTs below.
+INSERT INTO geo.meeting_points (location,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
-SELECT cp.name, NULL::geography, -- SQL_COMPLEMENTARY_REQUIRED: ST_MakePoint(cp.longitude, cp.latitude)::geography, deferred until row is approved out of review
+SELECT NULL::geography, -- SQL_COMPLEMENTARY_REQUIRED: ST_MakePoint(cp.longitude, cp.latitude)::geography, deferred until row is approved out of review
   'CriticalPoi', cp.id, 'LOW', 'REQUIRES_REVIEW'
 FROM "CriticalPoi" cp
 JOIN migration_meta.critical_poi_review_queue q ON q.critical_poi_id = cp.id AND q.candidate_routes LIKE '%B%'
 WHERE q.review_status = 'REVIEWED_APPROVED' -- never true until a human approves the classification rule
 ON CONFLICT DO NOTHING;
 
-INSERT INTO geo.extraction_points (name, location,
+INSERT INTO geo.extraction_points (location,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
-SELECT cp.name, NULL::geography,
+SELECT NULL::geography,
   'CriticalPoi', cp.id, 'LOW', 'REQUIRES_REVIEW'
 FROM "CriticalPoi" cp
 JOIN migration_meta.critical_poi_review_queue q ON q.critical_poi_id = cp.id AND q.candidate_routes LIKE '%B%'
 WHERE q.review_status = 'REVIEWED_APPROVED'
 ON CONFLICT DO NOTHING;
 
-INSERT INTO geo.reception_points (name, location,
+INSERT INTO geo.reception_points (location,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
-SELECT cp.name, NULL::geography,
+SELECT NULL::geography,
   'CriticalPoi', cp.id, 'LOW', 'REQUIRES_REVIEW'
 FROM "CriticalPoi" cp
 JOIN migration_meta.critical_poi_review_queue q ON q.critical_poi_id = cp.id AND q.candidate_routes LIKE '%B%'

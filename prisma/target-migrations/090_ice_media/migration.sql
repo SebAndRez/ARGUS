@@ -408,6 +408,10 @@ CREATE POLICY publication_authorizations_inherit ON media.publication_authorizat
 -- ============================================================
 -- 6. Grants
 -- ============================================================
+-- GRANT ... ON ALL TABLES IN SCHEMA ice alone is not reachable without
+-- schema USAGE too (rls-runtime-checks.sql Fase 12: "permission denied for
+-- schema ice" without this).
+GRANT USAGE ON SCHEMA ice TO app_api;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA ice TO app_api;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA community TO app_api;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA media TO app_api;

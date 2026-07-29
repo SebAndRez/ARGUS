@@ -12,6 +12,12 @@
 -- TelecomConnectivityEvidence (0 rows each) -> evidence.observations /
 -- .evidence_records, structural mapping only.
 
+ALTER TABLE ingest.sources ADD COLUMN IF NOT EXISTS legacy_source varchar(100) NULL;
+ALTER TABLE ingest.sources ADD COLUMN IF NOT EXISTS legacy_record_id text NULL;
+ALTER TABLE ingest.sources ADD COLUMN IF NOT EXISTS migration_confidence varchar(10) NULL;
+ALTER TABLE ingest.sources ADD COLUMN IF NOT EXISTS migration_review_status varchar(30) NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_sources_legacy ON ingest.sources (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL;
+
 ALTER TABLE ingest.ingestion_runs ADD COLUMN IF NOT EXISTS legacy_source varchar(100) NULL;
 ALTER TABLE ingest.ingestion_runs ADD COLUMN IF NOT EXISTS legacy_record_id text NULL;
 ALTER TABLE ingest.ingestion_runs ADD COLUMN IF NOT EXISTS migration_confidence varchar(10) NULL;
@@ -44,51 +50,65 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_evidence_records_legacy ON evidence.evidenc
 -- with KnowledgeSource's single row requires a code-review pass, not SQL
 -- alone. Drafted here as a placeholder for the 1 known row only.
 INSERT INTO ingest.sources (provider_id, endpoint_signature, name, status, legacy_source, legacy_record_id, migration_confidence, migration_review_status, created_at)
-SELECT gen_random_uuid(), ks.id, ks.name, CASE WHEN ks.enabled THEN 'ACTIVE'::ingest.source_status_enum ELSE 'INACTIVE'::ingest.source_status_enum END,
+SELECT NULL, ks.id, ks.name, CASE WHEN ks.enabled THEN 'ACTIVE'::ingest.source_status_enum ELSE 'INACTIVE'::ingest.source_status_enum END,
   'KnowledgeSource', ks.id, 'MEDIUM', 'REQUIRES_REVIEW', ks."createdAt"
 FROM "KnowledgeSource" ks
 ON CONFLICT DO NOTHING;
--- NOTE: provider_id here needs a real ingest.providers row resolved first
--- (CREATE_EMPTY per Target-Current Mapping — no current source) —
--- gen_random_uuid() is a placeholder FK target flagged for implementation review.
+-- NOTE: provider_id is NULL (column is nullable, FK ON DELETE SET NULL) -
+-- there is no real ingest.providers row to reference yet (CREATE_EMPTY per
+-- Target-Current Mapping - no current source). A fabricated gen_random_uuid()
+-- here would violate fk_sources_provider since it wouldn't match any real
+-- providers row; NULL is correct until that resolution happens, flagged for
+-- implementation review.
 
 -- ============================================================
 -- 2. ingest.ingestion_runs <- IngestionRun(3,405) + KnowledgeIngestionRun(1,899)
 --    Batch: 5,000-row batches per origin_kind, ORDER BY started_at.
 -- ============================================================
-INSERT INTO ingest.ingestion_runs (source_id, idempotency_key, status, started_at, completed_at,
+-- origin_kind is NOT NULL with no default (migration.sql:86-97, whitelist
+-- CHECK 'EXTERNAL_EVENT_PIPELINE'|'GLOBAL_WATCH_PIPELINE') and idempotency_key
+-- does not exist as a column on this table - removed. completed_at renamed
+-- to the real column name, finished_at. ingest.ingestion_run_status_enum has
+-- no 'COMPLETED' label (migration.sql:31: RUNNING/SUCCEEDED/FAILED) -
+-- 'SUCCEEDED' is the correct label.
+INSERT INTO ingest.ingestion_runs (source_id, origin_kind, status, started_at, finished_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
-SELECT s.id, gen_random_uuid(), CASE ir.status WHEN 'success' THEN 'COMPLETED'::ingest.ingestion_run_status_enum ELSE 'FAILED'::ingest.ingestion_run_status_enum END,
+SELECT s.id, 'EXTERNAL_EVENT_PIPELINE', CASE ir.status WHEN 'success' THEN 'SUCCEEDED'::ingest.ingestion_run_status_enum ELSE 'FAILED'::ingest.ingestion_run_status_enum END,
   ir."fetchedAt", ir."completedAt", 'IngestionRun', ir.id, 'HIGH', 'AUTO_MAPPED'
 FROM "IngestionRun" ir
 JOIN ingest.sources s ON s.legacy_record_id = ir."sourceId" -- resolved via KnowledgeSource fusion above; falls to REQUIRES_REVIEW if unresolved
 ORDER BY ir."fetchedAt"
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 
-INSERT INTO ingest.ingestion_runs (source_id, idempotency_key, status, started_at, completed_at,
+INSERT INTO ingest.ingestion_runs (source_id, origin_kind, status, started_at, finished_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
-SELECT s.id, gen_random_uuid(), CASE kir.status WHEN 'completed' THEN 'COMPLETED'::ingest.ingestion_run_status_enum ELSE 'FAILED'::ingest.ingestion_run_status_enum END,
+SELECT s.id, 'GLOBAL_WATCH_PIPELINE', CASE kir.status WHEN 'completed' THEN 'SUCCEEDED'::ingest.ingestion_run_status_enum ELSE 'FAILED'::ingest.ingestion_run_status_enum END,
   kir."startedAt", kir."finishedAt", 'KnowledgeIngestionRun', kir.id, 'HIGH', 'AUTO_MAPPED'
 FROM "KnowledgeIngestionRun" kir
 JOIN ingest.sources s ON s.legacy_record_id = kir."sourceId"
 ORDER BY kir."startedAt"
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 
 -- ============================================================
 -- 3. ingest.source_records <- ExternalEvent (1,904, T-01). Single batch,
 --    dedup on (source_id, external_id) partial unique index.
 -- ============================================================
-INSERT INTO ingest.source_records (ingestion_run_id, source_id, origin_kind, external_id, provenance, raw_content, content_hash, received_at,
+-- column is "origin" not "origin_kind"; "provenance"/"content_hash" do not
+-- exist on this table (migration.sql:103-118) - removed.
+-- ingest.source_record_origin_enum has no 'EXTERNAL_EVENT_PIPELINE' label
+-- (migration.sql:30: AUTOMATED_FEED/MANUAL_UPLOAD/API_PULL) - 'AUTOMATED_FEED'
+-- is the correct label for a scheduled ingestion pipeline.
+INSERT INTO ingest.source_records (ingestion_run_id, source_id, origin, external_id, raw_content, received_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
 SELECT
   (SELECT id FROM ingest.ingestion_runs ORDER BY started_at LIMIT 1), -- placeholder single-run association, real run resolves per-event's actual ingestion run
-  s.id, 'EXTERNAL_EVENT_PIPELINE'::ingest.source_record_origin_enum, ee."externalId",
-  jsonb_build_object('legacy_record_id', ee.id), COALESCE(ee.raw, '{}'), md5(COALESCE(ee.raw::text, ee.id)),
+  s.id, 'AUTOMATED_FEED'::ingest.source_record_origin_enum, ee."externalId",
+  COALESCE(ee.raw, '{}'),
   COALESCE(ee."fetchedAt", ee."createdAt"),
   'ExternalEvent', ee.id, 'HIGH', 'AUTO_MAPPED'
 FROM "ExternalEvent" ee
 JOIN ingest.sources s ON s.legacy_record_id = ee."sourceId"
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 
 -- ============================================================
 -- 4. evidence.observations <- Report(1) + ExternalEvent(1,904) + HelpRequest(0, origin)
@@ -100,15 +120,18 @@ SELECT 'CITIZEN_REPORT'::evidence.observation_origin_enum, 'CITIZEN'::evidence.r
   r.description, jsonb_build_object('legacy_record_id', r.id), r."createdAt", r."createdAt",
   'Report', r.id, 'MEDIUM', 'REQUIRES_REVIEW', r."createdAt"
 FROM "Report" r
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 
+-- evidence.observation_origin_enum has no 'EXTERNAL_SOURCE' label
+-- (migration.sql:34: CITIZEN_REPORT/AUTOMATED_INGESTION) - 'AUTOMATED_INGESTION'
+-- is the correct label for pipeline-sourced data.
 INSERT INTO evidence.observations (origin_type, claim_text, provenance, occurred_at, reported_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status, created_at)
-SELECT 'EXTERNAL_SOURCE'::evidence.observation_origin_enum,
+SELECT 'AUTOMATED_INGESTION'::evidence.observation_origin_enum,
   ee.title, jsonb_build_object('legacy_record_id', ee.id), ee."occurredAt", ee."fetchedAt",
   'ExternalEvent', ee.id, 'MEDIUM', 'REQUIRES_REVIEW', ee."createdAt"
 FROM "ExternalEvent" ee
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 -- D-04: TelecomConnectivityStatus (0 rows) — origin_type='TELECOM_CONNECTIVITY_LEGACY'
 -- structural mapping only, no rows to move:
 -- INSERT INTO evidence.observations (origin_type, ...) SELECT 'TELECOM_CONNECTIVITY_LEGACY', ... FROM "TelecomConnectivityStatus"; -- 0 rows, never executes a real row
@@ -118,13 +141,17 @@ ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
 --    incident_id-linked half reconciles in Wave 040 alongside
 --    incident.incident_evidence_links). Batched 1,000 rows at a time.
 -- ============================================================
-INSERT INTO evidence.evidence_records (origin_type, classification, chain_of_custody,
+-- column is "evidence_origin" not "origin_type"; "chain_of_custody" does not
+-- exist - the nearest real column is "structured_content" (migration.sql:193-205).
+INSERT INTO evidence.evidence_records (evidence_origin, classification, structured_content,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status, created_at)
-SELECT 'EXTERNAL_SOURCE'::evidence.evidence_origin_enum, 'OPERATIONAL'::security.information_classification_enum,
+-- evidence.evidence_origin_enum has no 'EXTERNAL_SOURCE' label
+-- (migration.sql:38: INTERNAL/EXTERNAL) - 'EXTERNAL' is the correct label.
+SELECT 'EXTERNAL'::evidence.evidence_origin_enum, 'OPERATIONAL'::security.information_classification_enum,
   jsonb_build_object('sourceId', ke."sourceId", 'sourceName', ke."sourceName", 'legacy_record_id', ke.id),
   'KnowledgeEvidence', ke.id, 'MEDIUM', 'REQUIRES_REVIEW', ke."createdAt"
 FROM "KnowledgeEvidence" ke
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 -- D-04: TelecomConnectivityEvidence (0 rows) -> evidence_records/evidence_assets,
 -- structural mapping only, same pattern as above — 0 rows, no INSERT executes for real.
 

@@ -16,6 +16,10 @@ REVOKE SELECT ON ALL TABLES IN SCHEMA help FROM readonly_inspector;
 REVOKE SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA mission FROM app_api;
 REVOKE SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA help FROM app_api;
 
+-- Drop the MIGRATION_REVIEW_QUEUE view (backfill.sql) before any table it
+-- depends on, or those DROP TABLE statements fail with "other objects depend on it".
+DROP VIEW IF EXISTS help.vw_migration_review_queue;
+
 DROP TABLE IF EXISTS mission.mission_meeting_point_assignments;
 DROP TABLE IF EXISTS mission.mission_communication_channels;
 DROP TABLE IF EXISTS mission.mission_outcomes;

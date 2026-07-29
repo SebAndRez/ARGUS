@@ -45,8 +45,15 @@ ALTER TABLE risk.risk_assessment_revisions ADD COLUMN IF NOT EXISTS migration_re
 --    ambiguous "active-ish" status -> operational_status='MONITORING',
 --    never 'ACTIVE').
 -- ============================================================
+-- target_value entries below are corrected to match the real enum labels
+-- (migration.sql:41-45: incident_verification_status_enum = UNVERIFIED/
+-- PENDING/VERIFIED/DISPUTED; incident_operational_status_enum = ACTIVE/
+-- CONTAINED/MITIGATING/RESOLVED/MONITORING/ARCHIVED/CANCELLED) - the original
+-- draft used DETECTED/UNCONFIRMED/CORROBORATED/OFFICIAL, none of which exist
+-- on either enum; this column is plain varchar here but gets CAST to the
+-- real enum type at read time in steps 2-4 below.
 INSERT INTO migration_meta.legacy_status_mapping (source_table, source_status_value, target_dimension, target_value, confidence, notes) VALUES
-  ('KnowledgeIncident', 'detected', 'operational_status', 'DETECTED', 'HIGH', NULL),
+  ('KnowledgeIncident', 'detected', 'operational_status', 'ACTIVE', 'HIGH', NULL),
   ('KnowledgeIncident', 'validating', 'operational_status', 'MONITORING', 'MEDIUM', 'Conservative default — not a confirmed dimension mapping'),
   ('KnowledgeIncident', 'confirmed', 'operational_status', 'ACTIVE', 'HIGH', NULL),
   ('KnowledgeIncident', 'active', 'operational_status', 'ACTIVE', 'HIGH', NULL),
@@ -55,19 +62,24 @@ INSERT INTO migration_meta.legacy_status_mapping (source_table, source_status_va
   ('KnowledgeIncident', 'contained', 'operational_status', 'CONTAINED', 'HIGH', NULL),
   ('KnowledgeIncident', 'resolved', 'operational_status', 'RESOLVED', 'HIGH', NULL),
   ('KnowledgeIncident', 'archived', 'operational_status', 'RESOLVED', 'MEDIUM', 'No distinct ARCHIVED operational_status value confirmed in target'),
-  ('KnowledgeIncident', 'unverified', 'verification_status', 'UNCONFIRMED', 'HIGH', NULL),
-  ('KnowledgeIncident', 'candidate', 'verification_status', 'UNCONFIRMED', 'HIGH', 'Routes to incident_candidates, not incidents'),
-  ('KnowledgeIncident', 'corroborated', 'verification_status', 'CORROBORATED', 'HIGH', NULL),
-  ('KnowledgeIncident', 'official', 'verification_status', 'OFFICIAL', 'HIGH', NULL)
+  ('KnowledgeIncident', 'unverified', 'verification_status', 'UNVERIFIED', 'HIGH', NULL),
+  ('KnowledgeIncident', 'candidate', 'verification_status', 'PENDING', 'HIGH', 'Routes to incident_candidates, not incidents'),
+  ('KnowledgeIncident', 'corroborated', 'verification_status', 'VERIFIED', 'HIGH', NULL),
+  ('KnowledgeIncident', 'official', 'verification_status', 'VERIFIED', 'HIGH', NULL)
 ON CONFLICT (source_table, source_status_value, target_dimension) DO NOTHING;
 
 -- ============================================================
 -- 2. incident.incident_candidates <- KnowledgeIncident WHERE verificationStatus
 --    IN ('unverified','candidate'). Batched 500 rows, transaction per batch.
 -- ============================================================
-INSERT INTO incident.incident_candidates (status, correlation_key, created_at,
+-- incident.incident_candidates has no correlation_key column
+-- (migration.sql:76-86) - removed; created_at renamed to opened_at, the real
+-- column name; incident_candidate_status_enum has no 'UNDER_ASSESSMENT'
+-- label (migration.sql:38-39: OPEN/CORRELATING/PROMOTED/DISCARDED) -
+-- 'CORRELATING' is the correct label.
+INSERT INTO incident.incident_candidates (status, opened_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
-SELECT 'UNDER_ASSESSMENT'::incident.incident_candidate_status_enum, ki."canonicalKey", ki."createdAt",
+SELECT 'CORRELATING'::incident.incident_candidate_status_enum, ki."createdAt",
   'KnowledgeIncident', ki.id,
   CASE WHEN m.confidence IS NOT NULL THEN m.confidence ELSE 'LOW' END,
   CASE WHEN m.confidence IS NOT NULL THEN 'AUTO_MAPPED' ELSE 'REQUIRES_REVIEW' END
@@ -75,17 +87,19 @@ FROM "KnowledgeIncident" ki
 LEFT JOIN migration_meta.legacy_status_mapping m
   ON m.source_table = 'KnowledgeIncident' AND m.source_status_value = ki."verificationStatus" AND m.target_dimension = 'verification_status'
 WHERE ki."verificationStatus" IN ('unverified','candidate')
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 
 -- ============================================================
 -- 3. incident.incidents <- KnowledgeIncident (remainder). T-02.
 -- ============================================================
-INSERT INTO incident.incidents (verification_status, operational_status, title, description, created_at,
+-- incident.incidents has no title/description column (migration.sql:116-135)
+-- - removed; that content has no home in this table's schema.
+INSERT INTO incident.incidents (verification_status, operational_status, created_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
 SELECT
-  COALESCE(mv.target_value, 'UNCONFIRMED')::incident.incident_verification_status_enum,
+  COALESCE(mv.target_value, 'UNVERIFIED')::incident.incident_verification_status_enum,
   COALESCE(mo.target_value, 'MONITORING')::incident.incident_operational_status_enum,
-  ki.title, ki.summary, ki."createdAt",
+  ki."createdAt",
   'KnowledgeIncident', ki.id,
   CASE WHEN mo.confidence IS NOT NULL THEN mo.confidence ELSE 'LOW' END,
   CASE WHEN mo.confidence IS NOT NULL THEN 'AUTO_MAPPED' ELSE 'REQUIRES_REVIEW' END
@@ -95,15 +109,20 @@ LEFT JOIN migration_meta.legacy_status_mapping mv
 LEFT JOIN migration_meta.legacy_status_mapping mo
   ON mo.source_table = 'KnowledgeIncident' AND mo.source_status_value = COALESCE(ki.status, 'detected') AND mo.target_dimension = 'operational_status'
 WHERE ki."verificationStatus" NOT IN ('unverified','candidate') OR ki."verificationStatus" IS NULL
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 
 -- ============================================================
 -- 4. incident.incident_transitions <- IncidentTransition (16 rows, T-03,
 --    split per-dimension via legacy_status_mapping join). Single batch.
 -- ============================================================
-INSERT INTO incident.incident_transitions (incident_id, dimension, previous_value, new_value, transitioned_at,
+-- columns are from_value/to_value, not previous_value/new_value
+-- (migration.sql:226-240); dimension is incident_state_dimension_enum, whose
+-- labels are uppercase (migration.sql:56-58) - 'OPERATIONAL_STATUS', not
+-- 'operational_status' (that lowercase form is only valid for the plain
+-- varchar target_dimension column in migration_meta.legacy_status_mapping).
+INSERT INTO incident.incident_transitions (incident_id, dimension, from_value, to_value, transitioned_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
-SELECT i.id, 'operational_status',
+SELECT i.id, 'OPERATIONAL_STATUS',
   COALESCE(mp.target_value, it."previousStatus"), COALESCE(mn.target_value, it."newStatus"), it."createdAt",
   'IncidentTransition', it.id,
   CASE WHEN mn.confidence IS NOT NULL THEN mn.confidence ELSE 'LOW' END,
@@ -128,20 +147,23 @@ INSERT INTO risk.risk_assessments (hazard_type_id, classification, status, creat
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
 SELECT ht.id,
   'RESTRICTED'::security.information_classification_enum,
-  CASE WHEN ra.status = 'active' THEN 'ACTIVE'::risk.risk_assessment_status_enum ELSE 'ARCHIVED'::risk.risk_assessment_status_enum END,
+  -- risk.risk_assessment_status_enum has no 'ARCHIVED' label
+  -- (migration.sql:64: ACTIVE/CLOSED only) - 'CLOSED' is the correct label.
+  CASE WHEN ra.status = 'active' THEN 'ACTIVE'::risk.risk_assessment_status_enum ELSE 'CLOSED'::risk.risk_assessment_status_enum END,
   ra."createdAt",
   'RiskAssessment', ra.id,
   CASE WHEN ht.id IS NOT NULL THEN 'HIGH' ELSE 'LOW' END,
   CASE WHEN ht.id IS NOT NULL THEN 'AUTO_MAPPED' ELSE 'REQUIRES_REVIEW' END
 FROM "RiskAssessment" ra
 LEFT JOIN governance.hazard_types ht ON upper(ht.code) = upper(ra."riskType")
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 
 -- ============================================================
 -- 7. risk.risk_assessment_revisions <- RiskAssessmentRevision (50 rows,
 --    MIGRAR 1:1). Single batch.
 -- ============================================================
-INSERT INTO risk.risk_assessment_revisions (risk_assessment_id, revision_number, content_snapshot, created_at,
+-- column is "changes" not "content_snapshot" (migration.sql:353-366)
+INSERT INTO risk.risk_assessment_revisions (risk_assessment_id, revision_number, changes, created_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
 SELECT ra.id, row_number() OVER (PARTITION BY rar."assessmentId" ORDER BY rar."createdAt"),
   jsonb_build_object('previousStatus', rar."previousStatus", 'newStatus', rar."newStatus", 'reason', rar.reason, 'evidence', rar.evidence),

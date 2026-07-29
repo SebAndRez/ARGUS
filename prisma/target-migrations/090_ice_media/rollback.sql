@@ -16,6 +16,10 @@ REVOKE SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA ice FROM app_api;
 REVOKE SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA community FROM app_api;
 REVOKE SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA media FROM app_api;
 
+-- Drop the MIGRATION_REVIEW_QUEUE view (backfill.sql) before any table it
+-- depends on, or those DROP TABLE statements fail with "other objects depend on it".
+DROP VIEW IF EXISTS ice.vw_migration_review_queue;
+
 -- media.* — children of publications first
 DROP TABLE IF EXISTS media.publication_authorizations;
 DROP TABLE IF EXISTS media.usage_licenses;
@@ -26,7 +30,13 @@ DROP TABLE IF EXISTS media.content_moderations;
 DROP TABLE IF EXISTS media.live_streams;
 DROP TABLE IF EXISTS media.publications;
 
--- community.* — children of family_networks (and independent tables) first
+-- community.* — children of family_networks (and independent tables) first.
+-- family_networks_member (a policy ON family_networks) references
+-- community.dependents in its USING clause, which blocks dropping dependents
+-- while that policy still exists (circular with the FK direction below,
+-- which requires dependents dropped before family_networks) - drop the
+-- policy explicitly first to break the cycle without disturbing FK order.
+DROP POLICY IF EXISTS family_networks_member ON community.family_networks;
 DROP TABLE IF EXISTS community.volunteers;
 DROP TABLE IF EXISTS community.community_groups;
 DROP TABLE IF EXISTS community.dependents;

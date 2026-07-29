@@ -23,7 +23,7 @@
 INSERT INTO knowledge.lessons_learned (description, status, legacy_status, legacy_source, legacy_record_id, migration_confidence, migration_review_status)
 SELECT kl.summary, 'PENDING'::knowledge.lesson_status_enum, NULL, 'KnowledgeLesson', kl.id, 'HIGH', 'AUTO_MAPPED'
 FROM "KnowledgeLesson" kl
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 -- 0 rows in "KnowledgeLesson" today — no-op by construction, kept
 -- executable so it activates the moment a real row exists.
 
@@ -42,7 +42,7 @@ SELECT hkd.title,
   CASE hkd."ingestionStatus" WHEN 'queued' THEN 'DRAFT'::knowledge.knowledge_document_status_enum ELSE 'PUBLISHED'::knowledge.knowledge_document_status_enum END,
   hkd."ingestionStatus", 'HazardKnowledgeDocument', hkd.id, 'MEDIUM', 'REQUIRES_REVIEW'
 FROM "HazardKnowledgeDocument" hkd
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 
 INSERT INTO knowledge.knowledge_documents (title, status, legacy_status, legacy_source, legacy_record_id, migration_confidence, migration_review_status)
 SELECT kd.title,
@@ -52,7 +52,7 @@ FROM "KnowledgeDocument" kd
 WHERE NOT EXISTS ( -- dedup guard: skip if a HazardKnowledgeDocument with the same title already produced a fused row
   SELECT 1 FROM "HazardKnowledgeDocument" hkd WHERE hkd.title = kd.title
 )
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 -- 0 rows in "KnowledgeDocument" today — this branch is a no-op by
 -- construction but kept executable for the same reason as §1.
 
@@ -70,7 +70,7 @@ SELECT kd.id, 'FACT'::knowledge.fact_kind_enum, hkf.summary,
 FROM "HazardKnowledgeFact" hkf
 LEFT JOIN governance.hazard_types ht ON upper(ht.code) = upper(hkf."hazardType")
 LEFT JOIN knowledge.knowledge_documents kd ON kd.legacy_source = 'HazardKnowledgeDocument' AND kd.legacy_record_id = hkf."documentId"
-ON CONFLICT (legacy_source, legacy_record_id) DO NOTHING;
+ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 -- NOTE: knowledge_document_id is NOT NULL in the target schema but
 -- HazardKnowledgeFact.documentId is nullable in the current schema — any
 -- row where kd.id resolves to NULL here will fail the NOT NULL constraint

@@ -28,6 +28,11 @@ REVOKE SELECT, INSERT, UPDATE ON identity.people, identity.user_accounts, identi
   identity.liveness_checks, identity.devices, identity.operational_sessions, identity.reputation_events,
   identity.emergency_contacts, identity.consents FROM app_api;
 
+-- 2b. Drop the MIGRATION_REVIEW_QUEUE view (backfill.sql) before any table
+--     it depends on, or those DROP TABLE statements fail with "other
+--     objects depend on it".
+DROP VIEW IF EXISTS identity.vw_migration_review_queue;
+
 -- 3. Drop capability schema tables (children first)
 DROP TABLE IF EXISTS capability.availability_declarations;
 DROP TABLE IF EXISTS capability.licenses;
@@ -35,6 +40,13 @@ DROP TABLE IF EXISTS capability.accreditations;
 DROP TABLE IF EXISTS capability.capabilities;
 
 -- 4. Drop institution schema tables (children first)
+-- people_owner_or_membership (a policy ON identity.people) references
+-- institution.institutional_memberships in its USING clause, which blocks
+-- dropping institutional_memberships while that policy still exists
+-- (circular with the FK direction, which requires institutional_memberships
+-- dropped before people) - drop the policy explicitly first, same pattern
+-- as Wave 090/060's family_networks_member/resources_institution_or_reservation fixes.
+DROP POLICY IF EXISTS people_owner_or_membership ON identity.people;
 DROP TABLE IF EXISTS institution.institutional_credentials;
 DROP TABLE IF EXISTS institution.institutional_memberships;
 DROP TABLE IF EXISTS institution.organizational_units;

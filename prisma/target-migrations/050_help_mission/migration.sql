@@ -390,11 +390,18 @@ CREATE POLICY situation_updates_inherit ON help.situation_updates
 -- collaboration_invitations: two-phase pattern (Access Control v1.1 §6)
 ALTER TABLE help.collaboration_invitations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE help.collaboration_invitations FORCE ROW LEVEL SECURITY;
+-- The ACCEPTED-status branch this policy originally had would derive a
+-- mission/operational_need from help_request_id via
+-- help.help_requests.operational_need_id - that column does not exist, and
+-- help.help_requests has no FK to help.operational_needs or mission.missions
+-- anywhere in this schema (operational_needs links to incident.incidents
+-- directly, not to a help_request - see migration.sql:175-182). There is no
+-- schema path to reconstruct that check, so it is dropped rather than
+-- guessed; ownership via invited_person_id is the only condition this
+-- migration can support today.
 CREATE POLICY collaboration_invitations_invited_or_accepted ON help.collaboration_invitations
   FOR ALL USING (
     invited_person_id = current_setting('argus.actor_id')::uuid
-    OR (status = 'ACCEPTED' AND security.fn_has_active_assignment(current_setting('argus.actor_id')::uuid,
-         (SELECT operational_need_id FROM help.help_requests hr WHERE hr.id = help_request_id LIMIT 1)))
   );
 
 -- mission.* — CRITICAL, fn_has_active_assignment (bridge table per Access
@@ -460,6 +467,10 @@ CREATE POLICY mmpa_inherit ON mission.mission_meeting_point_assignments
 -- ============================================================
 -- 6. Grants
 -- ============================================================
+-- GRANT ... ON ALL TABLES IN SCHEMA help alone is not reachable without
+-- schema USAGE too (rls-runtime-checks.sql Fase 12: "permission denied for
+-- schema help" without this).
+GRANT USAGE ON SCHEMA help TO app_api;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA help TO app_api;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA mission TO app_api;
 GRANT SELECT ON ALL TABLES IN SCHEMA help TO readonly_inspector;
@@ -474,3 +485,11 @@ GRANT SELECT ON ALL TABLES IN SCHEMA mission TO readonly_inspector, jobs_worker;
 -- added at implementation time so the SECURITY DEFINER function is the ONLY
 -- path to those columns, per Access Control v1.1 §8).
 GRANT EXECUTE ON FUNCTION help.close_help_request_authorized(uuid, security.actor_type_enum, uuid, help.help_request_status_enum, text, uuid) TO app_api;
+-- Closing the SQL_COMPLEMENTARY_REQUIRED gap flagged above: a column-level
+-- REVOKE alone does not override the broader table-level GRANT UPDATE five
+-- lines up (Postgres table-level UPDATE implies every column) - the table-
+-- level privilege itself must be revoked so
+-- help.close_help_request_authorized() is the only path to this row,
+-- confirmed by rls-runtime-checks.sql Fase 12 (app_api must be denied a
+-- direct UPDATE of help_requests.status).
+REVOKE UPDATE ON help.help_requests FROM app_api;

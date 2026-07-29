@@ -18,6 +18,20 @@
 -- 20000000-0000-0000-0000-000000000001, ice.emergency_profiles id
 -- 70000000-0000-0000-0000-000000000001, etc.)
 
+-- Every RLS policy in the target-migrations package reads current_setting
+-- ('argus.actor_id') in its unsafe single-argument form (no missing_ok flag),
+-- which raises "unrecognized configuration parameter" if the GUC was never
+-- SET in this session - unlike argus.actor_role, which every policy reads
+-- via the safe 2-argument form. SET here (not SET LOCAL) so it stays in
+-- effect across every SET ROLE / RESET ROLE below in this same session.
+-- Value is fixtures/001_synthetic_fixtures.sql's person 2
+-- ('b0000000-0000-0000-0000-000000000002'), the actual owner of both
+-- help.help_requests id 20000000-...0001 (requester_person_id) and
+-- ice.emergency_profiles id 70000000-...0001 (person_id), so the "row
+-- visibility governed by policy predicate" checks below are genuinely
+-- exercised as the owner, not just error-free.
+SET argus.actor_id = 'b0000000-0000-0000-0000-000000000002';
+
 -- =====================================================================
 -- app_api
 -- =====================================================================

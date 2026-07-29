@@ -11,6 +11,19 @@ REVOKE SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA resource FROM app_api;
 DROP TRIGGER IF EXISTS trg_resource_reservations_single_extension ON resource.resource_reservations;
 DROP FUNCTION IF EXISTS resource.fn_reservation_single_extension();
 
+-- Drop the MIGRATION_REVIEW_QUEUE view (backfill.sql) for completeness (it
+-- reads migration_meta.critical_poi_review_queue, not a resource.* table
+-- directly, so this isn't blocking the DROP TABLEs below, but leaving it
+-- dangling after this wave rolls back would be stale).
+DROP VIEW IF EXISTS resource.vw_migration_review_queue;
+
+-- resources_institution_or_reservation (a policy ON resource.resources)
+-- references resource.resource_reservations in its USING clause, which
+-- blocks dropping resource_reservations while that policy still exists
+-- (circular with the FK direction, which requires resource_reservations
+-- dropped before resources) - drop the policy explicitly first, same
+-- pattern as Wave 090's family_networks_member fix.
+DROP POLICY IF EXISTS resources_institution_or_reservation ON resource.resources;
 DROP TABLE IF EXISTS resource.resource_reservations;
 DROP TABLE IF EXISTS resource.uncrewed_vehicle_profiles;
 DROP TABLE IF EXISTS resource.aircraft_profiles;

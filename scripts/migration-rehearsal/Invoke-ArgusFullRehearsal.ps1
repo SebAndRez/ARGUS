@@ -60,18 +60,18 @@ function Assert-CleanTargetFiles {
 }
 
 function Assert-DockerReady {
-    $info = & docker info 2>&1
+    $info = Invoke-ArgusNative { & docker info 2>&1 }
     if ($LASTEXITCODE -ne 0) {
         throw "docker info failed - Docker Desktop is not installed/running. Install it first (see scripts/migration-rehearsal/README.md), then re-run this script."
     }
-    $osType = & docker info --format '{{.OSType}}' 2>&1
+    $osType = Invoke-ArgusNative { & docker info --format '{{.OSType}}' 2>&1 }
     if ($osType -ne "linux") {
         throw "Docker is running $osType containers, not linux - switch Docker Desktop to Linux containers."
     }
     Write-ArgusLog "Docker ready: linux containers confirmed."
     return @{
-        DockerVersion = (& docker version --format '{{.Server.Version}}' 2>&1)
-        ComposeVersion = (& docker compose version 2>&1)
+        DockerVersion = (Invoke-ArgusNative { & docker version --format '{{.Server.Version}}' 2>&1 })
+        ComposeVersion = (Invoke-ArgusNative { & docker compose version 2>&1 })
     }
 }
 
@@ -110,6 +110,12 @@ try {
     $emptyCatalog = Get-ArgusCatalogSnapshot
     $overallResult.EmptyCatalogSnapshot = $emptyCatalog.Output
 
+    # Legacy-schema synthetic fixtures (public schema) - loaded here, after the
+    # empty-catalog snapshot so that snapshot stays genuinely empty, and before
+    # any wave applies, since Wave 010's backfill.sql is the first to SELECT
+    # FROM legacy tables (see fixtures/000_legacy_synthetic_fixtures.sql header).
+    Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "fixtures\000_legacy_synthetic_fixtures.sql") | Out-Null
+
     Write-ArgusLog "=== Fase 9: applying all 11 waves, 1st install ==="
     $overallResult.FirstInstallWaves = Invoke-ArgusWaveCycle
 
@@ -132,6 +138,7 @@ try {
         # ---- Fase 15: destroy volume completely, fresh install from scratch ----
         Write-ArgusLog "=== Fase 15: destroying volume, fresh install from a genuinely empty database ==="
         & (Join-Path $PSScriptRoot "Reset-ArgusRehearsal.ps1")
+        Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "fixtures\000_legacy_synthetic_fixtures.sql") | Out-Null
         $overallResult.SecondInstallWaves = Invoke-ArgusWaveCycle
         $overallResult.SecondInstallTests = & (Join-Path $PSScriptRoot "Test-ArgusRehearsal.ps1")
     }
@@ -176,7 +183,15 @@ See also (same directory, git-excluded):
     Write-ArgusLog "=== Fase 22: tearing down rehearsal container + volume ==="
     Push-Location $Script:ArgusRepoRoot
     try {
-        & docker compose -f $Script:ArgusComposeFile down -v 2>&1 | ForEach-Object { Write-ArgusLog $_ }
+        if (
+            (Get-Command docker -ErrorAction SilentlyContinue) -and
+            (Test-Path $Script:ArgusComposeFile) -and
+            (Test-Path $Script:ArgusEnvLocalFile)
+        ) {
+            Invoke-ArgusNative { & docker compose --env-file $Script:ArgusEnvLocalFile -f $Script:ArgusComposeFile down -v 2>&1 } | ForEach-Object { Write-ArgusLog $_ }
+        } else {
+            Write-ArgusLog "Cleanup skipped: Docker, compose file, or local env file is unavailable." "WARN"
+        }
     } finally {
         Pop-Location
     }

@@ -100,7 +100,8 @@ CREATE TABLE IF NOT EXISTS identity.people (
   migration_confidence varchar(10) NULL CHECK (migration_confidence IN ('HIGH','MEDIUM','LOW')),
   migration_review_status varchar(30) NULL CHECK (migration_review_status IN
     ('AUTO_MAPPED','REQUIRES_REVIEW','REVIEWED_APPROVED','REVIEWED_REJECTED')),
-  created_at           timestamptz NOT NULL DEFAULT now()
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  updated_at           timestamptz NOT NULL DEFAULT now()
 );
 -- D-01: institution_assignment_status is NEVER a stored column — derived as
 -- NOT EXISTS (SELECT 1 FROM institution.institutional_memberships WHERE
@@ -122,6 +123,7 @@ CREATE TABLE IF NOT EXISTS identity.user_accounts (
   migration_confidence varchar(10) NULL CHECK (migration_confidence IN ('HIGH','MEDIUM','LOW')),
   migration_review_status varchar(30) NULL,
   created_at           timestamptz NOT NULL DEFAULT now(),
+  updated_at           timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_user_accounts_person FOREIGN KEY (person_id) REFERENCES identity.people(id) ON DELETE RESTRICT,
   CONSTRAINT uq_user_accounts_email UNIQUE (email),
   CONSTRAINT uq_user_accounts_google_sub UNIQUE (google_sub)
@@ -135,6 +137,7 @@ CREATE TABLE IF NOT EXISTS identity.verified_identities (
   verified_at          timestamptz NULL,
   document_type        varchar(50) NULL,
   document_country     varchar(2) NULL,
+  document_identifier  text NULL,
   legacy_status        text NULL,
   legacy_source        varchar(100) NULL,
   legacy_record_id     text NULL,
@@ -501,6 +504,10 @@ GRANT SELECT, INSERT, UPDATE ON institution.organizations, institution.organizat
 GRANT SELECT ON institution.organizations, institution.organizational_units TO ingest_worker, jobs_worker;
 GRANT SELECT, INSERT, UPDATE ON capability.capabilities, capability.accreditations, capability.licenses,
   capability.availability_declarations TO app_api;
+-- GRANT SELECT ON ... alone is not reachable without schema USAGE too
+-- (rls-runtime-checks.sql Fase 12: "permission denied for schema identity"
+-- without this).
+GRANT USAGE ON SCHEMA identity TO readonly_inspector;
 GRANT SELECT ON ALL TABLES IN SCHEMA identity TO readonly_inspector;
 GRANT SELECT ON ALL TABLES IN SCHEMA institution TO readonly_inspector;
 GRANT SELECT ON ALL TABLES IN SCHEMA capability TO readonly_inspector;

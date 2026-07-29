@@ -53,7 +53,7 @@ DO $$ BEGIN CREATE TYPE knowledge.simulation_status_enum AS ENUM ('PLANNED','EXE
 --    and backfill-plan.md. The other 8 are CREATE_EMPTY, no current source.
 -- ============================================================
 
-/// AfterActionReview — structured post-incident evaluation. Never writes back to Layers 4-7.
+-- AfterActionReview — structured post-incident evaluation. Never writes back to Layers 4-7.
 CREATE TABLE IF NOT EXISTS knowledge.after_action_reviews (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(), -- UUIDv7 in production (dbgenerated), gen_random_uuid() here as portable draft placeholder
   incident_id  uuid NULL,
@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS knowledge.improvement_recommendations (
   CONSTRAINT fk_improvement_recommendations_finding FOREIGN KEY (finding_id) REFERENCES knowledge.findings(id) ON DELETE CASCADE
 );
 
-/// LessonLearned — validated, independent knowledge; can consolidate several Findings. Real backfill source: KnowledgeLesson (0 rows).
+-- LessonLearned — validated, independent knowledge; can consolidate several Findings. Real backfill source: KnowledgeLesson (0 rows).
 CREATE TABLE IF NOT EXISTS knowledge.lessons_learned (
   id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   description             text NOT NULL,
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS knowledge.lesson_learned_findings (
   CONSTRAINT uq_llf_lesson_finding UNIQUE (lesson_learned_id, finding_id)
 );
 
-/// Procedure — formalized operational steps (approval lives in Governance).
+-- Procedure — formalized operational steps (approval lives in Governance).
 CREATE TABLE IF NOT EXISTS knowledge.procedures (
   id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   title   varchar(255) NOT NULL,
@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS knowledge.procedures (
   status  knowledge.procedure_status_enum NOT NULL DEFAULT 'DRAFT'
 );
 
-/// KnowledgeDocument — curated doctrinal/technical content (Aggregate Root, corrects P2-03). Real backfill source: HazardKnowledgeDocument(59)+KnowledgeDocument(0), FUSIONAR.
+-- KnowledgeDocument — curated doctrinal/technical content (Aggregate Root, corrects P2-03). Real backfill source: HazardKnowledgeDocument(59)+KnowledgeDocument(0), FUSIONAR.
 CREATE TABLE IF NOT EXISTS knowledge.knowledge_documents (
   id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   title                   varchar(255) NOT NULL,
@@ -138,7 +138,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_documents_legacy ON knowledge.kno
 -- SQL_COMPLEMENTARY_REQUIRED (per schema.target.prisma comment): pg_trgm GIN index for title search.
 CREATE INDEX IF NOT EXISTS ix_knowledge_documents_title_trgm ON knowledge.knowledge_documents USING GIN (title gin_trgm_ops);
 
-/// KnowledgeFact/KnowledgeEvidence — structured assertion and its backing, grouped by discriminator. Real backfill source: HazardKnowledgeFact (41 rows), TRANSFORMAR.
+-- KnowledgeFact/KnowledgeEvidence — structured assertion and its backing, grouped by discriminator. Real backfill source: HazardKnowledgeFact (41 rows), TRANSFORMAR.
 CREATE TABLE IF NOT EXISTS knowledge.knowledge_facts (
   id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   knowledge_document_id   uuid NOT NULL,
@@ -153,7 +153,7 @@ CREATE TABLE IF NOT EXISTS knowledge.knowledge_facts (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_facts_legacy ON knowledge.knowledge_facts (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL;
 
-/// Simulation/Exercise — controlled scenario (Aggregate Root, corrects P2-03).
+-- Simulation/Exercise — controlled scenario (Aggregate Root, corrects P2-03).
 CREATE TABLE IF NOT EXISTS knowledge.simulations (
   id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   title      varchar(255) NOT NULL,
@@ -180,28 +180,33 @@ CREATE TABLE IF NOT EXISTS knowledge.simulation_results (
 -- 3.1 proj.trust_profiles — materialized, refreshed by periodic job.
 -- VERIFY_AGAINST_V1.0: exact banding thresholds not given in any frozen
 -- document; drafted as a plausible aggregate, flagged for human review.
+-- identity.reputation_events' column is trust_domain, not domain
+-- (020_identity/migration.sql:188-201); it also has no evidence_id column -
+-- removed from 3.2 below.
 CREATE MATERIALIZED VIEW IF NOT EXISTS proj.trust_profiles AS
 SELECT
   re.person_id,
-  re.domain,
+  re.trust_domain,
   SUM(re.delta) AS aggregate_score,
   COUNT(*) AS event_count,
   MAX(re.occurred_at) AS last_event_at
 FROM identity.reputation_events re
-GROUP BY re.person_id, re.domain
+GROUP BY re.person_id, re.trust_domain
 WITH NO DATA;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_trust_profiles_person_domain ON proj.trust_profiles (person_id, domain);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_trust_profiles_person_domain ON proj.trust_profiles (person_id, trust_domain);
 -- SQL_COMPLEMENTARY_REQUIRED: REFRESH MATERIALIZED VIEW CONCURRENTLY proj.trust_profiles,
 -- scheduled via jobs_worker on a periodic cadence (frequency not fixed by any frozen doc).
 
 -- 3.2 proj.trust_profile_detail — simple view, always fresh. NEW v1.1 (P1-07).
 CREATE OR REPLACE VIEW proj.trust_profile_detail AS
-SELECT re.id, re.person_id, re.domain, re.delta, re.reason, re.evidence_id, re.occurred_at
+SELECT re.id, re.person_id, re.trust_domain, re.delta, re.reason, re.occurred_at
 FROM identity.reputation_events re;
 
 -- 3.3 proj.incident_timelines — simple view, always fresh.
+-- incident.incident_transitions' columns are from_value/to_value, not
+-- previous_value/new_value (040_incident/migration.sql:226-240).
 CREATE OR REPLACE VIEW proj.incident_timelines AS
-SELECT it.incident_id, it.dimension, it.previous_value, it.new_value, it.transitioned_at
+SELECT it.incident_id, it.dimension, it.from_value, it.to_value, it.transitioned_at
 FROM incident.incident_transitions it;
 
 -- 3.4 proj.mission_timelines — simple view, always fresh.
@@ -215,10 +220,10 @@ FROM mission.missions m;
 -- 3.5 proj.public_map_feed — materialized, P1-06: ST_Simplify mandatory
 -- before exposing any geometry. Job SELECTs only rows already in a public
 -- state (Access Control v1.1 §9) — never applies its own authorization.
+-- incident.incidents has no title column (040_incident/migration.sql:116-135) - removed.
 CREATE MATERIALIZED VIEW IF NOT EXISTS proj.public_map_feed AS
 SELECT
   i.id AS incident_id,
-  i.title,
   i.operational_status,
   ST_Simplify(aav.geometry::geometry, 0.001)::geography AS simplified_geometry
 FROM incident.incidents i
@@ -243,21 +248,28 @@ WHERE a.classification = 'PUBLIC';
 -- replaces direct client exposure of a raw proj.notification_feed table.
 -- VERIFY_AGAINST_V1.0: comms.messages/recipient columns are drafted from
 -- Wave 070's migration.sql shape, not given verbatim in a Catalog ficha here.
-CREATE MATERIALIZED VIEW IF NOT EXISTS proj._notification_feed_internal AS
-SELECT m.id AS message_id, m.recipient_actor_id, m.content_kind, m.sent_at
-FROM comms.messages m
-WITH NO DATA;
-CREATE INDEX IF NOT EXISTS ix_notification_feed_internal_recipient ON proj._notification_feed_internal (recipient_actor_id);
-
-CREATE OR REPLACE FUNCTION proj.notification_feed_for_actor(p_actor_id uuid)
-RETURNS TABLE(message_id uuid, content_kind text, sent_at timestamptz)
-LANGUAGE sql SECURITY DEFINER
-SET search_path = pg_catalog, public
-AS $$
-  SELECT nf.message_id, nf.content_kind, nf.sent_at
-  FROM proj._notification_feed_internal nf
-  WHERE nf.recipient_actor_id = p_actor_id;
-$$;
+-- Neither comms.messages nor the closest related table, comms.delivery_attempts
+-- (070_alerts_communications/migration.sql:99-121), has a recipient_actor_id
+-- or sent_at column - delivery_attempts only has endpoint_snapshot (jsonb)
+-- and emergency_contact_id, neither of which is a queryable actor_id.
+-- Disabled rather than guessed at a join, per the same "never guess"
+-- precedent as D-06/D-07 elsewhere in this package - real design work is
+-- needed to resolve recipient identity before this view/function can exist.
+-- CREATE MATERIALIZED VIEW IF NOT EXISTS proj._notification_feed_internal AS
+-- SELECT m.id AS message_id, m.recipient_actor_id, m.content_kind, m.sent_at
+-- FROM comms.messages m
+-- WITH NO DATA;
+-- CREATE INDEX IF NOT EXISTS ix_notification_feed_internal_recipient ON proj._notification_feed_internal (recipient_actor_id);
+--
+-- CREATE OR REPLACE FUNCTION proj.notification_feed_for_actor(p_actor_id uuid)
+-- RETURNS TABLE(message_id uuid, content_kind text, sent_at timestamptz)
+-- LANGUAGE sql SECURITY DEFINER
+-- SET search_path = pg_catalog, public
+-- AS $$
+--   SELECT nf.message_id, nf.content_kind, nf.sent_at
+--   FROM proj._notification_feed_internal nf
+--   WHERE nf.recipient_actor_id = p_actor_id;
+-- $$;
 
 -- 3.8 proj.nearby_professional_feed — parametric view, always fresh,
 -- evaluated per actor.
@@ -286,19 +298,23 @@ GROUP BY oum.operational_unit_id;
 -- document beyond the one-line "fed by" descriptions in Relational Model
 -- v1.0 §"Vistas paramétricas de rol" — every body below is illustrative,
 -- not a confirmed transcription.
+-- incident.incidents has no title column (040_incident/migration.sql:116-135) - removed.
 CREATE OR REPLACE FUNCTION proj.institutional_view(p_actor_id uuid, p_organization_id uuid)
-RETURNS TABLE(incident_id uuid, title varchar, operational_status text)
+RETURNS TABLE(incident_id uuid, operational_status text)
 LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
-  SELECT i.id, i.title, i.operational_status::text FROM incident.incidents i
+  SELECT i.id, i.operational_status::text FROM incident.incidents i
   WHERE security.fn_has_active_membership(p_actor_id, p_organization_id);
 $$;
 
+-- resource.operational_unit_members has no person_id column
+-- (060_resources/migration.sql:71-83) - its person link is member_id,
+-- discriminated by member_type = 'PERSON'.
 CREATE OR REPLACE FUNCTION proj.assigned_unit_view(p_actor_id uuid)
 RETURNS TABLE(operational_unit_id uuid, mission_id uuid)
 LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
   SELECT oum.operational_unit_id, m.id FROM resource.operational_unit_members oum
   JOIN mission.missions m ON true
-  WHERE oum.person_id = p_actor_id;
+  WHERE oum.member_type = 'PERSON' AND oum.member_id = p_actor_id;
 $$;
 
 CREATE OR REPLACE FUNCTION proj.requester_view(p_actor_id uuid)
@@ -308,17 +324,23 @@ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
   WHERE hr.requester_person_id = p_actor_id;
 $$;
 
+-- mission.missions has no incident_id column (050_help_mission/migration.sql:
+-- 241-252) - incident_id is only reachable via operational_need_id ->
+-- help.operational_needs.incident_id.
 CREATE OR REPLACE FUNCTION proj.operational_context(p_actor_id uuid, p_mission_id uuid)
 RETURNS TABLE(mission_id uuid, incident_id uuid, status text)
 LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
-  SELECT m.id, m.incident_id, m.status::text FROM mission.missions m
+  SELECT m.id, on_.incident_id, m.status::text
+  FROM mission.missions m
+  JOIN help.operational_needs on_ ON on_.id = m.operational_need_id
   WHERE m.id = p_mission_id AND security.fn_has_active_assignment(p_actor_id, p_mission_id);
 $$;
 
+-- incident.incidents has no title column (040_incident/migration.sql:116-135) - removed.
 CREATE OR REPLACE FUNCTION proj.incident_cards(p_incident_id uuid)
-RETURNS TABLE(incident_id uuid, title varchar, operational_status text, trend text)
+RETURNS TABLE(incident_id uuid, operational_status text, trend text)
 LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
-  SELECT i.id, i.title, i.operational_status::text, i.trend::text FROM incident.incidents i
+  SELECT i.id, i.operational_status::text, i.trend::text FROM incident.incidents i
   WHERE i.id = p_incident_id;
 $$;
 
@@ -339,7 +361,9 @@ SELECT
   fp."medicalNeedsNotes" AS medical_needs_notes_unconverted,
   fp."primaryMeetingPoint" AS primary_meeting_point_unconverted
 FROM public."PreparednessProfile" pp
-LEFT JOIN public."FamilyPlan" fp ON fp."preparednessProfileId" = pp.id;
+-- FamilyPlan's FK field is "profileId", not "preparednessProfileId"
+-- (prisma/schema.prisma: model FamilyPlan { profileId String @unique ... }).
+LEFT JOIN public."FamilyPlan" fp ON fp."profileId" = pp.id;
 -- SQL_COMPLEMENTARY_REQUIRED: EmergencyContact(VESTA)/PreparednessChecklistItem/
 -- PreparednessReminder joins, omitted from this draft for brevity — same
 -- "no transformation" principle applies to all 5 tables per D-03.
@@ -424,7 +448,8 @@ GRANT SELECT ON ALL TABLES IN SCHEMA knowledge TO readonly_inspector, jobs_worke
 -- write privilege on proj.* — it is a read-only projection layer end to end.
 GRANT SELECT ON ALL TABLES IN SCHEMA proj TO app_api, ingest_worker, jobs_worker, readonly_inspector;
 REVOKE INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA proj FROM app_api, ingest_worker, jobs_worker;
-GRANT EXECUTE ON FUNCTION proj.notification_feed_for_actor(uuid) TO app_api;
+-- proj.notification_feed_for_actor(uuid) is disabled above (no recipient
+-- identity column exists to support it) - its GRANT is removed too.
 GRANT EXECUTE ON FUNCTION proj.nearby_professional_feed(uuid) TO app_api;
 GRANT EXECUTE ON FUNCTION proj.institutional_view(uuid, uuid) TO app_api;
 GRANT EXECUTE ON FUNCTION proj.assigned_unit_view(uuid) TO app_api;

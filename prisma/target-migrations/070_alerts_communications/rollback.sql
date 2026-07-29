@@ -15,6 +15,10 @@ DROP TRIGGER IF EXISTS trg_critical_instructions_version_consistency ON alert.cr
 DROP FUNCTION IF EXISTS alert.fn_critical_instructions_version_consistency();
 ALTER TABLE alert.critical_instructions DROP CONSTRAINT IF EXISTS fk_critical_instructions_current_version;
 
+-- Drop the MIGRATION_REVIEW_QUEUE view (backfill.sql) before any table it
+-- depends on, or those DROP TABLE statements fail with "other objects depend on it".
+DROP VIEW IF EXISTS alert.vw_migration_review_queue;
+
 DROP TABLE IF EXISTS alert.instruction_compliance_records;
 DROP TABLE IF EXISTS alert.instruction_authorizations;
 DROP TABLE IF EXISTS alert.critical_instruction_versions;
