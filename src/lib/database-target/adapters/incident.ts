@@ -14,7 +14,17 @@
  * `REQUIRES_REVIEW`, never a guessed classification.
  */
 
-import type { Incident, IncidentOperationalStatus, IncidentPreventiveStatus, IncidentStructuralStatus, IncidentTrend, IncidentVerificationStatus } from "../incident";
+import type {
+  Incident,
+  IncidentCandidate,
+  IncidentCandidateOriginType,
+  IncidentOperationalStatus,
+  IncidentPreventiveStatus,
+  IncidentStructuralStatus,
+  IncidentTrend,
+  IncidentVerificationStatus,
+  ProposedIncidentProfile,
+} from "../incident";
 import {
   type AdapterOutcome,
   type AdapterWriteContext,
@@ -32,6 +42,22 @@ export interface LegacyKnowledgeIncidentRecord {
   verificationStatus: string | null;
   effectiveSeverity: string | null;
   incidentTypeId: string;
+  /** db: domain — NOT NULL (proposed-category source for `IncidentCandidate.proposedProfile`, never invented if absent). */
+  domain: string;
+  /** db: subtype — NULL. */
+  subtype: string | null;
+  /** db: confidenceLevel — NULL (low/medium/high/very_high, legacy free text). */
+  confidenceLevel: string | null;
+  /** db: sourceId — the `IngestionRun`/`ExternalEvent` source this row correlates with, per `@@unique([sourceId, externalId])`. */
+  sourceId: string;
+  /** db: externalId — NULL; paired with sourceId to resolve the originating `ExternalEvent` row (`ingest.source_records` link once Ola 3 lands). */
+  externalId: string | null;
+  /** db: latitude — NULL. */
+  latitude: number | null;
+  /** db: longitude — NULL. */
+  longitude: number | null;
+  /** db: occurredAt — NULL. */
+  occurredAt: Date | null;
   createdAt: Date;
 }
 
@@ -124,5 +150,128 @@ export function shadowWriteIncident(
     legacyId: record.id,
     migrationConfidence: target.migrationConfidence ?? "HIGH",
     reviewStatus: target.migrationReviewStatus ?? "AUTO_MAPPED",
+  };
+}
+
+/** Stable idempotency key for `KnowledgeIncident` -> `Incident` — legacy table + legacy id, never a random UUID (Fase 7). */
+export function incidentIdempotencyKey(record: LegacyKnowledgeIncidentRecord): string {
+  return `KnowledgeIncident:${record.id}`;
+}
+
+/** Stable idempotency key for `KnowledgeIncident` -> `IncidentCandidate` — distinct namespace from `incidentIdempotencyKey` so the two writers never collide in a shared idempotency store. */
+export function incidentCandidateIdempotencyKey(record: LegacyKnowledgeIncidentRecord): string {
+  return `KnowledgeIncident:candidate:${record.id}`;
+}
+
+/**
+ * `KnowledgeIncident` -> `IncidentCandidate` ONLY (Ola 3/4 controlled handoff).
+ * This function NEVER returns an `Incident` — Ola 4's promotion step (a
+ * human/automation-rule decision recorded in `incident.incident_promotions`)
+ * is explicitly out of scope for this transform and for every shadow-write
+ * caller built on top of it. `proposedProfile` is `null` (never guessed)
+ * when D-02's approved status-mapping table has no entry for this row's
+ * `(status, verificationStatus)` pair.
+ */
+export function knowledgeIncidentToCandidate(
+  record: LegacyKnowledgeIncidentRecord,
+  mappingTable: LegacyStatusMappingTable,
+  originType: IncidentCandidateOriginType = "LEGACY_KNOWLEDGE_INCIDENT"
+): IncidentCandidate {
+  const entry = mappingTable.get(mappingKey(record.status, record.verificationStatus));
+
+  const proposedProfile: ProposedIncidentProfile | null = entry
+    ? {
+        proposedIncidentTypeId: record.incidentTypeId,
+        proposedCategory: record.subtype ?? record.domain,
+        verificationStatus: entry.verificationStatus,
+        operationalStatus: entry.operationalStatus,
+        preventiveStatus: entry.preventiveStatus,
+        trend: entry.trend,
+        structuralStatus: entry.structuralStatus,
+        confidence: confidenceLevelFromLegacy(record.confidenceLevel),
+      }
+    : null;
+
+  return {
+    id: record.id,
+    status: "UNDER_ASSESSMENT",
+    correlationKey: record.externalId ? `${record.sourceId}:${record.externalId}` : null,
+    classification: "OPERATIONAL",
+    promotionStartedAt: null,
+    createdAt: record.createdAt.toISOString(),
+
+    candidateOriginType: originType,
+    proposedProfile,
+
+    jurisdictionId: null,
+    administrativeAreaId: null,
+    location:
+      record.latitude !== null && record.longitude !== null
+        ? { latitude: record.latitude, longitude: record.longitude }
+        : null,
+    occurredAt: record.occurredAt ? record.occurredAt.toISOString() : null,
+    receivedAt: null,
+    clientCreatedAt: null,
+
+    sourceRecordIds: [],
+    observationIds: [],
+    evidenceIds: [],
+
+    automationRuleId: null,
+    actorType: null,
+    actorId: null,
+
+    provenance: null,
+
+    legacyStatus: record.status,
+    legacySource: "KnowledgeIncident",
+    legacyRecordId: record.id,
+    migrationConfidence: entry ? "HIGH" : "LOW",
+    migrationReviewStatus: entry ? "AUTO_MAPPED" : "REQUIRES_REVIEW",
+  };
+}
+
+function confidenceLevelFromLegacy(value: string | null): "UNKNOWN" | "LOW" | "MEDIUM" | "HIGH" | "CONFIRMED" {
+  switch (value) {
+    case "low":
+      return "LOW";
+    case "medium":
+      return "MEDIUM";
+    case "high":
+      return "HIGH";
+    case "very_high":
+      return "CONFIRMED";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+/**
+ * Shadow write for `KnowledgeIncident` -> `IncidentCandidate`. Unlike
+ * `shadowWriteIncident` (which requires an approved mapping to produce
+ * anything), this ALWAYS persists a candidate — an unmapped legacy row is
+ * still a real candidate, just one with `proposedProfile: null` and
+ * `reviewStatus: REQUIRES_REVIEW` (D-02: never guessed, never dropped).
+ * Never promotes to `Incident` — there is no code path in this function
+ * that constructs one.
+ */
+export function shadowWriteIncidentCandidate(
+  record: LegacyKnowledgeIncidentRecord,
+  mappingTable: LegacyStatusMappingTable,
+  ctx: AdapterWriteContext
+): AdapterOutcome<IncidentCandidate> {
+  if (!ctx.shadowWriteEnabled) {
+    return notEnabled("targetDatabaseShadowWrite is disabled — incident-candidate shadow write not attempted");
+  }
+  if (!record.id) {
+    return migrationBlocked("LegacyKnowledgeIncidentRecord.id is required to derive incident_candidates.legacy_record_id");
+  }
+  const target = knowledgeIncidentToCandidate(record, mappingTable);
+  return {
+    kind: "PERSISTED",
+    target,
+    legacyId: record.id,
+    migrationConfidence: target.migrationConfidence ?? "LOW",
+    reviewStatus: target.migrationReviewStatus ?? "REQUIRES_REVIEW",
   };
 }

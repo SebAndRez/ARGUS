@@ -189,6 +189,14 @@ describe("shadow-write domain wiring", () => {
       verificationStatus: "confirmed",
       effectiveSeverity: "high",
       incidentTypeId: "type_1",
+      domain: "wildfire",
+      subtype: null,
+      confidenceLevel: "high",
+      sourceId: "src_1",
+      externalId: "ext_1",
+      latitude: -33.45,
+      longitude: -70.66,
+      occurredAt: new Date(),
       createdAt: new Date(),
     };
     const emptyTable: LegacyStatusMappingTable = new Map();

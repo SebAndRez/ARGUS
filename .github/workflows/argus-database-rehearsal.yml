@@ -82,6 +82,54 @@ jobs:
             exit 1
           }
 
+      # ---------------------------------------------------------------------
+      # Wave 3 — shadow-write integration proof (Fase 14 of the wave-3
+      # mandate). Independent of the full-rehearsal step above (which tears
+      # its own container down internally) — this brings up its own
+      # disposable container, applies only the waves the wave-3 flow needs
+      # (000/010/020/030/040), runs the real Docker/Postgres integration
+      # test, then tears down. No secrets, no remote services — same
+      # loopback-only container pattern as the full rehearsal.
+      # ---------------------------------------------------------------------
+      - name: Wave 3 — bring up local Postgres/PostGIS and apply waves 000-040
+        shell: pwsh
+        run: |
+          ./scripts/migration-rehearsal/Reset-ArgusRehearsal.ps1
+          . ./scripts/migration-rehearsal/lib/Common.ps1
+          Get-ArgusLocalEnv | Out-Null
+          Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/fixtures/000_legacy_synthetic_fixtures.sql" | Out-Null
+          $waves = @("000_preflight", "010_foundation", "020_identity", "030_ingestion_observation_evidence", "040_incident")
+          foreach ($w in $waves) {
+            $dir = Join-Path (Join-Path $Script:ArgusRepoRoot "prisma/target-migrations") $w
+            $r = & ./scripts/migration-rehearsal/Invoke-Wave.ps1 -WaveDir $dir
+            if (-not $r.Success) {
+              Write-Error "Wave $w failed during wave-3 setup — see migration-rehearsal-logs/."
+              exit 1
+            }
+          }
+
+      - name: Wave 3 — generate the isolated target Prisma client
+        run: npx prisma generate --schema prisma/schema.target.prisma
+
+      - name: Wave 3 — local shadow-write integration (IncidentCandidate creation, idempotency, zero Incident promotion)
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATABASE_URL=$(grep '^DATABASE_URL=' .env.argus-migration.local | cut -d= -f2-)
+          export ARGUS_WAVE3_INTEGRATION_TEST=true
+          export TARGET_DATABASE_URL="$DATABASE_URL"
+          npx vitest run tests/database-target/wave3-local-integration.test.ts
+
+      - name: Wave 3 — no-Incident-promotion + default-flags-off + anti-remote guard
+        run: npx vitest run tests/database-target/wave3-no-incident-promotion.test.ts tests/database-target/target-feature-flags.test.ts tests/database-target/target-client-factory-anti-remote.test.ts
+
+      - name: Wave 3 — tear down local Postgres/PostGIS
+        if: always()
+        shell: bash
+        run: |
+          docker compose --env-file .env.argus-migration.local -f docker-compose.argus-migration.yml down -v || true
+          rm -f .env.argus-migration.local
+
       - name: Confirm prisma/schema.prisma and prisma/migrations/ are STILL untouched (post-run)
         if: always()
         shell: bash

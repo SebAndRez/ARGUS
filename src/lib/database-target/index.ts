@@ -20,6 +20,7 @@ export * from "./shared";
 export * from "./identity";
 export * from "./institution";
 export * from "./jurisdiction";
+export * from "./ingest";
 export * from "./evidence";
 export * from "./incident";
 export * from "./help";

@@ -89,6 +89,44 @@ export interface Observation extends Partial<LegacyProvenance>, Partial<OfflineS
 }
 
 /**
+ * `PrimaryObservation` — a logical, discriminated VIEW of `Observation`
+ * (`originType === "PRIMARY"`), never its own physical table (per the
+ * Prisma model comment: "Observation — atomic claim about a condition
+ * (includes Report/PrimaryObservation/DerivedObservation)",
+ * `prisma/schema.target.prisma` line ~1754). Distinct as a TypeScript type
+ * from `Observation` so a transformer signature can require "must be
+ * primary" without a runtime check scattered across call sites — but
+ * every `PrimaryObservation` is trivially a valid `Observation` (structural
+ * subtype), never the reverse.
+ */
+export interface PrimaryObservation extends Observation {
+  originType: "PRIMARY";
+}
+
+export function isPrimaryObservation(observation: Observation): observation is PrimaryObservation {
+  return observation.originType === "PRIMARY";
+}
+
+/**
+ * `Report` — a logical, discriminated VIEW of `Observation`
+ * (`originType === "PRIMARY"` AND `authorType === "CITIZEN"`), never its
+ * own physical table. Mirrors the current `Report` model (33-model schema)
+ * 1:1 in spirit — D-01 fixes `authorType='CITIZEN'` for every row migrated
+ * from `Report`. Distinct as a TypeScript type from both `Observation` and
+ * `PrimaryObservation` per the wave-3 mandate ("Report ≠ PrimaryObservation
+ * ≠ Observation ≠ Evidence ≠ SourceRecord") — structurally still a valid
+ * `PrimaryObservation`/`Observation`, never the reverse.
+ */
+export interface Report extends PrimaryObservation {
+  authorType: "CITIZEN";
+  authorPersonId: string;
+}
+
+export function isReport(observation: Observation): observation is Report {
+  return isPrimaryObservation(observation) && observation.authorType === "CITIZEN" && observation.authorPersonId !== null;
+}
+
+/**
  * `evidence.evidence_records` — independent Aggregate Root (v1.2 §7.5
  * amendment). `chainOfCustody` is required — an adapter must never
  * construct a row with an empty chain.

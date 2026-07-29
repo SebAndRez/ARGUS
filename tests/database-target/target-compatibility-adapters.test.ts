@@ -143,6 +143,14 @@ describe("incident adapter (D-02 status split, never inline CASE WHEN)", () => {
     verificationStatus: "confirmed",
     effectiveSeverity: "high",
     incidentTypeId: "type_1",
+    domain: "wildfire",
+    subtype: null,
+    confidenceLevel: "high",
+    sourceId: "src_1",
+    externalId: "ext_1",
+    latitude: -33.45,
+    longitude: -70.66,
+    occurredAt: new Date("2026-01-01T00:00:00Z"),
     createdAt: new Date("2026-01-01T00:00:00Z"),
   };
 
