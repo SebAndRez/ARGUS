@@ -21,45 +21,54 @@
 -- §command, ARGUS_PHYSICAL_ACCESS_CONTROL_v1.1_FROZEN.md §4.6-4.8,
 -- ARGUS_MIGRATION_DECISION_REGISTER_v1.0_FROZEN.md D-02.
 --
--- VERIFY_AGAINST_V1.0: all tables except the 3 with full fichas given
--- directly in Table Catalog v1.1 (`incident.incident_candidate_observations`,
--- `incident.incident_merge_sources`, `incident.incident_split_targets`,
--- `command.command_roles`, `risk.risk_assessments` partial,
--- `risk.risk_area_versions` partial) are reconstructed from cross-referenced
--- clues, flagged per table.
+-- RECONCILED (this session): the `incident` schema section below is
+-- transcribed column-for-column, enum-for-enum from `prisma/schema.target.prisma`
+-- (the authority) — no `VERIFY_AGAINST_V1.0` marker remains on any
+-- `incident.*` table. `risk.*`/`command.*` are OUT OF SCOPE for this
+-- reconciliation pass (not named by the wave-4 mandate's explicit table
+-- list) and are carried over unchanged from the prior draft — they still
+-- carry their own `VERIFY_AGAINST_V1.0` markers, a known, separately
+-- tracked gap, not silently resolved here.
+--
+-- Concurrency (Fase 12): incident.incident_promotions gets 3 UNIQUE
+-- constraints (candidate, incident, idempotency_key) — the physical
+-- mechanism that makes double-promotion structurally impossible, not just
+-- application-level. incident.discard_decisions gets 1 UNIQUE constraint
+-- (candidate) — the same mechanism for "no second discard".
 
 CREATE SCHEMA IF NOT EXISTS incident;
 CREATE SCHEMA IF NOT EXISTS risk;
 CREATE SCHEMA IF NOT EXISTS command;
 
 -- ============================================================
--- 1. Local enums
+-- 1. Local enums (incident.* values transcribed verbatim from
+--    schema.target.prisma; risk.*/command.* unchanged, out of scope)
 -- ============================================================
 DO $$ BEGIN CREATE TYPE incident.incident_candidate_status_enum AS ENUM
-  ('OPEN','CORRELATING','PROMOTED','DISCARDED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #24, 4
-DO $$ BEGIN CREATE TYPE incident.hypothesis_status_enum AS ENUM ('OPEN','RESOLVED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #25, 2
+  ('UNDER_ASSESSMENT','PROMOTING','PROMOTED','DISCARDED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE incident.hypothesis_status_enum AS ENUM ('ACTIVE','DISCARDED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE incident.incident_verification_status_enum AS ENUM
-  ('UNVERIFIED','PENDING','VERIFIED','DISPUTED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #26, 4
+  ('UNCONFIRMED','PARTIALLY_CONFIRMED','CONFIRMED','DISPUTED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE incident.incident_operational_status_enum AS ENUM
-  ('ACTIVE','CONTAINED','MITIGATING','RESOLVED','MONITORING','ARCHIVED','CANCELLED');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #27, 7
+  ('DETECTED','ASSESSING','ACTIVE','CONTAINED','MITIGATING','RESOLVED','CLOSED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE incident.incident_preventive_status_enum AS ENUM
-  ('NONE','WATCH','WARNING','ALERT'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #28, 4
+  ('NONE','MONITORING','PREVENTIVE_ACTION','STANDBY'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE incident.incident_trend_enum AS ENUM
-  ('IMPROVING','STABLE','WORSENING','UNKNOWN'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #29, 4
+  ('UNKNOWN','IMPROVING','STABLE','WORSENING'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE incident.incident_structural_status_enum AS ENUM
-  ('SINGLE','MERGED','SPLIT','SUB_INCIDENT','RELATED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #30, 5
-DO $$ BEGIN CREATE TYPE incident.sub_incident_status_enum AS ENUM ('ACTIVE','CLOSED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #31, 2
+  ('INDEPENDENT','PARENT','CHILD','MERGED','SPLIT'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE incident.sub_incident_status_enum AS ENUM ('ACTIVE','CLOSED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE incident.incident_relation_type_enum AS ENUM
-  ('RELATED','DUPLICATE_OF','CAUSED_BY','PRECEDES','FOLLOWS','ESCALATES','DE_ESCALATES',
-   'PART_OF','CONTAINS','REFERENCES'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #32, 10
+  ('CAUSES','CAUSED_BY','CONSEQUENCE_OF','ASSOCIATED_WITH','PROPAGATED_FROM','AFFECTS','SUPERSEDES',
+   'DERIVED_FROM','SECONDARY_THREAT_OF','GROUPING'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE incident.incident_state_dimension_enum AS ENUM
-  ('VERIFICATION_STATUS','OPERATIONAL_STATUS','PREVENTIVE_STATUS','TREND','STRUCTURAL_STATUS');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #33, 5, D-02 5-dimension split
+  ('VERIFICATION','OPERATIONAL','PREVENTIVE','TREND','STRUCTURAL');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE incident.incident_link_type_enum AS ENUM
-  ('PRIMARY','SUPPORTING','CONTEXTUAL','SUPERSEDED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #34, 4
-DO $$ BEGIN CREATE TYPE incident.incident_link_status_enum AS ENUM ('ACTIVE','RETRACTED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #35, 2
-DO $$ BEGIN CREATE TYPE incident.causality_enum AS ENUM ('DIRECT','CONTRIBUTING','COINCIDENTAL'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #36, 3
+  ('RELEVANT_CONTEXT','TRIGGERING','CORROBORATING','CONTRADICTING'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE incident.incident_link_status_enum AS ENUM ('RELEVANT','MARKED_IRRELEVANT'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE incident.causality_enum AS ENUM ('DIRECT','INDIRECT','UNKNOWN'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN CREATE TYPE risk.risk_assessment_status_enum AS ENUM ('ACTIVE','CLOSED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #39, 2
 DO $$ BEGIN CREATE TYPE risk.forecast_status_enum AS ENUM ('ACTIVE','SUPERSEDED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #40, 2
@@ -72,20 +81,28 @@ DO $$ BEGIN CREATE TYPE command.recommendation_status_enum AS ENUM ('PENDING','A
 -- 2. incident schema — 17 tables
 -- ============================================================
 
--- VERIFY_AGAINST_V1.0
+-- correlation_key/classification/promotion_started_at added (were missing);
+-- closed_at removed (not a physical column on schema.target.prisma's
+-- IncidentCandidate — terminal state is tracked via incident_promotions/
+-- discard_decisions instead); legacy provenance retained (D-02, already
+-- correct here, now also mirrored onto the Prisma model in this session).
 CREATE TABLE IF NOT EXISTS incident.incident_candidates (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  status               incident.incident_candidate_status_enum NOT NULL DEFAULT 'OPEN',
+  status               incident.incident_candidate_status_enum NOT NULL DEFAULT 'UNDER_ASSESSMENT',
+  correlation_key      text NULL,
+  classification       security.information_classification_enum NOT NULL DEFAULT 'OPERATIONAL',
+  promotion_started_at timestamptz NULL,
   legacy_status        text NULL,
   legacy_source        varchar(100) NULL,
   legacy_record_id     text NULL,
   migration_confidence varchar(10) NULL CHECK (migration_confidence IN ('HIGH','MEDIUM','LOW')),
   migration_review_status varchar(30) NULL,
-  opened_at            timestamptz NOT NULL DEFAULT now(),
-  closed_at            timestamptz NULL
+  created_at           timestamptz NOT NULL DEFAULT now()
 );
+CREATE UNIQUE INDEX IF NOT EXISTS uq_incident_candidates_legacy ON incident.incident_candidates (legacy_source, legacy_record_id)
+  WHERE legacy_record_id IS NOT NULL;
 
--- Full ficha given directly in Table Catalog v1.1 (P1-01) — transcribed verbatim.
+-- Full ficha given directly in Table Catalog v1.1 (P1-01) — unchanged, already correct.
 CREATE TABLE IF NOT EXISTS incident.incident_candidate_observations (
   id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_candidate_id  uuid NOT NULL,
@@ -100,28 +117,34 @@ CREATE TABLE IF NOT EXISTS incident.incident_candidate_observations (
 CREATE INDEX IF NOT EXISTS ix_ico_incident_candidate_id ON incident.incident_candidate_observations (incident_candidate_id);
 CREATE INDEX IF NOT EXISTS ix_ico_observation_id ON incident.incident_candidate_observations (observation_id);
 
--- VERIFY_AGAINST_V1.0
+-- status enum values fixed (ACTIVE/DISCARDED, matches Prisma HypothesisStatus) — column shape already matched.
 CREATE TABLE IF NOT EXISTS incident.hypotheses (
   id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_candidate_id uuid NOT NULL,
   description           text NOT NULL,
-  status                incident.hypothesis_status_enum NOT NULL DEFAULT 'OPEN',
+  status                incident.hypothesis_status_enum NOT NULL DEFAULT 'ACTIVE',
   created_at            timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_hypotheses_candidate FOREIGN KEY (incident_candidate_id) REFERENCES incident.incident_candidates(id) ON DELETE CASCADE
 );
 
 -- incident.incidents created before incident_promotions (FK target)
--- VERIFY_AGAINST_V1.0. T-02 (D-02): 5 dimensions strictly separated, never
--- collapsed into a single "status" column.
+-- origin_candidate_id/title/description ADDED (all present, NOT declared,
+-- on schema.target.prisma — were missing entirely); incident_type_id made
+-- NOT NULL (matches Prisma); preventive_status/trend/structural_status
+-- made NOT NULL WITH DEFAULT (matches Prisma defaults NONE/UNKNOWN/
+-- INDEPENDENT — were nullable with no default); legacy provenance retained.
 CREATE TABLE IF NOT EXISTS incident.incidents (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  verification_status  incident.incident_verification_status_enum NOT NULL DEFAULT 'UNVERIFIED',
-  operational_status   incident.incident_operational_status_enum NOT NULL DEFAULT 'ACTIVE',
-  preventive_status    incident.incident_preventive_status_enum NULL,
-  trend                incident.incident_trend_enum NULL,
-  structural_status    incident.incident_structural_status_enum NULL,
-  incident_type_id     uuid NULL,
+  origin_candidate_id  uuid NULL,
+  verification_status  incident.incident_verification_status_enum NOT NULL DEFAULT 'UNCONFIRMED',
+  operational_status   incident.incident_operational_status_enum NOT NULL DEFAULT 'DETECTED',
+  preventive_status    incident.incident_preventive_status_enum NOT NULL DEFAULT 'NONE',
+  trend                incident.incident_trend_enum NOT NULL DEFAULT 'UNKNOWN',
+  structural_status    incident.incident_structural_status_enum NOT NULL DEFAULT 'INDEPENDENT',
+  incident_type_id     uuid NOT NULL,
   classification       security.information_classification_enum NOT NULL DEFAULT 'CRITICAL',
+  title                varchar(255) NOT NULL,
+  description          text NULL,
   location             geography(Point,4326) NULL,
   legacy_status        text NULL,
   legacy_source        varchar(100) NULL,
@@ -131,43 +154,77 @@ CREATE TABLE IF NOT EXISTS incident.incidents (
     ('AUTO_MAPPED','REQUIRES_REVIEW','REVIEWED_APPROVED','REVIEWED_REJECTED')),
   created_at           timestamptz NOT NULL DEFAULT now(),
   closed_at            timestamptz NULL,
-  CONSTRAINT fk_incidents_incident_type FOREIGN KEY (incident_type_id) REFERENCES governance.incident_types(id) ON DELETE RESTRICT
+  CONSTRAINT fk_incidents_incident_type FOREIGN KEY (incident_type_id) REFERENCES governance.incident_types(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_incidents_origin_candidate FOREIGN KEY (origin_candidate_id) REFERENCES incident.incident_candidates(id) ON DELETE RESTRICT,
+  CONSTRAINT uq_incidents_origin_candidate_id UNIQUE (origin_candidate_id)
 );
 CREATE INDEX IF NOT EXISTS gix_incidents_location ON incident.incidents USING GIST (location);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_incidents_legacy ON incident.incidents (legacy_source, legacy_record_id)
+  WHERE legacy_record_id IS NOT NULL;
 
--- VERIFY_AGAINST_V1.0
+-- Rebuilt to match schema.target.prisma's IncidentPromotion exactly:
+-- decided_by_actor_type, automation_rule_id, automation_rule_version,
+-- input_data_snapshot, confidence, explanation, idempotency_key all ADDED
+-- (were entirely missing). 3 UNIQUE constraints ADDED — these are the
+-- physical mechanism (Fase 12) making double promotion of the same
+-- candidate, double promotion into the same incident, and a duplicate
+-- idempotent retry all structurally impossible, not just
+-- application-checked.
 CREATE TABLE IF NOT EXISTS incident.incident_promotions (
   id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_candidate_id uuid NOT NULL,
   incident_id           uuid NOT NULL,
-  decided_by_actor_id   uuid NULL,
-  promoted_at           timestamptz NOT NULL DEFAULT now(),
+  decided_by_actor_type security.actor_type_enum NOT NULL,
+  decided_by_actor_id   uuid NOT NULL,
+  automation_rule_id    uuid NULL,
+  automation_rule_version integer NULL,
+  input_data_snapshot   jsonb NOT NULL,
+  confidence            evidence.confidence_level_enum NOT NULL,
+  explanation           text NOT NULL,
+  idempotency_key       uuid NOT NULL,
+  decided_at            timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_incident_promotions_candidate FOREIGN KEY (incident_candidate_id) REFERENCES incident.incident_candidates(id) ON DELETE RESTRICT,
-  CONSTRAINT fk_incident_promotions_incident FOREIGN KEY (incident_id) REFERENCES incident.incidents(id) ON DELETE RESTRICT
+  CONSTRAINT fk_incident_promotions_incident FOREIGN KEY (incident_id) REFERENCES incident.incidents(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_incident_promotions_automation_rule FOREIGN KEY (automation_rule_id) REFERENCES governance.automation_rules(id) ON DELETE SET NULL,
+  CONSTRAINT uq_incident_promotions_candidate UNIQUE (incident_candidate_id),
+  CONSTRAINT uq_incident_promotions_incident UNIQUE (incident_id),
+  CONSTRAINT uq_incident_promotions_idempotency UNIQUE (idempotency_key),
+  CONSTRAINT ck_incident_promotions_actor_or_rule CHECK (
+    (decided_by_actor_type = 'AUTOMATION_RULE' AND automation_rule_id IS NOT NULL)
+    OR (decided_by_actor_type <> 'AUTOMATION_RULE')
+  )
 );
 
--- VERIFY_AGAINST_V1.0
+-- decided_by_actor_type ADDED (was missing); reason made NOT NULL (matches
+-- Prisma); discarded_at renamed to decided_at (matches Prisma field name).
+-- UNIQUE constraint on incident_candidate_id ADDED (SQL_COMPLEMENTARY_REQUIRED
+-- — Prisma has no native unique here, but Fase 10/12's "no second discard"
+-- invariant requires one; additive, never contradicts the Prisma model).
 CREATE TABLE IF NOT EXISTS incident.discard_decisions (
   id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_candidate_id uuid NOT NULL,
-  decided_by_actor_id   uuid NULL,
-  reason                text NULL,
-  discarded_at          timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_discard_decisions_candidate FOREIGN KEY (incident_candidate_id) REFERENCES incident.incident_candidates(id) ON DELETE RESTRICT
+  decided_by_actor_type security.actor_type_enum NOT NULL,
+  decided_by_actor_id   uuid NOT NULL,
+  reason                text NOT NULL,
+  decided_at            timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT fk_discard_decisions_candidate FOREIGN KEY (incident_candidate_id) REFERENCES incident.incident_candidates(id) ON DELETE RESTRICT,
+  -- SQL_COMPLEMENTARY_REQUIRED (Fase 10/12): at most one discard per candidate.
+  CONSTRAINT uq_discard_decisions_candidate UNIQUE (incident_candidate_id)
 );
 
--- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS incident.sub_incidents (
   id                           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_id                  uuid NOT NULL,
-  responsible_organization_id  uuid NULL,
+  area                         geography(Polygon,4326) NOT NULL,
   status                       incident.sub_incident_status_enum NOT NULL DEFAULT 'ACTIVE',
+  responsible_organization_id  uuid NULL,
   created_at                   timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_sub_incidents_incident FOREIGN KEY (incident_id) REFERENCES incident.incidents(id) ON DELETE RESTRICT,
-  CONSTRAINT fk_sub_incidents_organization FOREIGN KEY (responsible_organization_id) REFERENCES institution.organizations(id) ON DELETE SET NULL
+  CONSTRAINT fk_sub_incidents_incident FOREIGN KEY (incident_id) REFERENCES incident.incidents(id) ON DELETE CASCADE,
+  CONSTRAINT fk_sub_incidents_organization FOREIGN KEY (responsible_organization_id) REFERENCES institution.organizations(id) ON DELETE SET NULL,
+  CONSTRAINT ck_sub_incidents_area_not_null CHECK (area IS NOT NULL)
 );
 
--- VERIFY_AGAINST_V1.0
+-- relation_type enum values fixed (matches Prisma IncidentRelationType exactly).
 CREATE TABLE IF NOT EXISTS incident.incident_relations (
   id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   source_incident_id  uuid NOT NULL,
@@ -178,16 +235,19 @@ CREATE TABLE IF NOT EXISTS incident.incident_relations (
   CONSTRAINT fk_incident_relations_target FOREIGN KEY (target_incident_id) REFERENCES incident.incidents(id) ON DELETE RESTRICT
 );
 
--- VERIFY_AGAINST_V1.0
+-- reason/confidence/decided_by_actor_type ADDED (all NOT NULL per Prisma IncidentMerge — were missing).
 CREATE TABLE IF NOT EXISTS incident.incident_merges (
   id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   result_incident_id  uuid NOT NULL,
-  decided_by_actor_id uuid NULL,
-  merged_at           timestamptz NOT NULL DEFAULT now(),
+  reason              text NOT NULL,
+  confidence          evidence.confidence_level_enum NOT NULL,
+  decided_by_actor_type security.actor_type_enum NOT NULL,
+  decided_by_actor_id uuid NOT NULL,
+  created_at          timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_incident_merges_result FOREIGN KEY (result_incident_id) REFERENCES incident.incidents(id) ON DELETE RESTRICT
 );
 
--- Full ficha given directly in Table Catalog v1.1 (P1-01).
+-- Full ficha given directly in Table Catalog v1.1 (P1-01) — unchanged, already correct.
 CREATE TABLE IF NOT EXISTS incident.incident_merge_sources (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_merge_id  uuid NOT NULL,
@@ -200,16 +260,18 @@ CREATE TABLE IF NOT EXISTS incident.incident_merge_sources (
 CREATE INDEX IF NOT EXISTS ix_ims_incident_merge_id ON incident.incident_merge_sources (incident_merge_id);
 CREATE INDEX IF NOT EXISTS ix_ims_source_incident_id ON incident.incident_merge_sources (source_incident_id);
 
--- VERIFY_AGAINST_V1.0
+-- criterion/decided_by_actor_type ADDED (NOT NULL per Prisma IncidentSplit — were missing).
 CREATE TABLE IF NOT EXISTS incident.incident_splits (
   id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   original_incident_id  uuid NOT NULL,
-  decided_by_actor_id   uuid NULL,
-  split_at              timestamptz NOT NULL DEFAULT now(),
+  criterion             text NOT NULL,
+  decided_by_actor_type security.actor_type_enum NOT NULL,
+  decided_by_actor_id   uuid NOT NULL,
+  created_at            timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_incident_splits_original FOREIGN KEY (original_incident_id) REFERENCES incident.incidents(id) ON DELETE RESTRICT
 );
 
--- Full ficha given directly in Table Catalog v1.1 (P1-01).
+-- Full ficha given directly in Table Catalog v1.1 (P1-01) — unchanged, already correct.
 CREATE TABLE IF NOT EXISTS incident.incident_split_targets (
   id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_split_id   uuid NOT NULL,
@@ -222,59 +284,84 @@ CREATE TABLE IF NOT EXISTS incident.incident_split_targets (
 CREATE INDEX IF NOT EXISTS ix_ist_incident_split_id ON incident.incident_split_targets (incident_split_id);
 CREATE INDEX IF NOT EXISTS ix_ist_target_incident_id ON incident.incident_split_targets (target_incident_id);
 
--- VERIFY_AGAINST_V1.0. T-03 (D-02): split by dimension.
+-- from_value/to_value renamed to previous_value/new_value (matches Prisma
+-- IncidentTransition field names); reason/evidence_id/decided_by_actor_type
+-- ADDED (all present on Prisma — were missing); transitioned_at renamed to
+-- occurred_at; dimension enum values fixed (short names: VERIFICATION/
+-- OPERATIONAL/PREVENTIVE/TREND/STRUCTURAL). Legacy provenance retained.
 CREATE TABLE IF NOT EXISTS incident.incident_transitions (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_id          uuid NOT NULL,
   dimension            incident.incident_state_dimension_enum NOT NULL,
-  from_value           varchar(50) NULL,
-  to_value             varchar(50) NOT NULL,
-  decided_by_actor_id  uuid NULL,
+  previous_value       varchar(50) NULL,
+  new_value            varchar(50) NOT NULL,
+  reason               text NULL,
+  evidence_id          uuid NULL,
+  decided_by_actor_type security.actor_type_enum NOT NULL,
+  decided_by_actor_id  uuid NOT NULL,
   legacy_status        text NULL,
   legacy_source        varchar(100) NULL,
   legacy_record_id     text NULL,
   migration_confidence varchar(10) NULL,
   migration_review_status varchar(30) NULL,
-  transitioned_at      timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_incident_transitions_incident FOREIGN KEY (incident_id) REFERENCES incident.incidents(id) ON DELETE RESTRICT
+  occurred_at          timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT fk_incident_transitions_incident FOREIGN KEY (incident_id) REFERENCES incident.incidents(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_incident_transitions_evidence FOREIGN KEY (evidence_id) REFERENCES evidence.evidence_records(id) ON DELETE SET NULL
 );
+CREATE UNIQUE INDEX IF NOT EXISTS uq_incident_transitions_legacy ON incident.incident_transitions (legacy_source, legacy_record_id)
+  WHERE legacy_record_id IS NOT NULL;
+-- SQL_COMPLEMENTARY_REQUIRED: partition RANGE(occurred_at) monthly, deferred until 10M rows/5GB/degradation (D-04).
 
--- VERIFY_AGAINST_V1.0
+-- link_type/status enum values fixed to match Prisma exactly;
+-- linked_by_actor_type/method/causality/justification ADDED (all present
+-- on Prisma IncidentObservationLink — were missing/incomplete).
 CREATE TABLE IF NOT EXISTS incident.incident_observation_links (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_id        uuid NOT NULL,
   observation_id     uuid NOT NULL,
   link_type          incident.incident_link_type_enum NOT NULL,
-  status             incident.incident_link_status_enum NOT NULL DEFAULT 'ACTIVE',
-  linked_by_actor_id uuid NULL,
+  linked_by_actor_type security.actor_type_enum NOT NULL,
+  linked_by_actor_id uuid NOT NULL,
+  method             evidence.link_method_enum NOT NULL,
   confidence         evidence.confidence_level_enum NOT NULL,
+  causality          incident.causality_enum NULL,
+  status             incident.incident_link_status_enum NOT NULL DEFAULT 'RELEVANT',
+  justification      text NULL,
+  created_at         timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_iol_incident FOREIGN KEY (incident_id) REFERENCES incident.incidents(id) ON DELETE RESTRICT,
   CONSTRAINT fk_iol_observation FOREIGN KEY (observation_id) REFERENCES evidence.observations(id) ON DELETE RESTRICT,
   CONSTRAINT ck_iol_confidence_not_null CHECK (confidence IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS ix_iol_incident_id ON incident.incident_observation_links (incident_id);
 
--- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS incident.incident_evidence_links (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_id        uuid NOT NULL,
   evidence_id        uuid NOT NULL,
   link_type          incident.incident_link_type_enum NOT NULL,
-  status             incident.incident_link_status_enum NOT NULL DEFAULT 'ACTIVE',
-  linked_by_actor_id uuid NULL,
+  linked_by_actor_type security.actor_type_enum NOT NULL,
+  linked_by_actor_id uuid NOT NULL,
+  method             evidence.link_method_enum NOT NULL,
   confidence         evidence.confidence_level_enum NOT NULL,
+  causality          incident.causality_enum NULL,
+  status             incident.incident_link_status_enum NOT NULL DEFAULT 'RELEVANT',
+  justification      text NULL,
+  created_at         timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_iel_incident FOREIGN KEY (incident_id) REFERENCES incident.incidents(id) ON DELETE RESTRICT,
   CONSTRAINT fk_iel_evidence FOREIGN KEY (evidence_id) REFERENCES evidence.evidence_records(id) ON DELETE RESTRICT,
   CONSTRAINT ck_iel_confidence_not_null CHECK (confidence IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS ix_iel_incident_id ON incident.incident_evidence_links (incident_id);
 
--- VERIFY_AGAINST_V1.0
+-- Renamed from affected_area_versions to match Prisma's AffectedAreaVersion
+-- @@map exactly (already "affected_area_versions" — unchanged); bounding_box_cache
+-- ADDED (present on Prisma — was missing).
 CREATE TABLE IF NOT EXISTS incident.affected_area_versions (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_id        uuid NOT NULL,
   version_number     integer NOT NULL,
   geometry           geography(MultiPolygon,4326) NOT NULL,
+  bounding_box_cache geography(Polygon,4326) NULL,
   centroid_cache     geography(Point,4326) NULL,
   superseded_by_id   uuid NULL,
   created_at         timestamptz NOT NULL DEFAULT now(),
@@ -284,18 +371,22 @@ CREATE TABLE IF NOT EXISTS incident.affected_area_versions (
 );
 CREATE INDEX IF NOT EXISTS gix_affected_area_versions_geometry ON incident.affected_area_versions USING GIST (geometry);
 
--- VERIFY_AGAINST_V1.0
+-- alias_scope ADDED (varchar(50) NOT NULL, present on Prisma — was missing).
 CREATE TABLE IF NOT EXISTS incident.incident_aliases (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_id  uuid NOT NULL,
   alias        varchar(255) NOT NULL,
+  alias_scope  varchar(50) NOT NULL,
   created_at   timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_incident_aliases_incident FOREIGN KEY (incident_id) REFERENCES incident.incidents(id) ON DELETE RESTRICT,
   CONSTRAINT uq_incident_aliases_alias UNIQUE (alias)
 );
 
 -- ============================================================
--- 3. risk schema — 6 tables
+-- 3. risk schema — 6 tables (OUT OF SCOPE for this reconciliation pass —
+--    not named by the wave-4 mandate's explicit table list; carried over
+--    unchanged, VERIFY_AGAINST_V1.0 markers retained as a known, separately
+--    tracked gap).
 -- ============================================================
 
 -- Partial ficha given directly in Table Catalog v1.1 (P1-02/Corrección#8) —
@@ -318,7 +409,6 @@ CREATE TABLE IF NOT EXISTS risk.risk_assessments (
   CONSTRAINT fk_risk_assessments_incident FOREIGN KEY (incident_id) REFERENCES incident.incidents(id) ON DELETE SET NULL
 );
 
--- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS risk.forecasts (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   risk_assessment_id uuid NOT NULL,
@@ -328,7 +418,6 @@ CREATE TABLE IF NOT EXISTS risk.forecasts (
   CONSTRAINT fk_forecasts_risk_assessment FOREIGN KEY (risk_assessment_id) REFERENCES risk.risk_assessments(id) ON DELETE RESTRICT
 );
 
--- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS risk.risk_scenarios (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   risk_assessment_id uuid NOT NULL,
@@ -338,7 +427,6 @@ CREATE TABLE IF NOT EXISTS risk.risk_scenarios (
   CONSTRAINT fk_risk_scenarios_risk_assessment FOREIGN KEY (risk_assessment_id) REFERENCES risk.risk_assessments(id) ON DELETE RESTRICT
 );
 
--- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS risk.exposed_populations (
   id                       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   risk_assessment_id       uuid NOT NULL,
@@ -349,7 +437,6 @@ CREATE TABLE IF NOT EXISTS risk.exposed_populations (
   CONSTRAINT fk_exposed_populations_risk_assessment FOREIGN KEY (risk_assessment_id) REFERENCES risk.risk_assessments(id) ON DELETE RESTRICT
 );
 
--- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS risk.risk_assessment_revisions (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   risk_assessment_id   uuid NOT NULL,
@@ -381,10 +468,9 @@ CREATE TABLE IF NOT EXISTS risk.risk_area_versions (
 CREATE INDEX IF NOT EXISTS gix_risk_area_versions_geometry ON risk.risk_area_versions USING GIST (geometry);
 
 -- ============================================================
--- 4. command schema — 6 tables
+-- 4. command schema — 6 tables (OUT OF SCOPE, same note as risk.* above)
 -- ============================================================
 
--- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS command.incident_command_structures (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_id   uuid NOT NULL,
@@ -410,7 +496,6 @@ CREATE TABLE IF NOT EXISTS command.command_roles (
 CREATE INDEX IF NOT EXISTS ix_command_roles_structure_id ON command.command_roles (incident_command_structure_id);
 CREATE INDEX IF NOT EXISTS ix_command_roles_actor ON command.command_roles (actor_type, actor_id);
 
--- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS command.command_handovers (
   id                             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_command_structure_id uuid NOT NULL,
@@ -419,7 +504,6 @@ CREATE TABLE IF NOT EXISTS command.command_handovers (
   CONSTRAINT fk_command_handovers_structure FOREIGN KEY (incident_command_structure_id) REFERENCES command.incident_command_structures(id) ON DELETE RESTRICT
 );
 
--- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS command.operational_decisions (
   id                             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_command_structure_id uuid NOT NULL,
@@ -429,7 +513,6 @@ CREATE TABLE IF NOT EXISTS command.operational_decisions (
   CONSTRAINT fk_operational_decisions_structure FOREIGN KEY (incident_command_structure_id) REFERENCES command.incident_command_structures(id) ON DELETE RESTRICT
 );
 
--- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS command.automated_recommendations (
   id                             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_command_structure_id uuid NOT NULL,
@@ -444,7 +527,6 @@ CREATE TABLE IF NOT EXISTS command.automated_recommendations (
   CONSTRAINT fk_automated_recommendations_structure FOREIGN KEY (incident_command_structure_id) REFERENCES command.incident_command_structures(id) ON DELETE RESTRICT
 );
 
--- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS command.human_overrides (
   id                           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   automated_recommendation_id  uuid NOT NULL,
@@ -475,7 +557,10 @@ CREATE POLICY incidents_assignment_or_command ON incident.incidents
 ALTER TABLE incident.incident_candidates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE incident.incident_candidates FORCE ROW LEVEL SECURITY;
 CREATE POLICY incident_candidates_operational ON incident.incident_candidates
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING (
+    current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN')
+    AND security.fn_classification_allowed(current_setting('argus.actor_id')::uuid, classification)
+  );
 
 ALTER TABLE incident.incident_candidate_observations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE incident.incident_candidate_observations FORCE ROW LEVEL SECURITY;
@@ -487,16 +572,25 @@ ALTER TABLE incident.hypotheses FORCE ROW LEVEL SECURITY;
 CREATE POLICY hypotheses_inherit ON incident.hypotheses
   FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
 
+-- IncidentPromotion is the promotion decision record — visible to the
+-- deciding actor, anyone with a command role on the resulting incident, or
+-- audit_reader (never USING(true); Fase 13).
 ALTER TABLE incident.incident_promotions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE incident.incident_promotions FORCE ROW LEVEL SECURITY;
-CREATE POLICY incident_promotions_inherit ON incident.incident_promotions
-  FOR ALL USING ( EXISTS (SELECT 1 FROM incident.incidents i WHERE i.id = incident_id
-    AND security.fn_has_command_role(current_setting('argus.actor_id')::uuid, i.id)) );
+CREATE POLICY incident_promotions_scoped ON incident.incident_promotions
+  FOR ALL USING (
+    decided_by_actor_id = current_setting('argus.actor_id')::uuid
+    OR security.fn_has_command_role(current_setting('argus.actor_id')::uuid, incident_id)
+    OR current_user = 'audit_reader'
+  );
 
 ALTER TABLE incident.discard_decisions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE incident.discard_decisions FORCE ROW LEVEL SECURITY;
-CREATE POLICY discard_decisions_inherit ON incident.discard_decisions
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+CREATE POLICY discard_decisions_scoped ON incident.discard_decisions
+  FOR ALL USING (
+    decided_by_actor_id = current_setting('argus.actor_id')::uuid
+    OR current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN','AUDIT_READER')
+  );
 
 ALTER TABLE incident.sub_incidents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE incident.sub_incidents FORCE ROW LEVEL SECURITY;

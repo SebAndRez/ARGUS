@@ -9,34 +9,35 @@
 -- (T-03, D-02 legacy_status_mapping join); IncidentRelation(0) ->
 -- .incident_relations; RiskAssessment(45) -> risk.risk_assessments;
 -- RiskAssessmentRevision(50) -> risk.risk_assessment_revisions.
+--
+-- RECONCILED (this session): all legacy-provenance columns now ship as
+-- part of migration.sql's CREATE TABLE statements; all column names/enum
+-- literals below match schema.target.prisma exactly (incident_candidates:
+-- created_at not opened_at, status UNDER_ASSESSMENT/PROMOTING/PROMOTED/
+-- DISCARDED; incidents: incident_type_id + title now NOT NULL, populated
+-- below; incident_transitions: previous_value/new_value not from_value/
+-- to_value, dimension enum short-form VERIFICATION/OPERATIONAL/etc.).
 
-ALTER TABLE incident.incidents ADD COLUMN IF NOT EXISTS legacy_source varchar(100) NULL;
-ALTER TABLE incident.incidents ADD COLUMN IF NOT EXISTS legacy_record_id text NULL;
-ALTER TABLE incident.incidents ADD COLUMN IF NOT EXISTS migration_confidence varchar(10) NULL;
-ALTER TABLE incident.incidents ADD COLUMN IF NOT EXISTS migration_review_status varchar(30) NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_incidents_legacy ON incident.incidents (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL;
-
-ALTER TABLE incident.incident_candidates ADD COLUMN IF NOT EXISTS legacy_source varchar(100) NULL;
-ALTER TABLE incident.incident_candidates ADD COLUMN IF NOT EXISTS legacy_record_id text NULL;
-ALTER TABLE incident.incident_candidates ADD COLUMN IF NOT EXISTS migration_confidence varchar(10) NULL;
-ALTER TABLE incident.incident_candidates ADD COLUMN IF NOT EXISTS migration_review_status varchar(30) NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_incident_candidates_legacy ON incident.incident_candidates (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL;
-
-ALTER TABLE incident.incident_transitions ADD COLUMN IF NOT EXISTS legacy_source varchar(100) NULL;
-ALTER TABLE incident.incident_transitions ADD COLUMN IF NOT EXISTS legacy_record_id text NULL;
-ALTER TABLE incident.incident_transitions ADD COLUMN IF NOT EXISTS migration_confidence varchar(10) NULL;
-ALTER TABLE incident.incident_transitions ADD COLUMN IF NOT EXISTS migration_review_status varchar(30) NULL;
-
-ALTER TABLE risk.risk_assessments ADD COLUMN IF NOT EXISTS legacy_source varchar(100) NULL;
-ALTER TABLE risk.risk_assessments ADD COLUMN IF NOT EXISTS legacy_record_id text NULL;
-ALTER TABLE risk.risk_assessments ADD COLUMN IF NOT EXISTS migration_confidence varchar(10) NULL;
-ALTER TABLE risk.risk_assessments ADD COLUMN IF NOT EXISTS migration_review_status varchar(30) NULL;
+-- risk.* is out of scope for this reconciliation (not named by the wave-4
+-- mandate's table list, migration.sql left unchanged) — but its
+-- legacy-dedup unique indexes were previously created here in backfill.sql
+-- (not migration.sql) and are still needed by the ON CONFLICT clauses
+-- below; restored as-is.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_risk_assessments_legacy ON risk.risk_assessments (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL;
 
-ALTER TABLE risk.risk_assessment_revisions ADD COLUMN IF NOT EXISTS legacy_source varchar(100) NULL;
-ALTER TABLE risk.risk_assessment_revisions ADD COLUMN IF NOT EXISTS legacy_record_id text NULL;
-ALTER TABLE risk.risk_assessment_revisions ADD COLUMN IF NOT EXISTS migration_confidence varchar(10) NULL;
-ALTER TABLE risk.risk_assessment_revisions ADD COLUMN IF NOT EXISTS migration_review_status varchar(30) NULL;
+-- ============================================================
+-- 0. governance.incident_categories/incident_types fallback row for
+--    KnowledgeIncident.domain values with no resolvable match —
+--    incidents.incident_type_id is NOT NULL post-reconciliation; never
+--    silently pick an unrelated type.
+-- ============================================================
+INSERT INTO governance.incident_categories (id, code, name)
+SELECT gen_random_uuid(), 'UNCLASSIFIED_LEGACY', 'Unclassified (legacy backfill placeholder)'
+WHERE NOT EXISTS (SELECT 1 FROM governance.incident_categories WHERE code = 'UNCLASSIFIED_LEGACY');
+
+INSERT INTO governance.incident_types (id, code, incident_category_id)
+SELECT gen_random_uuid(), 'UNCLASSIFIED_LEGACY', (SELECT id FROM governance.incident_categories WHERE code = 'UNCLASSIFIED_LEGACY')
+WHERE NOT EXISTS (SELECT 1 FROM governance.incident_types WHERE code = 'UNCLASSIFIED_LEGACY');
 
 -- ============================================================
 -- 1. D-02 legacy_status_mapping seed rows for KnowledgeIncident.status/
@@ -45,41 +46,34 @@ ALTER TABLE risk.risk_assessment_revisions ADD COLUMN IF NOT EXISTS migration_re
 --    ambiguous "active-ish" status -> operational_status='MONITORING',
 --    never 'ACTIVE').
 -- ============================================================
--- target_value entries below are corrected to match the real enum labels
--- (migration.sql:41-45: incident_verification_status_enum = UNVERIFIED/
--- PENDING/VERIFIED/DISPUTED; incident_operational_status_enum = ACTIVE/
--- CONTAINED/MITIGATING/RESOLVED/MONITORING/ARCHIVED/CANCELLED) - the original
--- draft used DETECTED/UNCONFIRMED/CORROBORATED/OFFICIAL, none of which exist
--- on either enum; this column is plain varchar here but gets CAST to the
--- real enum type at read time in steps 2-4 below.
 INSERT INTO migration_meta.legacy_status_mapping (source_table, source_status_value, target_dimension, target_value, confidence, notes) VALUES
-  ('KnowledgeIncident', 'detected', 'operational_status', 'ACTIVE', 'HIGH', NULL),
-  ('KnowledgeIncident', 'validating', 'operational_status', 'MONITORING', 'MEDIUM', 'Conservative default — not a confirmed dimension mapping'),
+  ('KnowledgeIncident', 'detected', 'operational_status', 'DETECTED', 'HIGH', NULL),
+  ('KnowledgeIncident', 'validating', 'operational_status', 'ASSESSING', 'MEDIUM', 'Conservative default — not a confirmed dimension mapping'),
   ('KnowledgeIncident', 'confirmed', 'operational_status', 'ACTIVE', 'HIGH', NULL),
   ('KnowledgeIncident', 'active', 'operational_status', 'ACTIVE', 'HIGH', NULL),
-  ('KnowledgeIncident', 'escalating', 'operational_status', 'ACTIVE', 'MEDIUM', 'trend dimension separately set to ESCALATING'),
-  ('KnowledgeIncident', 'monitoring', 'operational_status', 'MONITORING', 'HIGH', NULL),
+  ('KnowledgeIncident', 'escalating', 'operational_status', 'ACTIVE', 'MEDIUM', 'trend dimension separately set to WORSENING'),
+  ('KnowledgeIncident', 'monitoring', 'operational_status', 'ASSESSING', 'HIGH', NULL),
   ('KnowledgeIncident', 'contained', 'operational_status', 'CONTAINED', 'HIGH', NULL),
   ('KnowledgeIncident', 'resolved', 'operational_status', 'RESOLVED', 'HIGH', NULL),
-  ('KnowledgeIncident', 'archived', 'operational_status', 'RESOLVED', 'MEDIUM', 'No distinct ARCHIVED operational_status value confirmed in target'),
-  ('KnowledgeIncident', 'unverified', 'verification_status', 'UNVERIFIED', 'HIGH', NULL),
-  ('KnowledgeIncident', 'candidate', 'verification_status', 'PENDING', 'HIGH', 'Routes to incident_candidates, not incidents'),
-  ('KnowledgeIncident', 'corroborated', 'verification_status', 'VERIFIED', 'HIGH', NULL),
-  ('KnowledgeIncident', 'official', 'verification_status', 'VERIFIED', 'HIGH', NULL)
+  ('KnowledgeIncident', 'archived', 'operational_status', 'CLOSED', 'MEDIUM', 'No distinct ARCHIVED operational_status value confirmed in target'),
+  ('KnowledgeIncident', 'rejected', 'operational_status', 'CLOSED', 'MEDIUM', NULL),
+  ('KnowledgeIncident', 'duplicate', 'operational_status', 'CLOSED', 'MEDIUM', NULL),
+  ('KnowledgeIncident', 'unverified', 'verification_status', 'UNCONFIRMED', 'HIGH', NULL),
+  ('KnowledgeIncident', 'candidate', 'verification_status', 'UNCONFIRMED', 'HIGH', 'Routes to incident_candidates, not incidents'),
+  ('KnowledgeIncident', 'corroborated', 'verification_status', 'PARTIALLY_CONFIRMED', 'HIGH', NULL),
+  ('KnowledgeIncident', 'official', 'verification_status', 'CONFIRMED', 'HIGH', NULL)
 ON CONFLICT (source_table, source_status_value, target_dimension) DO NOTHING;
 
 -- ============================================================
 -- 2. incident.incident_candidates <- KnowledgeIncident WHERE verificationStatus
 --    IN ('unverified','candidate'). Batched 500 rows, transaction per batch.
 -- ============================================================
--- incident.incident_candidates has no correlation_key column
--- (migration.sql:76-86) - removed; created_at renamed to opened_at, the real
--- column name; incident_candidate_status_enum has no 'UNDER_ASSESSMENT'
--- label (migration.sql:38-39: OPEN/CORRELATING/PROMOTED/DISCARDED) -
--- 'CORRELATING' is the correct label.
-INSERT INTO incident.incident_candidates (status, opened_at,
+INSERT INTO incident.incident_candidates (status, correlation_key, classification, created_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
-SELECT 'CORRELATING'::incident.incident_candidate_status_enum, ki."createdAt",
+SELECT 'UNDER_ASSESSMENT'::incident.incident_candidate_status_enum,
+  CASE WHEN ki."sourceId" IS NOT NULL AND ki."canonicalKey" IS NOT NULL THEN ki."sourceId" || ':' || ki."canonicalKey" ELSE NULL END,
+  'OPERATIONAL'::security.information_classification_enum,
+  ki."createdAt",
   'KnowledgeIncident', ki.id,
   CASE WHEN m.confidence IS NOT NULL THEN m.confidence ELSE 'LOW' END,
   CASE WHEN m.confidence IS NOT NULL THEN 'AUTO_MAPPED' ELSE 'REQUIRES_REVIEW' END
@@ -91,18 +85,27 @@ ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL
 
 -- ============================================================
 -- 3. incident.incidents <- KnowledgeIncident (remainder). T-02.
+--    incident_type_id/title are NOT NULL post-reconciliation — resolved by
+--    domain match against governance.incident_types (seeded Wave 010),
+--    falling back to the UNCLASSIFIED_LEGACY placeholder (never NULL,
+--    never a fabricated real category); title comes from the legacy row's
+--    own `title` column (its canonical incident title, not Report free text).
 -- ============================================================
--- incident.incidents has no title/description column (migration.sql:116-135)
--- - removed; that content has no home in this table's schema.
-INSERT INTO incident.incidents (verification_status, operational_status, created_at,
+INSERT INTO incident.incidents (incident_type_id, verification_status, operational_status, title, description, created_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
 SELECT
-  COALESCE(mv.target_value, 'UNVERIFIED')::incident.incident_verification_status_enum,
-  COALESCE(mo.target_value, 'MONITORING')::incident.incident_operational_status_enum,
+  COALESCE(
+    (SELECT it.id FROM governance.incident_types it WHERE lower(it.code) = lower(ki.domain) LIMIT 1),
+    (SELECT id FROM governance.incident_types WHERE code = 'UNCLASSIFIED_LEGACY')
+  ),
+  COALESCE(mv.target_value, 'UNCONFIRMED')::incident.incident_verification_status_enum,
+  COALESCE(mo.target_value, 'ASSESSING')::incident.incident_operational_status_enum,
+  ki.title,
+  ki.summary,
   ki."createdAt",
   'KnowledgeIncident', ki.id,
-  CASE WHEN mo.confidence IS NOT NULL THEN mo.confidence ELSE 'LOW' END,
-  CASE WHEN mo.confidence IS NOT NULL THEN 'AUTO_MAPPED' ELSE 'REQUIRES_REVIEW' END
+  CASE WHEN mo.confidence IS NOT NULL AND EXISTS (SELECT 1 FROM governance.incident_types it WHERE lower(it.code) = lower(ki.domain)) THEN 'HIGH' ELSE 'LOW' END,
+  CASE WHEN mo.confidence IS NOT NULL AND EXISTS (SELECT 1 FROM governance.incident_types it WHERE lower(it.code) = lower(ki.domain)) THEN 'AUTO_MAPPED' ELSE 'REQUIRES_REVIEW' END
 FROM "KnowledgeIncident" ki
 LEFT JOIN migration_meta.legacy_status_mapping mv
   ON mv.source_table = 'KnowledgeIncident' AND mv.source_status_value = ki."verificationStatus" AND mv.target_dimension = 'verification_status'
@@ -114,16 +117,17 @@ ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL
 -- ============================================================
 -- 4. incident.incident_transitions <- IncidentTransition (16 rows, T-03,
 --    split per-dimension via legacy_status_mapping join). Single batch.
+--    decided_by_actor_type/id are NOT NULL post-reconciliation — legacy
+--    IncidentTransition has no actor column, so a SYSTEM/AUTOMATION_RULE
+--    actor with a fixed, documented nil UUID represents "migrated, no
+--    original actor recorded" (never a fabricated human actor).
 -- ============================================================
--- columns are from_value/to_value, not previous_value/new_value
--- (migration.sql:226-240); dimension is incident_state_dimension_enum, whose
--- labels are uppercase (migration.sql:56-58) - 'OPERATIONAL_STATUS', not
--- 'operational_status' (that lowercase form is only valid for the plain
--- varchar target_dimension column in migration_meta.legacy_status_mapping).
-INSERT INTO incident.incident_transitions (incident_id, dimension, from_value, to_value, transitioned_at,
+INSERT INTO incident.incident_transitions (incident_id, dimension, previous_value, new_value, decided_by_actor_type, decided_by_actor_id, occurred_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
-SELECT i.id, 'OPERATIONAL_STATUS',
-  COALESCE(mp.target_value, it."previousStatus"), COALESCE(mn.target_value, it."newStatus"), it."createdAt",
+SELECT i.id, 'OPERATIONAL'::incident.incident_state_dimension_enum,
+  COALESCE(mp.target_value, it."previousStatus"), COALESCE(mn.target_value, it."newStatus"),
+  'AUTOMATION_RULE'::security.actor_type_enum, '00000000-0000-0000-0000-000000000000'::uuid,
+  it."createdAt",
   'IncidentTransition', it.id,
   CASE WHEN mn.confidence IS NOT NULL THEN mn.confidence ELSE 'LOW' END,
   CASE WHEN mn.confidence IS NOT NULL THEN 'AUTO_MAPPED' ELSE 'REQUIRES_REVIEW' END
@@ -147,8 +151,6 @@ INSERT INTO risk.risk_assessments (hazard_type_id, classification, status, creat
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
 SELECT ht.id,
   'RESTRICTED'::security.information_classification_enum,
-  -- risk.risk_assessment_status_enum has no 'ARCHIVED' label
-  -- (migration.sql:64: ACTIVE/CLOSED only) - 'CLOSED' is the correct label.
   CASE WHEN ra.status = 'active' THEN 'ACTIVE'::risk.risk_assessment_status_enum ELSE 'CLOSED'::risk.risk_assessment_status_enum END,
   ra."createdAt",
   'RiskAssessment', ra.id,
@@ -162,7 +164,6 @@ ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL
 -- 7. risk.risk_assessment_revisions <- RiskAssessmentRevision (50 rows,
 --    MIGRAR 1:1). Single batch.
 -- ============================================================
--- column is "changes" not "content_snapshot" (migration.sql:353-366)
 INSERT INTO risk.risk_assessment_revisions (risk_assessment_id, revision_number, changes, created_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
 SELECT ra.id, row_number() OVER (PARTITION BY rar."assessmentId" ORDER BY rar."createdAt"),

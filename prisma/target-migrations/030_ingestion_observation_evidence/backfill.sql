@@ -11,36 +11,21 @@
 -- incident_id-linked half completes in Wave 040). D-04: TelecomConnectivityStatus/
 -- TelecomConnectivityEvidence (0 rows each) -> evidence.observations /
 -- .evidence_records, structural mapping only.
+--
+-- RECONCILED (this session): all legacy-provenance columns now ship as part
+-- of migration.sql's CREATE TABLE statements (no more post-hoc ALTER TABLE
+-- ADD COLUMN patches here); all column names/enum literals below match
+-- schema.target.prisma exactly.
 
-ALTER TABLE ingest.sources ADD COLUMN IF NOT EXISTS legacy_source varchar(100) NULL;
-ALTER TABLE ingest.sources ADD COLUMN IF NOT EXISTS legacy_record_id text NULL;
-ALTER TABLE ingest.sources ADD COLUMN IF NOT EXISTS migration_confidence varchar(10) NULL;
-ALTER TABLE ingest.sources ADD COLUMN IF NOT EXISTS migration_review_status varchar(30) NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_sources_legacy ON ingest.sources (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL;
-
-ALTER TABLE ingest.ingestion_runs ADD COLUMN IF NOT EXISTS legacy_source varchar(100) NULL;
-ALTER TABLE ingest.ingestion_runs ADD COLUMN IF NOT EXISTS legacy_record_id text NULL;
-ALTER TABLE ingest.ingestion_runs ADD COLUMN IF NOT EXISTS migration_confidence varchar(10) NULL;
-ALTER TABLE ingest.ingestion_runs ADD COLUMN IF NOT EXISTS migration_review_status varchar(30) NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_ingestion_runs_legacy ON ingest.ingestion_runs (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL;
-
-ALTER TABLE ingest.source_records ADD COLUMN IF NOT EXISTS legacy_source varchar(100) NULL;
-ALTER TABLE ingest.source_records ADD COLUMN IF NOT EXISTS legacy_record_id text NULL;
-ALTER TABLE ingest.source_records ADD COLUMN IF NOT EXISTS migration_confidence varchar(10) NULL;
-ALTER TABLE ingest.source_records ADD COLUMN IF NOT EXISTS migration_review_status varchar(30) NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_source_records_legacy ON ingest.source_records (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL;
-
-ALTER TABLE evidence.observations ADD COLUMN IF NOT EXISTS legacy_source varchar(100) NULL;
-ALTER TABLE evidence.observations ADD COLUMN IF NOT EXISTS legacy_record_id text NULL;
-ALTER TABLE evidence.observations ADD COLUMN IF NOT EXISTS migration_confidence varchar(10) NULL;
-ALTER TABLE evidence.observations ADD COLUMN IF NOT EXISTS migration_review_status varchar(30) NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_observations_legacy ON evidence.observations (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL;
-
-ALTER TABLE evidence.evidence_records ADD COLUMN IF NOT EXISTS legacy_source varchar(100) NULL;
-ALTER TABLE evidence.evidence_records ADD COLUMN IF NOT EXISTS legacy_record_id text NULL;
-ALTER TABLE evidence.evidence_records ADD COLUMN IF NOT EXISTS migration_confidence varchar(10) NULL;
-ALTER TABLE evidence.evidence_records ADD COLUMN IF NOT EXISTS migration_review_status varchar(30) NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_evidence_records_legacy ON evidence.evidence_records (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL;
+-- ============================================================
+-- 0. ingest.providers <- a single placeholder provider, since
+--    KnowledgeSource/the code source catalog have no resolvable
+--    institution.organizations row (D-01 — never fabricated) and
+--    ingest.sources.provider_id is NOT NULL post-reconciliation.
+-- ============================================================
+INSERT INTO ingest.providers (id, name, organization_id, status)
+SELECT gen_random_uuid(), 'Legacy Source Catalog (DUP-003, unresolved organization)', NULL, 'ACTIVE'::ingest.provider_status_enum
+WHERE NOT EXISTS (SELECT 1 FROM ingest.providers WHERE name = 'Legacy Source Catalog (DUP-003, unresolved organization)');
 
 -- ============================================================
 -- 1. ingest.sources <- KnowledgeSource (1 row, FUSIONAR with code catalog)
@@ -49,43 +34,40 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_evidence_records_legacy ON evidence.evidenc
 -- in application code (src/lib/*), not a database table — reconciling it
 -- with KnowledgeSource's single row requires a code-review pass, not SQL
 -- alone. Drafted here as a placeholder for the 1 known row only.
-INSERT INTO ingest.sources (provider_id, endpoint_signature, name, status, legacy_source, legacy_record_id, migration_confidence, migration_review_status, created_at)
-SELECT NULL, ks.id, ks.name, CASE WHEN ks.enabled THEN 'ACTIVE'::ingest.source_status_enum ELSE 'INACTIVE'::ingest.source_status_enum END,
-  'KnowledgeSource', ks.id, 'MEDIUM', 'REQUIRES_REVIEW', ks."createdAt"
+-- ingest.sources has NO legacy-provenance columns (schema.target.prisma's
+-- Source model has none — Source is populated via the DUP-003 logical
+-- consolidation, not a literal 1:1 legacy row migration); endpoint_signature
+-- doubles as the natural correlation key downstream (it is the table's own
+-- real uq_sources_provider_endpoint identity, set here to the legacy
+-- KnowledgeSource id for exactly this purpose).
+INSERT INTO ingest.sources (provider_id, endpoint_signature, name, status, created_at)
+SELECT (SELECT id FROM ingest.providers WHERE name = 'Legacy Source Catalog (DUP-003, unresolved organization)'),
+  ks.id, ks.name, CASE WHEN ks.enabled THEN 'ACTIVE'::ingest.source_status_enum ELSE 'INACTIVE'::ingest.source_status_enum END,
+  ks."createdAt"
 FROM "KnowledgeSource" ks
 ON CONFLICT DO NOTHING;
--- NOTE: provider_id is NULL (column is nullable, FK ON DELETE SET NULL) -
--- there is no real ingest.providers row to reference yet (CREATE_EMPTY per
--- Target-Current Mapping - no current source). A fabricated gen_random_uuid()
--- here would violate fk_sources_provider since it wouldn't match any real
--- providers row; NULL is correct until that resolution happens, flagged for
--- implementation review.
 
 -- ============================================================
 -- 2. ingest.ingestion_runs <- IngestionRun(3,405) + KnowledgeIngestionRun(1,899)
 --    Batch: 5,000-row batches per origin_kind, ORDER BY started_at.
 -- ============================================================
--- origin_kind is NOT NULL with no default (migration.sql:86-97, whitelist
--- CHECK 'EXTERNAL_EVENT_PIPELINE'|'GLOBAL_WATCH_PIPELINE') and idempotency_key
--- does not exist as a column on this table - removed. completed_at renamed
--- to the real column name, finished_at. ingest.ingestion_run_status_enum has
--- no 'COMPLETED' label (migration.sql:31: RUNNING/SUCCEEDED/FAILED) -
--- 'SUCCEEDED' is the correct label.
-INSERT INTO ingest.ingestion_runs (source_id, origin_kind, status, started_at, finished_at,
+INSERT INTO ingest.ingestion_runs (source_id, idempotency_key, origin_kind, status, started_at, completed_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
-SELECT s.id, 'EXTERNAL_EVENT_PIPELINE', CASE ir.status WHEN 'success' THEN 'SUCCEEDED'::ingest.ingestion_run_status_enum ELSE 'FAILED'::ingest.ingestion_run_status_enum END,
+SELECT s.id, gen_random_uuid(), 'EXTERNAL_EVENT_PIPELINE'::ingest.ingestion_run_origin_kind_enum,
+  CASE ir.status WHEN 'success' THEN 'COMPLETED'::ingest.ingestion_run_status_enum ELSE 'FAILED'::ingest.ingestion_run_status_enum END,
   ir."fetchedAt", ir."completedAt", 'IngestionRun', ir.id, 'HIGH', 'AUTO_MAPPED'
 FROM "IngestionRun" ir
-JOIN ingest.sources s ON s.legacy_record_id = ir."sourceId" -- resolved via KnowledgeSource fusion above; falls to REQUIRES_REVIEW if unresolved
+JOIN ingest.sources s ON s.endpoint_signature = ir."sourceId" -- resolved via KnowledgeSource fusion above (endpoint_signature = legacy KnowledgeSource id); falls to REQUIRES_REVIEW if unresolved
 ORDER BY ir."fetchedAt"
 ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 
-INSERT INTO ingest.ingestion_runs (source_id, origin_kind, status, started_at, finished_at,
+INSERT INTO ingest.ingestion_runs (source_id, idempotency_key, origin_kind, status, started_at, completed_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
-SELECT s.id, 'GLOBAL_WATCH_PIPELINE', CASE kir.status WHEN 'completed' THEN 'SUCCEEDED'::ingest.ingestion_run_status_enum ELSE 'FAILED'::ingest.ingestion_run_status_enum END,
+SELECT s.id, gen_random_uuid(), 'GLOBAL_WATCH_PIPELINE'::ingest.ingestion_run_origin_kind_enum,
+  CASE kir.status WHEN 'completed' THEN 'COMPLETED'::ingest.ingestion_run_status_enum ELSE 'FAILED'::ingest.ingestion_run_status_enum END,
   kir."startedAt", kir."finishedAt", 'KnowledgeIngestionRun', kir.id, 'HIGH', 'AUTO_MAPPED'
 FROM "KnowledgeIngestionRun" kir
-JOIN ingest.sources s ON s.legacy_record_id = kir."sourceId"
+JOIN ingest.sources s ON s.endpoint_signature = kir."sourceId"
 ORDER BY kir."startedAt"
 ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 
@@ -93,61 +75,59 @@ ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL
 -- 3. ingest.source_records <- ExternalEvent (1,904, T-01). Single batch,
 --    dedup on (source_id, external_id) partial unique index.
 -- ============================================================
--- column is "origin" not "origin_kind"; "provenance"/"content_hash" do not
--- exist on this table (migration.sql:103-118) - removed.
--- ingest.source_record_origin_enum has no 'EXTERNAL_EVENT_PIPELINE' label
--- (migration.sql:30: AUTOMATED_FEED/MANUAL_UPLOAD/API_PULL) - 'AUTOMATED_FEED'
--- is the correct label for a scheduled ingestion pipeline.
-INSERT INTO ingest.source_records (ingestion_run_id, source_id, origin, external_id, raw_content, received_at,
+INSERT INTO ingest.source_records (ingestion_run_id, source_id, origin_kind, external_id, provenance, raw_content, content_hash, received_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
 SELECT
-  (SELECT id FROM ingest.ingestion_runs ORDER BY started_at LIMIT 1), -- placeholder single-run association, real run resolves per-event's actual ingestion run
-  s.id, 'AUTOMATED_FEED'::ingest.source_record_origin_enum, ee."externalId",
+  (SELECT id FROM ingest.ingestion_runs WHERE legacy_source = 'IngestionRun' ORDER BY started_at LIMIT 1),
+  s.id, 'EXTERNAL_EVENT'::ingest.source_record_origin_enum, ee."externalId",
+  jsonb_build_object('legacy_record_id', ee.id, 'legacy_table', 'ExternalEvent'),
   COALESCE(ee.raw, '{}'),
+  encode(sha256(COALESCE(ee.raw, '{}')::text::bytea), 'hex'),
   COALESCE(ee."fetchedAt", ee."createdAt"),
   'ExternalEvent', ee.id, 'HIGH', 'AUTO_MAPPED'
 FROM "ExternalEvent" ee
-JOIN ingest.sources s ON s.legacy_record_id = ee."sourceId"
+JOIN ingest.sources s ON s.endpoint_signature = ee."sourceId"
 ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 
 -- ============================================================
--- 4. evidence.observations <- Report(1) + ExternalEvent(1,904) + HelpRequest(0, origin)
---    Single batch, D-04 TelecomConnectivityStatus(0) structural mapping only.
+-- 4. evidence.observations <- Report(1) + ExternalEvent(1,904)
+--    Single batch. D-04 TelecomConnectivityStatus(0) structural mapping only.
 -- ============================================================
-INSERT INTO evidence.observations (origin_type, author_type, claim_text, provenance, occurred_at, reported_at,
+-- author_person_id is a real uuid FK to identity.people(id) — Report.userId
+-- is the legacy cuid, resolved via identity.people.legacy_record_id (Ola 2
+-- backfill, User -> identity.people), never inserted as a raw cuid string.
+INSERT INTO evidence.observations (origin_type, author_type, author_person_id, claim_text, provenance, occurred_at, reported_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status, created_at)
-SELECT 'CITIZEN_REPORT'::evidence.observation_origin_enum, 'CITIZEN'::evidence.report_author_type_enum,
-  r.description, jsonb_build_object('legacy_record_id', r.id), r."createdAt", r."createdAt",
-  'Report', r.id, 'MEDIUM', 'REQUIRES_REVIEW', r."createdAt"
+SELECT 'PRIMARY'::evidence.observation_origin_enum, 'CITIZEN'::evidence.report_author_type_enum, p.id,
+  r.description, jsonb_build_object('chain', jsonb_build_array(jsonb_build_object('step_kind', 'CITIZEN_REPORT', 'timestamp', r."createdAt")), 'depth', 1),
+  r."createdAt", r."createdAt",
+  'Report', r.id, CASE WHEN p.id IS NOT NULL THEN 'HIGH' ELSE 'LOW' END, CASE WHEN p.id IS NOT NULL THEN 'AUTO_MAPPED' ELSE 'REQUIRES_REVIEW' END, r."createdAt"
 FROM "Report" r
+LEFT JOIN identity.people p ON p.legacy_source = 'User' AND p.legacy_record_id = r."userId"
 ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
 
--- evidence.observation_origin_enum has no 'EXTERNAL_SOURCE' label
--- (migration.sql:34: CITIZEN_REPORT/AUTOMATED_INGESTION) - 'AUTOMATED_INGESTION'
--- is the correct label for pipeline-sourced data.
-INSERT INTO evidence.observations (origin_type, claim_text, provenance, occurred_at, reported_at,
+INSERT INTO evidence.observations (origin_type, claim_text, source_record_id, provenance, occurred_at, reported_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status, created_at)
-SELECT 'AUTOMATED_INGESTION'::evidence.observation_origin_enum,
-  ee.title, jsonb_build_object('legacy_record_id', ee.id), ee."occurredAt", ee."fetchedAt",
+SELECT 'PRIMARY'::evidence.observation_origin_enum,
+  ee.title,
+  (SELECT id FROM ingest.source_records WHERE legacy_source = 'ExternalEvent' AND legacy_record_id = ee.id),
+  jsonb_build_object('chain', jsonb_build_array(jsonb_build_object('step_kind', 'EXTERNAL_EVENT_INGESTION', 'timestamp', ee."createdAt")), 'depth', 1),
+  ee."occurredAt", ee."fetchedAt",
   'ExternalEvent', ee.id, 'MEDIUM', 'REQUIRES_REVIEW', ee."createdAt"
 FROM "ExternalEvent" ee
 ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
--- D-04: TelecomConnectivityStatus (0 rows) — origin_type='TELECOM_CONNECTIVITY_LEGACY'
--- structural mapping only, no rows to move:
--- INSERT INTO evidence.observations (origin_type, ...) SELECT 'TELECOM_CONNECTIVITY_LEGACY', ... FROM "TelecomConnectivityStatus"; -- 0 rows, never executes a real row
+-- D-04: TelecomConnectivityStatus (0 rows) — origin_type='PRIMARY',
+-- structural mapping only, no rows to move (0 rows in current schema, never
+-- executes a real row).
 
 -- ============================================================
 -- 5. evidence.evidence_records <- KnowledgeEvidence (2,463, partial — the
 --    incident_id-linked half reconciles in Wave 040 alongside
 --    incident.incident_evidence_links). Batched 1,000 rows at a time.
 -- ============================================================
--- column is "evidence_origin" not "origin_type"; "chain_of_custody" does not
--- exist - the nearest real column is "structured_content" (migration.sql:193-205).
-INSERT INTO evidence.evidence_records (evidence_origin, classification, structured_content,
+INSERT INTO evidence.evidence_records (evidence_origin, classification, chain_of_custody,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status, created_at)
--- evidence.evidence_origin_enum has no 'EXTERNAL_SOURCE' label
--- (migration.sql:38: INTERNAL/EXTERNAL) - 'EXTERNAL' is the correct label.
-SELECT 'EXTERNAL'::evidence.evidence_origin_enum, 'OPERATIONAL'::security.information_classification_enum,
+SELECT 'DERIVED'::evidence.evidence_origin_enum, 'OPERATIONAL'::security.information_classification_enum,
   jsonb_build_object('sourceId', ke."sourceId", 'sourceName', ke."sourceName", 'legacy_record_id', ke.id),
   'KnowledgeEvidence', ke.id, 'MEDIUM', 'REQUIRES_REVIEW', ke."createdAt"
 FROM "KnowledgeEvidence" ke
@@ -185,8 +165,10 @@ WHERE sr.id IS NULL OR o.id IS NULL;
 -- ============================================================
 -- 8. MIGRATION_REVIEW_QUEUE
 -- ============================================================
+-- ingest.sources has no legacy-provenance columns (see §1 note above) —
+-- excluded from this view, never fabricated.
 CREATE OR REPLACE VIEW ingest.vw_migration_review_queue AS
-SELECT 'ingest.sources'::text AS target_table, id, legacy_source, legacy_record_id, migration_review_status FROM ingest.sources WHERE migration_review_status = 'REQUIRES_REVIEW';
+SELECT 'ingest.source_records'::text AS target_table, id, legacy_source, legacy_record_id, migration_review_status FROM ingest.source_records WHERE migration_review_status = 'REQUIRES_REVIEW';
 CREATE OR REPLACE VIEW evidence.vw_migration_review_queue AS
 SELECT 'evidence.observations'::text AS target_table, id, legacy_source, legacy_record_id, migration_review_status FROM evidence.observations WHERE migration_review_status = 'REQUIRES_REVIEW'
 UNION ALL

@@ -138,41 +138,48 @@ INSERT INTO ingest.sources (id, provider_id, endpoint_signature, name, status) V
   ('e0000000-0000-0000-0000-000000000011', 'e0000000-0000-0000-0000-000000000001', 'synthetic://rehearsal-source', 'Fuente de Ensayo', 'ACTIVE')
 ON CONFLICT (id) DO NOTHING;
 
--- connector_kind is NOT NULL with no default (030_ingestion.../migration.sql:72-79)
-INSERT INTO ingest.source_connectors (id, source_id, connector_kind, config, status) VALUES
-  ('e0000000-0000-0000-0000-000000000021', 'e0000000-0000-0000-0000-000000000011', 'SYNTHETIC_FIXTURE', '{"kind":"synthetic","note":"rehearsal fixture"}'::jsonb, 'ACTIVE')
+-- connector_kind removed (030_ingestion.../migration.sql was reconciled
+-- against schema.target.prisma's SourceConnector model, which has no such
+-- field — config/status are the only non-key columns).
+INSERT INTO ingest.source_connectors (id, source_id, config, status) VALUES
+  ('e0000000-0000-0000-0000-000000000021', 'e0000000-0000-0000-0000-000000000011', '{"kind":"synthetic","note":"rehearsal fixture"}'::jsonb, 'ACTIVE')
 ON CONFLICT (id) DO NOTHING;
 
--- ingest.ingestion_runs has no idempotency_key column, origin_kind is
--- NOT NULL with no default (030_ingestion.../migration.sql:83-98), column is
--- finished_at not completed_at, and ingest.ingestion_run_status_enum has no
--- 'COMPLETED' label (RUNNING/SUCCEEDED/FAILED only).
-INSERT INTO ingest.ingestion_runs (id, source_id, origin_kind, status, started_at, finished_at) VALUES
-  ('e0000000-0000-0000-0000-000000000031', 'e0000000-0000-0000-0000-000000000011', 'EXTERNAL_EVENT_PIPELINE', 'SUCCEEDED', now(), now())
+-- ingest.ingestion_runs, post-reconciliation: idempotency_key is uuid NOT
+-- NULL (part of uq_ingestion_runs_source_idempotency); column is
+-- completed_at (not finished_at); ingest.ingestion_run_status_enum is
+-- RUNNING/COMPLETED/FAILED (not SUCCEEDED).
+INSERT INTO ingest.ingestion_runs (id, source_id, idempotency_key, origin_kind, status, started_at, completed_at) VALUES
+  ('e0000000-0000-0000-0000-000000000031', 'e0000000-0000-0000-0000-000000000011', 'e0000000-0000-0000-0000-000000000032', 'EXTERNAL_EVENT_PIPELINE', 'COMPLETED', now(), now())
 ON CONFLICT (id) DO NOTHING;
 
--- column is "origin" not "origin_kind"; provenance/content_hash/classification
--- do not exist on ingest.source_records (030_ingestion.../migration.sql:103-118);
--- ingest.source_record_origin_enum has no 'DIRECT_CAPTURE' label
--- (AUTOMATED_FEED/MANUAL_UPLOAD/API_PULL only).
-INSERT INTO ingest.source_records (id, ingestion_run_id, source_id, origin, external_id, raw_content) VALUES
+-- ingest.source_records, post-reconciliation: column is origin_kind (not
+-- origin); provenance/content_hash are real NOT NULL columns now;
+-- ingest.source_record_origin_enum is EXTERNAL_EVENT/DIRECT_CAPTURE/DERIVED
+-- (matches schema.target.prisma's SourceRecordOrigin) — DIRECT_CAPTURE is
+-- the closest fit for a manually-inserted fixture row.
+INSERT INTO ingest.source_records (id, ingestion_run_id, source_id, origin_kind, external_id, provenance, raw_content, content_hash) VALUES
   ('e0000000-0000-0000-0000-000000000041', 'e0000000-0000-0000-0000-000000000031', 'e0000000-0000-0000-0000-000000000011',
-   'MANUAL_UPLOAD', 'synthetic-ext-0001',
-   '{"note":"synthetic fixture raw content, not real external data"}'::jsonb)
+   'DIRECT_CAPTURE', 'synthetic-ext-0001',
+   '{"chain":[{"step_kind":"synthetic_fixture"}]}'::jsonb,
+   '{"note":"synthetic fixture raw content, not real external data"}'::jsonb,
+   'synthetic-fixture-content-hash-0001')
 ON CONFLICT (id) DO NOTHING;
 
 -- =============================================================================
 -- 7. Evidence (schema evidence) — Observation ("Report" logical name), EvidenceRecord
 -- =============================================================================
 
--- evidence.observation_origin_enum has no 'PRIMARY' label
--- (CITIZEN_REPORT/AUTOMATED_INGESTION only, 030_ingestion.../migration.sql:34)
+-- evidence.observation_origin_enum, post-reconciliation: PRIMARY/DERIVED
+-- (matches schema.target.prisma's OriginType) — a citizen-authored row is
+-- PRIMARY (author_type carries the CITIZEN/PROFESSIONAL/INSTITUTIONAL
+-- distinction separately).
 INSERT INTO evidence.observations (
   id, origin_type, author_type, author_person_id, source_record_id,
   claim_text, claim_structured, provenance, location, occurred_at, reported_at,
   verification_status, confidence_level
 ) VALUES (
-  'f0000000-0000-0000-0000-000000000001', 'CITIZEN_REPORT', 'CITIZEN', 'b0000000-0000-0000-0000-000000000001',
+  'f0000000-0000-0000-0000-000000000001', 'PRIMARY', 'CITIZEN', 'b0000000-0000-0000-0000-000000000001',
   'e0000000-0000-0000-0000-000000000041',
   'Observación sintética de ensayo — humo visible en zona de prueba',
   '{"domain":"fire"}'::jsonb,
@@ -183,12 +190,12 @@ INSERT INTO evidence.observations (
 )
 ON CONFLICT (id) DO NOTHING;
 
--- column is evidence_origin (not origin_type) and structured_content (not
--- chain_of_custody); evidence_records has no consent_id column
--- (030_ingestion.../migration.sql:193-205); evidence.evidence_origin_enum
--- has no 'PRIMARY' label (INTERNAL/EXTERNAL only).
-INSERT INTO evidence.evidence_records (id, evidence_origin, classification, structured_content) VALUES
-  ('f0000000-0000-0000-0000-000000000011', 'INTERNAL', 'OPERATIONAL',
+-- evidence.evidence_records, post-reconciliation: column is chain_of_custody
+-- (jsonb NOT NULL, not structured_content); evidence.evidence_origin_enum is
+-- PRIMARY/DERIVED (matches schema.target.prisma's OriginType, not
+-- INTERNAL/EXTERNAL).
+INSERT INTO evidence.evidence_records (id, evidence_origin, classification, chain_of_custody) VALUES
+  ('f0000000-0000-0000-0000-000000000011', 'PRIMARY', 'OPERATIONAL',
    '{"chain":[{"step_kind":"synthetic_fixture","actor_type":"PERSON"}]}'::jsonb)
 ON CONFLICT (id) DO NOTHING;
 
@@ -196,8 +203,10 @@ ON CONFLICT (id) DO NOTHING;
 -- 8. Incident (schema incident) — IncidentCandidate, Incident
 -- =============================================================================
 
--- incident.incident_candidates has no correlation_key/classification columns
--- (040_incident/migration.sql:76-86)
+-- incident.incident_candidates, post-reconciliation: correlation_key/
+-- classification/promotion_started_at are real columns now (all
+-- nullable/defaulted), so the minimal (id, status) insert below still
+-- succeeds unchanged.
 INSERT INTO incident.incident_candidates (id, status) VALUES
   ('10000000-0000-0000-0000-000000000001', 'PROMOTED')
 ON CONFLICT (id) DO NOTHING;
@@ -206,18 +215,19 @@ INSERT INTO incident.incident_candidate_observations (id, incident_candidate_id,
   ('10000000-0000-0000-0000-000000000011', '10000000-0000-0000-0000-000000000001', 'f0000000-0000-0000-0000-000000000001', 'MEDIUM')
 ON CONFLICT (id) DO NOTHING;
 
--- incident.incidents has no origin_candidate_id/title/description columns
--- (040_incident/migration.sql:116-135); incident_verification_status_enum
--- has no 'UNCONFIRMED' label (UNVERIFIED/PENDING/VERIFIED/DISPUTED only);
--- incident_structural_status_enum has no 'INDEPENDENT' label
--- (SINGLE/MERGED/SPLIT/SUB_INCIDENT/RELATED only).
+-- incident.incidents, post-reconciliation: title is a real NOT NULL column
+-- now (added); incident_verification_status_enum is
+-- UNCONFIRMED/PARTIALLY_CONFIRMED/CONFIRMED/DISPUTED (matches
+-- schema.target.prisma, not UNVERIFIED/PENDING/VERIFIED/DISPUTED);
+-- incident_structural_status_enum is INDEPENDENT/PARENT/CHILD/MERGED/SPLIT
+-- (matches schema.target.prisma, not SINGLE/MERGED/SPLIT/SUB_INCIDENT/RELATED).
 INSERT INTO incident.incidents (
   id, verification_status, operational_status, preventive_status, trend, structural_status,
-  incident_type_id, classification
+  incident_type_id, classification, title
 ) VALUES (
   '10000000-0000-0000-0000-000000000021',
-  'UNVERIFIED', 'ACTIVE', 'NONE', 'UNKNOWN', 'SINGLE',
-  'a0000000-0000-0000-0000-000000000011', 'CRITICAL'
+  'UNCONFIRMED', 'ACTIVE', 'NONE', 'UNKNOWN', 'INDEPENDENT',
+  'a0000000-0000-0000-0000-000000000011', 'CRITICAL', 'Incidente sintético de ensayo'
 )
 ON CONFLICT (id) DO NOTHING;
 

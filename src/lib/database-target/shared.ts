@@ -28,8 +28,21 @@ export type InformationClassification =
   | "RESTRICTED"
   | "CRITICAL";
 
-/** `actor_type_enum` — discriminator for polymorphic actor references (command.command_roles, alert.critical_instruction_versions, etc.). */
-export type ActorType = "PERSON" | "INSTITUTION" | "SYSTEM" | "AUTOMATED_PROCESS";
+/**
+ * `security.actor_type_enum` — discriminator for polymorphic actor
+ * references (command.command_roles, alert.critical_instruction_versions,
+ * etc.). Values corrected during the wave 030/040 DDL reconciliation
+ * session to match the REAL, already-applied enum in
+ * `prisma/target-migrations/010_foundation/migration.sql` (`PERSON`,
+ * `ORGANIZATION`, `SYSTEM`, `AUTOMATION_RULE`, `ANONYMOUS`) — not the
+ * (also-drifted) `prisma/schema.target.prisma` `ActorType` enum
+ * (`AUTOMATED_RULE`/`EXTERNAL_ACTOR` instead of `AUTOMATION_RULE`/
+ * `ANONYMOUS`), since wave 010 is out of scope for this reconciliation and
+ * its applied enum is what Postgres actually enforces. Flagged as a
+ * separate, known, out-of-scope drift (schema.target.prisma's ActorType vs.
+ * wave 010's applied `security.actor_type_enum`), not silently resolved.
+ */
+export type ActorType = "PERSON" | "ORGANIZATION" | "SYSTEM" | "AUTOMATION_RULE" | "ANONYMOUS";
 
 /** `confidence_level_enum` — used by evidence.observations, incident.incident_candidate_observations. */
 export type ConfidenceLevel = "UNKNOWN" | "LOW" | "MEDIUM" | "HIGH" | "CONFIRMED";

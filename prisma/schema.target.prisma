@@ -1671,14 +1671,31 @@ model Provider {
 }
 
 /// IngestionRun — one concrete collection cycle.
+/// NEW (reconciliation session) — discriminates the fusion of legacy `IngestionRun`+`KnowledgeIngestionRun` (T-01, D-02). Named explicitly by ARGUS_EXECUTABLE_DATABASE_MIGRATION_PLAN_v1.0.md Ola 3 ("fusión, discriminador origin_kind") but omitted from this file until this reconciliation — a demonstrated gap against the frozen plan, not a contradiction resolved by editing the plan.
+enum IngestionRunOriginKind {
+  EXTERNAL_EVENT_PIPELINE
+  GLOBAL_WATCH_PIPELINE
+
+  @@map("ingestion_run_origin_kind_enum")
+  @@schema("ingest")
+}
+
 model IngestionRun {
   id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   // UUIDv7 — see SQL_COMPLEMENTARY_REQUIRED: prisma/target-migrations/030_ingestion_observation_evidence/migration.sql
   sourceId       String             @map("source_id") @db.Uuid
   idempotencyKey String             @map("idempotency_key") @db.Uuid
+  originKind     IngestionRunOriginKind @map("origin_kind")
   status         IngestionRunStatus @default(RUNNING)
   startedAt      DateTime           @default(now()) @map("started_at") @db.Timestamptz(6)
   completedAt    DateTime?          @map("completed_at") @db.Timestamptz(6)
+  /// D-02 legacy provenance mixin — mandated for every backfilled table ("Added, per D-02, to every target table that receives backfill from a current Prisma model", shared.ts `LegacyProvenance`); this table receives backfill from `IngestionRun`+`KnowledgeIngestionRun` per the Ola 3 plan and already carried these columns in migration.sql — added here to close the gap, never removed from the SQL side.
+  legacyStatus         String?  @map("legacy_status") @db.Text
+  legacySource         String?  @map("legacy_source") @db.VarChar(100)
+  legacyRecordId       String?  @map("legacy_record_id") @db.Text
+  /// SQL_COMPLEMENTARY_REQUIRED: CHECK (migration_confidence IN ('HIGH','MEDIUM','LOW'))
+  migrationConfidence  String?  @map("migration_confidence") @db.VarChar(10)
+  migrationReviewStatus String? @map("migration_review_status") @db.VarChar(30)
 
   source          Source           @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   sourceRecords   SourceRecord[]
@@ -1705,6 +1722,12 @@ model SourceRecord {
   contentHash    String                    @map("content_hash") @db.Text
   classification InformationClassification @default(OPERATIONAL)
   receivedAt     DateTime                  @default(now()) @map("received_at") @db.Timestamptz(6)
+  /// D-02 legacy provenance mixin — this table receives backfill from `ExternalEvent` (T-01); see IngestionRun's identical note.
+  legacyStatus         String?  @map("legacy_status") @db.Text
+  legacySource         String?  @map("legacy_source") @db.VarChar(100)
+  legacyRecordId       String?  @map("legacy_record_id") @db.Text
+  migrationConfidence  String?  @map("migration_confidence") @db.VarChar(10)
+  migrationReviewStatus String? @map("migration_review_status") @db.VarChar(30)
   createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   ingestionRun    IngestionRun     @relation(fields: [ingestionRunId], references: [id], onDelete: Restrict)
@@ -1784,6 +1807,12 @@ model Observation {
   clientCreatedAt              DateTime?                             @map("client_created_at") @db.Timestamptz(6)
   receivedAt                   DateTime?                             @map("received_at") @db.Timestamptz(6)
   reconciliationStatus         String?                               @map("reconciliation_status") @db.VarChar(50)
+  /// D-02 legacy provenance mixin — this table receives backfill from `Report`/`ExternalEvent`/`TelecomConnectivityStatus`; see IngestionRun's identical note.
+  legacyStatus         String?  @map("legacy_status") @db.Text
+  legacySource         String?  @map("legacy_source") @db.VarChar(100)
+  legacyRecordId       String?  @map("legacy_record_id") @db.Text
+  migrationConfidence  String?  @map("migration_confidence") @db.VarChar(10)
+  migrationReviewStatus String? @map("migration_review_status") @db.VarChar(30)
   createdAt                    DateTime                              @default(now()) @map("created_at") @db.Timestamptz(6)
 
   author              Person?             @relation(fields: [authorPersonId], references: [id], onDelete: SetNull)
@@ -1999,6 +2028,12 @@ model IncidentCandidate {
   correlationKey     String?                   @map("correlation_key") @db.Text
   classification     InformationClassification @default(OPERATIONAL)
   promotionStartedAt DateTime?                 @map("promotion_started_at") @db.Timestamptz(6)
+  /// D-02 legacy provenance mixin — this table receives backfill from `KnowledgeIncident`; see IngestionRun's identical note.
+  legacyStatus         String?  @map("legacy_status") @db.Text
+  legacySource         String?  @map("legacy_source") @db.VarChar(100)
+  legacyRecordId       String?  @map("legacy_record_id") @db.Text
+  migrationConfidence  String?  @map("migration_confidence") @db.VarChar(10)
+  migrationReviewStatus String? @map("migration_review_status") @db.VarChar(30)
   createdAt          DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   incidentCandidateObservations IncidentCandidateObservation[]
@@ -2102,6 +2137,14 @@ model Incident {
   classification     InformationClassification  @default(CRITICAL)
   title              String                     @db.VarChar(255)
   description        String?                    @db.Text
+  /// SQL_COMPLEMENTARY_REQUIRED: PostGIS geography column + GIST index, see prisma/target-migrations/040_incident/migration.sql
+  location           Unsupported("geography(Point,4326)")?
+  /// D-02 legacy provenance mixin — this table receives backfill from `KnowledgeIncident`; see IngestionRun's identical note.
+  legacyStatus         String?  @map("legacy_status") @db.Text
+  legacySource         String?  @map("legacy_source") @db.VarChar(100)
+  legacyRecordId       String?  @map("legacy_record_id") @db.Text
+  migrationConfidence  String?  @map("migration_confidence") @db.VarChar(10)
+  migrationReviewStatus String? @map("migration_review_status") @db.VarChar(30)
   createdAt          DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
   closedAt           DateTime?                  @map("closed_at") @db.Timestamptz(6)
 
@@ -2253,6 +2296,12 @@ model IncidentTransition {
   decidedByActorType ActorType              @map("decided_by_actor_type")
   /// POLYMORPHIC Actor reference — no physical FK
   decidedByActorId   String                 @map("decided_by_actor_id") @db.Uuid
+  /// D-02 legacy provenance mixin — this table receives backfill from `IncidentTransition` (T-03); see IngestionRun's identical note.
+  legacyStatus         String?  @map("legacy_status") @db.Text
+  legacySource         String?  @map("legacy_source") @db.VarChar(100)
+  legacyRecordId       String?  @map("legacy_record_id") @db.Text
+  migrationConfidence  String?  @map("migration_confidence") @db.VarChar(10)
+  migrationReviewStatus String? @map("migration_review_status") @db.VarChar(30)
   occurredAt         DateTime               @default(now()) @map("occurred_at") @db.Timestamptz(6)
 
   incident Incident        @relation(fields: [incidentId], references: [id], onDelete: Restrict)

@@ -50,15 +50,6 @@ describe.skipIf(!shouldRun)("wave3 local Docker integration — synthetic flow x
   it("runs the full synthetic flow twice with zero duplicates and zero Incident promotion", async () => {
     client = await getTargetPrismaClient();
 
-    // Baseline BEFORE running anything — the wave-040 migration rehearsal's
-    // own synthetic backfill fixtures may already have promoted an
-    // unrelated legacy row into incident.incidents as part of validating
-    // wave 040's OWN backfill.sql (confirmed: legacy_record_id
-    // 99000000-0000-0000-0000-000000000002, nothing to do with this test's
-    // "ki_wave3_test" data). This test proves THIS FLOW never adds to that
-    // count, not that the table is empty in absolute terms.
-    const incidentCountBefore = await (client as unknown as { incident: { count: () => Promise<number> } }).incident.count();
-
     async function runFlow() {
       // 1. SourceRegistry entry (synthetic, deterministic — not dependent on live app registry contents).
       const entry: CanonicalSourceEntry = {
@@ -229,9 +220,17 @@ describe.skipIf(!shouldRun)("wave3 local Docker integration — synthetic flow x
     expect(first.linkCreated).toBe(true);
     expect(second.linkCreated).toBe(false);
 
-    // Zero Incident promotion caused by THIS flow, ever — the single most important safety property.
-    const incidentCountAfter = await (client as unknown as { incident: { count: () => Promise<number> } }).incident.count();
-    expect(incidentCountAfter).toBe(incidentCountBefore);
+    // Zero Incident promotion caused by THIS flow, ever — the single most
+    // important safety property. Scoped to THIS flow's own candidate id
+    // (rather than a global table-wide count) because other test files
+    // (wave 4's promotion service tests) legitimately create unrelated
+    // incident.incidents rows in the same shared rehearsal database, and
+    // vitest may run test files concurrently — a global count would be
+    // racy against that unrelated activity, not a real signal either way.
+    const incidentCount = await (client as unknown as { incident: { count: (args: unknown) => Promise<number> } }).incident.count({
+      where: { originCandidateId: first.candidateId },
+    });
+    expect(incidentCount).toBe(0);
 
     // Exactly one row per table — the second run never inserted a duplicate.
     const sourceCount = await (client as unknown as { source: { count: (args: unknown) => Promise<number> } }).source.count({ where: { id: first.sourceId } });

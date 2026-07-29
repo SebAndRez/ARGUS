@@ -123,7 +123,34 @@ jobs:
       - name: Wave 3 — no-Incident-promotion + default-flags-off + anti-remote guard
         run: npx vitest run tests/database-target/wave3-no-incident-promotion.test.ts tests/database-target/target-feature-flags.test.ts tests/database-target/target-client-factory-anti-remote.test.ts
 
-      - name: Wave 3 — tear down local Postgres/PostGIS
+      # ---------------------------------------------------------------------
+      # Wave 4 — IncidentPromotion/DiscardDecision/IncidentHypothesis
+      # integration proof. Reuses the SAME already-up waves 000-040 container
+      # from the Wave 3 section above (no second Docker bring-up needed —
+      # incident.* also lives in wave 040) — runs before that container is
+      # torn down.
+      # ---------------------------------------------------------------------
+      - name: Wave 4 — human/automated promotion, discard, hypothesis, idempotency, concurrency, audit, RLS coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATABASE_URL=$(grep '^DATABASE_URL=' .env.argus-migration.local | cut -d= -f2-)
+          export ARGUS_WAVE3_INTEGRATION_TEST=true
+          export TARGET_DATABASE_URL="$DATABASE_URL"
+          npx vitest run \
+            tests/database-target/incident-promotion-human.test.ts \
+            tests/database-target/incident-promotion-automated.test.ts \
+            tests/database-target/incident-promotion-idempotency.test.ts \
+            tests/database-target/incident-promotion-concurrency.test.ts \
+            tests/database-target/discard-decision.test.ts \
+            tests/database-target/incident-hypothesis.test.ts \
+            tests/database-target/incident-promotion-audit.test.ts \
+            tests/database-target/wave4-local-integration.test.ts
+
+      - name: Wave 4 — no-direct-Incident-creation + RLS structural coverage (no Docker needed, but confirmed here alongside the rest of wave 4)
+        run: npx vitest run tests/database-target/wave4-no-direct-incident-creation.test.ts tests/database-target/incident-promotion-rls.test.ts
+
+      - name: Wave 3/4 — tear down local Postgres/PostGIS
         if: always()
         shell: bash
         run: |

@@ -20,6 +20,9 @@
 import type { ActorType, ConfidenceLevel, GeoPoint, InformationClassification, LegacyProvenance } from "./shared";
 import type { ObservationProvenance } from "./evidence";
 
+/** `incident_state_dimension_enum` — the 5 short-form values used by `incident.incident_transitions.dimension` (matches the applied `prisma/target-migrations/040_incident/migration.sql` DDL exactly). */
+export type IncidentStateDimension = "VERIFICATION" | "OPERATIONAL" | "PREVENTIVE" | "TREND" | "STRUCTURAL";
+
 /** `incident_verification_status_enum` (default 'UNCONFIRMED') — 4 values per `ARGUS_PHYSICAL_ENUMS_REFERENCE_DATA_v1.1_FROZEN.md` #26, transcribed exactly from `prisma/schema.target.prisma`. */
 export type IncidentVerificationStatus =
   | "UNCONFIRMED"
@@ -74,6 +77,8 @@ export interface Incident extends Partial<LegacyProvenance> {
   title: string;
   /** db: description — text NULL */
   description: string | null;
+  /** db: location — geography(Point,4326) NULL, projected back via GeoPoint at the API boundary */
+  location: GeoPoint | null;
   /** db: created_at */
   createdAt: string;
   /** db: closed_at */
@@ -240,22 +245,103 @@ export interface IncidentRelation {
 }
 
 /** `incident.incident_transitions` — historical state-change log for an incident's five dimensions. */
-export interface IncidentTransition {
+export interface IncidentTransition extends Partial<LegacyProvenance> {
   /** db: id */
   id: string;
-  /** db: incident_id — uuid NOT NULL REFERENCES incident.incidents(id) */
+  /** db: incident_id — uuid NOT NULL REFERENCES incident.incidents(id) ON DELETE RESTRICT */
   incidentId: string;
   /** db: dimension — which of the 5 status dimensions changed */
-  dimension:
-    | "verification_status"
-    | "operational_status"
-    | "preventive_status"
-    | "trend"
-    | "structural_status";
-  /** db: previous_value */
+  dimension: IncidentStateDimension;
+  /** db: previous_value — varchar(50) NULL (absent on the first transition of a freshly-promoted incident) */
   previousValue: string | null;
-  /** db: new_value */
+  /** db: new_value — varchar(50) NOT NULL */
   newValue: string;
+  /** db: reason — text NULL */
+  reason: string | null;
+  /** db: evidence_id — uuid NULL REFERENCES evidence.evidence_records(id) ON DELETE SET NULL */
+  evidenceId: string | null;
+  /** db: decided_by_actor_type — actor_type_enum NOT NULL (POLYMORPHIC, no physical FK) */
+  decidedByActorType: ActorType;
+  /** db: decided_by_actor_id — uuid NOT NULL */
+  decidedByActorId: string;
+  /** db: occurred_at */
+  occurredAt: string;
+}
+
+/**
+ * `incident.incident_promotions` — the promotion decision record. Exactly
+ * one row per promoted `IncidentCandidate` (`uq_incident_promotions_candidate`)
+ * and per resulting `Incident` (`uq_incident_promotions_incident`); a third
+ * UNIQUE constraint on `idempotencyKey` is the physical mechanism that makes
+ * a duplicate retry a no-op rather than a second row.
+ */
+export interface IncidentPromotion {
+  /** db: id */
+  id: string;
+  /** db: incident_candidate_id — uuid NOT NULL UNIQUE REFERENCES incident.incident_candidates(id) ON DELETE RESTRICT */
+  incidentCandidateId: string;
+  /** db: incident_id — uuid NOT NULL UNIQUE REFERENCES incident.incidents(id) ON DELETE RESTRICT */
+  incidentId: string;
+  /** db: decided_by_actor_type — actor_type_enum NOT NULL */
+  decidedByActorType: ActorType;
+  /** db: decided_by_actor_id — uuid NOT NULL */
+  decidedByActorId: string;
+  /** db: automation_rule_id — uuid NULL REFERENCES governance.automation_rules(id) ON DELETE SET NULL; NOT NULL when decidedByActorType === 'AUTOMATION_RULE' (ck_incident_promotions_actor_or_rule) */
+  automationRuleId: string | null;
+  /** db: automation_rule_version — integer NULL; the AutomationRule.version this decision was evaluated against, for audit reproducibility. */
+  automationRuleVersion: number | null;
+  /** db: input_data_snapshot — jsonb NOT NULL; the ProposedIncidentProfile (+ correlation context) the decision was made from, frozen at decision time. */
+  inputDataSnapshot: Record<string, unknown>;
+  /** db: confidence — confidence_level_enum NOT NULL */
+  confidence: ConfidenceLevel;
+  /** db: explanation — text NOT NULL; never empty — the human-readable justification for the decision (a rule name/threshold summary for automation, a free-text rationale for a human decider). */
+  explanation: string;
+  /** db: idempotency_key — uuid NOT NULL UNIQUE (uq_incident_promotions_idempotency); caller-supplied, deterministic per logical promotion attempt. */
+  idempotencyKey: string;
+  /** db: decided_at */
+  decidedAt: string;
+}
+
+/**
+ * `incident.discard_decisions` — the discard decision record. At most one
+ * row per `IncidentCandidate` (`uq_discard_decisions_candidate`) — discard
+ * is irreversible per doctrine: this table is insert-only, never updated or
+ * deleted, and the candidate row itself is never deleted either (only its
+ * `status` column moves to `DISCARDED`).
+ */
+export interface DiscardDecision {
+  /** db: id */
+  id: string;
+  /** db: incident_candidate_id — uuid NOT NULL UNIQUE REFERENCES incident.incident_candidates(id) ON DELETE RESTRICT */
+  incidentCandidateId: string;
+  /** db: decided_by_actor_type — actor_type_enum NOT NULL */
+  decidedByActorType: ActorType;
+  /** db: decided_by_actor_id — uuid NOT NULL */
+  decidedByActorId: string;
+  /** db: reason — text NOT NULL; never empty. */
+  reason: string;
+  /** db: decided_at */
+  decidedAt: string;
+}
+
+/** `hypothesis_status_enum` — ACTIVE/DISCARDED, matches the applied DDL exactly. */
+export type IncidentHypothesisStatus = "ACTIVE" | "DISCARDED";
+
+/**
+ * `incident.hypotheses` — a candidate explanation attached to an
+ * `IncidentCandidate` PRE-promotion. Never itself promotes or discards the
+ * candidate it belongs to; purely descriptive working state for human/
+ * automated assessment.
+ */
+export interface IncidentHypothesis {
+  /** db: id */
+  id: string;
+  /** db: incident_candidate_id — uuid NOT NULL REFERENCES incident.incident_candidates(id) ON DELETE CASCADE */
+  incidentCandidateId: string;
+  /** db: description — text NOT NULL; never empty. */
+  description: string;
+  /** db: status — DEFAULT 'ACTIVE' */
+  status: IncidentHypothesisStatus;
   /** db: created_at */
   createdAt: string;
 }

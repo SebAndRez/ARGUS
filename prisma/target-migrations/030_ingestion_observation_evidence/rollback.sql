@@ -46,6 +46,7 @@ DO $$ BEGIN DROP TYPE IF EXISTS evidence.observation_verification_status_enum; E
 DO $$ BEGIN DROP TYPE IF EXISTS evidence.report_author_type_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN DROP TYPE IF EXISTS evidence.observation_origin_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN DROP TYPE IF EXISTS evidence.confidence_level_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP TYPE IF EXISTS ingest.ingestion_run_origin_kind_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN DROP TYPE IF EXISTS ingest.ingestion_run_status_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN DROP TYPE IF EXISTS ingest.source_record_origin_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN DROP TYPE IF EXISTS ingest.provider_status_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;

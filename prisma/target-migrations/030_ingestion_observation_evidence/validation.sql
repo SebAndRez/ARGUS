@@ -34,9 +34,10 @@ HAVING c.relrowsecurity = false OR COUNT(p.polname) = 0;
 SELECT indexname FROM pg_indexes WHERE schemaname = 'evidence' AND indexname = 'gix_observations_location';
 -- Expected: 1 row.
 
--- D-04 structural mapping present in source (illustrative label, not yet
--- backfilled since both current tables have 0 rows)
+-- D-04: TelecomConnectivityStatus/Evidence (0 rows currently) map onto the
+-- same PRIMARY/DERIVED origin_type_enum as every other observation — no
+-- special label was ever required; confirm the enum has exactly the 2
+-- schema.target.prisma values (never a 3rd invented label).
 SELECT enumlabel FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
-WHERE t.typname = 'observation_origin_enum';
--- Human check: confirm whether 'TELECOM_CONNECTIVITY_LEGACY' (or an approved
--- equivalent label) has been added to this enum before D-04's first real row.
+WHERE t.typname = 'observation_origin_enum' ORDER BY e.enumsortorder;
+-- Expected: PRIMARY, DERIVED (exactly 2 rows).

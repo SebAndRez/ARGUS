@@ -203,10 +203,12 @@ SELECT re.id, re.person_id, re.trust_domain, re.delta, re.reason, re.occurred_at
 FROM identity.reputation_events re;
 
 -- 3.3 proj.incident_timelines — simple view, always fresh.
--- incident.incident_transitions' columns are from_value/to_value, not
--- previous_value/new_value (040_incident/migration.sql:226-240).
+-- Column names updated to match incident.incident_transitions as
+-- reconciled against schema.target.prisma in 040_incident/migration.sql:
+-- previous_value/new_value (not from_value/to_value), occurred_at (not
+-- transitioned_at).
 CREATE OR REPLACE VIEW proj.incident_timelines AS
-SELECT it.incident_id, it.dimension, it.from_value, it.to_value, it.transitioned_at
+SELECT it.incident_id, it.dimension, it.previous_value, it.new_value, it.occurred_at
 FROM incident.incident_transitions it;
 
 -- 3.4 proj.mission_timelines — simple view, always fresh.
