@@ -22,6 +22,25 @@
 -- that failure is the correct, expected behavior, not a bug in this script.
 
 -- ============================================================
+-- 0b. migration_meta schema + its 2 own tables
+-- ============================================================
+-- Created by THIS wave's backfill.sql (CREATE SCHEMA migration_meta;
+-- CREATE TABLE migration_meta.legacy_status_mapping/migration_checkpoints).
+-- Confirmed real residue by full-rehearsal catalog-object-inventory diff
+-- (fresh baseline vs. post 100->000 rollback) before this fix — this
+-- schema/its tables survived a full rollback cycle because nothing dropped
+-- them. Every OTHER wave that writes into migration_meta
+-- (060_resources/backfill.sql: migration_meta.critical_poi_review_queue)
+-- drops its own table in its own rollback.sql, and 000's rollback runs
+-- LAST in the reverse wave order (100 -> ... -> 010 -> 000), so by the
+-- time this statement runs, migration_meta contains only the 2 tables
+-- this wave itself created — safe to drop the schema bare (no CASCADE)
+-- once both are gone.
+DROP TABLE IF EXISTS migration_meta.legacy_status_mapping;
+DROP TABLE IF EXISTS migration_meta.migration_checkpoints;
+DROP SCHEMA IF EXISTS migration_meta;
+
+-- ============================================================
 -- 1. Drop the 6 roles (guarded)
 -- ============================================================
 DO $$

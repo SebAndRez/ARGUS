@@ -275,5 +275,10 @@ CREATE POLICY resource_reservations_assignment_or_ownership ON resource.resource
 -- ============================================================
 -- 4. Grants
 -- ============================================================
+-- SCHEMA-LEVEL USAGE (corrective session): table grants below are
+-- unreachable without USAGE on their schema ("permission denied for
+-- schema <x>" fires before RLS is even consulted). Proven by the real
+-- non-superuser RLS matrix, scripts/migration-rehearsal/sql/rls-matrix-checks.sql.
+GRANT USAGE ON SCHEMA resource TO app_api, jobs_worker, readonly_inspector;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA resource TO app_api;
 GRANT SELECT ON ALL TABLES IN SCHEMA resource TO jobs_worker, readonly_inspector;

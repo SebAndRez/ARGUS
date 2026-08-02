@@ -495,6 +495,13 @@ CREATE POLICY availability_declarations_owner_or_institution ON capability.avail
 -- ============================================================
 -- 7. Grants
 -- ============================================================
+-- SCHEMA-LEVEL USAGE (corrective session): table grants below are
+-- unreachable without USAGE on their schema ("permission denied for
+-- schema <x>" fires before RLS is even consulted). Proven by the real
+-- non-superuser RLS matrix, scripts/migration-rehearsal/sql/rls-matrix-checks.sql.
+GRANT USAGE ON SCHEMA identity TO app_api, ingest_worker, jobs_worker;
+GRANT USAGE ON SCHEMA institution TO app_api, ingest_worker, jobs_worker, readonly_inspector;
+GRANT USAGE ON SCHEMA capability TO app_api, readonly_inspector;
 GRANT SELECT, INSERT, UPDATE ON identity.people, identity.user_accounts, identity.verified_identities,
   identity.liveness_checks, identity.devices, identity.operational_sessions, identity.reputation_events,
   identity.emergency_contacts, identity.consents TO app_api;

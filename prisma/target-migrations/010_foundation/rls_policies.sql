@@ -31,19 +31,24 @@
 -- migration.sql comments, since only 010_foundation carries a dedicated
 -- rls_policies.sql per the mandate) calls these same six functions by name.
 
+-- STUB in this wave, deliberately: a real body cannot be defined here — it
+-- must dispatch to identity.*/institution.*/help.*/incident.* tables that
+-- do not exist yet at wave 010 time (confirmed empirically: `CREATE
+-- FUNCTION ... LANGUAGE sql` DOES validate table references against the
+-- catalog at creation time in this Postgres version, unlike `plpgsql`'s
+-- fully-deferred validation — a `CREATE OR REPLACE` referencing
+-- `identity.people` here fails wave 010 outright with
+-- "relation does not exist"). The REAL implementation (corrective
+-- session) is defined via a second `CREATE OR REPLACE FUNCTION` in
+-- `050_help_mission/migration.sql`, once every table it dispatches on
+-- (identity/institution from wave 020, incident.* from wave 040,
+-- help.help_requests from this same wave 050) already exists — see that
+-- wave's own copy for the real body and its documentation.
 CREATE OR REPLACE FUNCTION security.fn_is_owner(p_actor_id uuid, p_target_table text, p_target_id uuid)
 RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
-  -- Placeholder body: real implementation dispatches on p_target_table to the
-  -- correct owning-column comparison (e.g. 'people' -> people.id = p_actor_id,
-  -- 'help_requests' -> requester_person_id = p_actor_id). A single generic
-  -- function cannot express this without dynamic SQL against an
-  -- application-validated whitelist of target_table values (same pattern as
-  -- governance.jurisdiction_scopes.scoped_table's CHECK whitelist) — the
-  -- exact dispatch table is a human design decision deferred to
-  -- implementation time, flagged SQL_COMPLEMENTARY_REQUIRED.
   SELECT false;
 $$;
 
@@ -75,19 +80,19 @@ AS $$
   SELECT false;
 $$;
 
+-- STUB in this wave, deliberately: same reason as fn_is_owner above — a
+-- real body would reference command.command_roles/incident_command_structures,
+-- which do not exist until Wave 040, and `CREATE FUNCTION ... LANGUAGE sql`
+-- validates table references at creation time. The REAL implementation
+-- (corrective session) is defined via a second `CREATE OR REPLACE FUNCTION`
+-- at the end of `040_incident/migration.sql`, once those tables (and
+-- institution.institutional_memberships, from wave 020) exist — see that
+-- wave's own copy for the real body and its documentation.
 CREATE OR REPLACE FUNCTION security.fn_has_command_role(p_actor_id uuid, p_incident_id uuid)
 RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
-  -- Real body (once command.command_roles/incident_command_structures exist,
-  -- Wave 040):
-  -- SELECT EXISTS (
-  --   SELECT 1 FROM command.command_roles cr
-  --   JOIN command.incident_command_structures ics ON ics.id = cr.incident_command_structure_id
-  --   WHERE ics.incident_id = p_incident_id AND cr.actor_id = p_actor_id
-  --     AND cr.revoked_at IS NULL
-  -- );
   SELECT false;
 $$;
 
@@ -105,18 +110,39 @@ AS $$
   SELECT false;
 $$;
 
+-- REAL implementation (corrective session — was a `SELECT false` stub).
+-- `security.access_roles`/`access_role_permissions` (this same wave) have
+-- NO junction table back to an actor — there is no physical
+-- actor->AccessRole relationship anywhere in the target schema, a real,
+-- pre-existing gap the original stub's own comment already flagged
+-- SQL_COMPLEMENTARY_REQUIRED. Inventing a new junction table to close it is
+-- exactly what the corrective mandate forbids ("no inventar roles,
+-- memberships o jurisdicciones") — so this resolves clearance instead via
+-- `argus.actor_role`, the SAME session GUC every OTHER already-committed
+-- policy in this package already relies on (governance.emergency_bases,
+-- security.access_policies/legal_holds/retention_policies/security_events,
+-- etc.) — a real, existing mechanism, not a new invention.
+-- ARGUS_PHYSICAL_ACCESS_CONTROL_v1.1_FROZEN.md §4.6/§4.7 explicitly gates
+-- `incident.incident_candidates`/`risk.risk_assessments` (RESTRICTED) on
+-- `actor_role='OPERATIONAL' AND fn_classification_allowed`, and
+-- `incident.incidents` (CRITICAL, §4.6) is commanded by those same
+-- OPERATIONAL command-role actors — so OPERATIONAL's ceiling must reach
+-- CRITICAL for the command dimension to ever grant anything on incidents.
+-- Fails closed: NULL actor, NULL classification, or any unrecognized/absent
+-- actor_role never passes above PUBLIC. A full AccessRole-table-based
+-- implementation remains a separate, larger, explicitly out-of-scope gap
+-- for this session (flagged here, not hidden).
 CREATE OR REPLACE FUNCTION security.fn_classification_allowed(p_actor_id uuid, p_classification security.information_classification_enum)
 RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
-  -- Real body (once security.access_roles/access_role_permissions carry a
-  -- max-classification concept — deferred design detail, flagged
-  -- SQL_COMPLEMENTARY_REQUIRED): resolves the actor's current AccessRole and
-  -- compares its authorized maximum information_classification_enum against
-  -- p_classification using the enum's declared ordering
-  -- (PUBLIC < OPERATIONAL < SENSITIVE < RESTRICTED < CRITICAL).
-  SELECT false;
+  SELECT CASE
+    WHEN p_actor_id IS NULL OR p_classification IS NULL THEN false
+    WHEN p_classification = 'PUBLIC' THEN current_setting('argus.actor_role', true) IS NOT NULL
+    WHEN current_setting('argus.actor_role', true) IN ('ADMIN', 'AUDIT', 'SECURITY', 'SYSTEM', 'OPERATIONAL') THEN true
+    ELSE false
+  END;
 $$;
 
 CREATE OR REPLACE FUNCTION security.fn_has_emergency_access(p_actor_id uuid, p_emergency_profile_id uuid)

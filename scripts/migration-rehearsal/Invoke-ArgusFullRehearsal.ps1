@@ -110,6 +110,15 @@ try {
     $emptyCatalog = Get-ArgusCatalogSnapshot
     $overallResult.EmptyCatalogSnapshot = $emptyCatalog.Output
 
+    # Per-object baseline for the Fase 3/4 zero-residue assertion. The
+    # aggregate counts above are not enough to prove rollback correctness —
+    # a diffable object list is (mandate: "No aceptes 'el script terminó sin
+    # error' como prueba de rollback correcto").
+    $emptyInventory = Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "sql\catalog-object-inventory.sql")
+    $baselineInventoryPath = Join-Path $Script:ArgusArtifactDir "catalog-inventory-empty.txt"
+    if (-not (Test-Path $Script:ArgusArtifactDir)) { New-Item -ItemType Directory -Force -Path $Script:ArgusArtifactDir | Out-Null }
+    $emptyInventory.Output | Set-Content -Path $baselineInventoryPath -Encoding utf8
+
     # Legacy-schema synthetic fixtures (public schema) - loaded here, after the
     # empty-catalog snapshot so that snapshot stays genuinely empty, and before
     # any wave applies, since Wave 010's backfill.sql is the first to SELECT
@@ -127,7 +136,33 @@ try {
     $overallResult.RollbackWaves = Invoke-ArgusRollbackCycle
     $postRollbackCatalog = Get-ArgusCatalogSnapshot
     $overallResult.PostRollbackCatalogSnapshot = $postRollbackCatalog.Output
-    $overallResult.RollbackResidueNote = "Compare EmptyCatalogSnapshot vs PostRollbackCatalogSnapshot in the JSON artifact - any TABLES/VIEWS/FUNCTIONS/TRIGGERS/POLICIES count above the empty baseline is a residue to document or fix. EXTENSIONS is expected to differ (postgis/pgcrypto are not removed by rollback - deliberate, shared, documented here, not silently dropped)."
+
+    # ---- Fase 4 (corrective mandate): ARGUS_TARGET_RESIDUAL_OBJECT_COUNT = 0 ----
+    # BLOCKING. Extensions and the synthetic legacy `public.*` fixtures are
+    # classified out by classify-catalog-residue.mjs; anything else left in
+    # the catalog after a full 100->000 rollback fails the rehearsal here.
+    Write-ArgusLog "=== Fase 4: asserting ARGUS_TARGET_RESIDUAL_OBJECT_COUNT = 0 ==="
+    $postRollbackInventory = Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "sql\catalog-object-inventory.sql")
+    $postRollbackInventoryPath = Join-Path $Script:ArgusArtifactDir "catalog-inventory-post-rollback.txt"
+    $postRollbackInventory.Output | Set-Content -Path $postRollbackInventoryPath -Encoding utf8
+
+    Push-Location $Script:ArgusRepoRoot
+    try {
+        $residueReport = Invoke-ArgusNative {
+            & node (Join-Path $PSScriptRoot "lib\classify-catalog-residue.mjs") $baselineInventoryPath $postRollbackInventoryPath 2>&1
+        }
+        $residueExit = $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+    $overallResult.RollbackResidueReport = $residueReport
+    $residueCountLine = $residueReport | Select-String -Pattern "ARGUS_TARGET_RESIDUAL_OBJECT_COUNT="
+    Write-ArgusLog "$residueCountLine"
+    if ($residueExit -ne 0) {
+        throw "ROLLBACK_ZERO_RESIDUE_FAIL - ARGUS target objects survived the full 100->000 rollback:`n$($residueReport -join "`n")"
+    }
+    $overallResult.RollbackZeroResiduePass = $true
+    Write-ArgusLog "ROLLBACK_ZERO_RESIDUE_PASS"
 
     # ---- Fase 7 (reproducibility within the SAME volume): reapply 000-100 ----
     Write-ArgusLog "=== Fase 7: reapplying all 11 waves after rollback (same volume) ==="

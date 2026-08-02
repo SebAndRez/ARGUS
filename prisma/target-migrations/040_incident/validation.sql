@@ -44,4 +44,7 @@ WHERE c1.contype = 'f' AND c1.connamespace IN ('incident'::regnamespace,'risk'::
 -- GIST indexes present
 SELECT indexname FROM pg_indexes
 WHERE schemaname IN ('incident','risk') AND indexname LIKE 'gix_%';
--- Expected: 3 rows (gix_incidents_location, gix_affected_area_versions_geometry, gix_risk_area_versions_geometry).
+-- Expected: 2 rows (gix_affected_area_versions_geometry, gix_risk_area_versions_geometry).
+-- incident.incidents has no geography column of its own (not in the frozen
+-- physical ficha, ARGUS_PHYSICAL_TABLE_CATALOG_v1.0.md §incident.incidents)
+-- — geography lives on the child incident.affected_area_versions table.

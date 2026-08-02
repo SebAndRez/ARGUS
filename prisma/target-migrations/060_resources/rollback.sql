@@ -17,6 +17,18 @@ DROP FUNCTION IF EXISTS resource.fn_reservation_single_extension();
 -- dangling after this wave rolls back would be stale).
 DROP VIEW IF EXISTS resource.vw_migration_review_queue;
 
+-- migration_meta.critical_poi_review_queue is CREATED by THIS wave's
+-- backfill.sql (not migration.sql, and not migration_meta's own owning
+-- wave 000) — confirmed real residue by full-rehearsal catalog-object-
+-- inventory diff (fresh baseline vs. post 100->000 rollback): this table
+-- survived a full rollback cycle because no rollback.sql dropped it. The
+-- view above already reads FROM this table, so it must be dropped first
+-- (already is, by file order) before this DROP. The migration_meta SCHEMA
+-- itself is dropped later, by 000_preflight/rollback.sql (which creates
+-- it and runs last in the reverse rollback order), once this and its own
+-- 2 tables are gone.
+DROP TABLE IF EXISTS migration_meta.critical_poi_review_queue;
+
 -- resources_institution_or_reservation (a policy ON resource.resources)
 -- references resource.resource_reservations in its USING clause, which
 -- blocks dropping resource_reservations while that policy still exists

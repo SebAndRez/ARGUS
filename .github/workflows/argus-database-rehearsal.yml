@@ -150,6 +150,82 @@ jobs:
       - name: Wave 4 — no-direct-Incident-creation + RLS structural coverage (no Docker needed, but confirmed here alongside the rest of wave 4)
         run: npx vitest run tests/database-target/wave4-no-direct-incident-creation.test.ts tests/database-target/incident-promotion-rls.test.ts
 
+      # ---------------------------------------------------------------------
+      # Corrective session — real RLS + zero-residue rollback + risk/command
+      # reconciliation. Every one of these is BLOCKING: the mandate forbids
+      # accepting "the script exited 0" as proof of rollback correctness, and
+      # forbids declaring RLS working when only a superuser exercised it.
+      # ---------------------------------------------------------------------
+      - name: RLS matrix — non-superuser roles, positive AND negative cases (blocking)
+        shell: pwsh
+        run: |
+          . ./scripts/migration-rehearsal/lib/Common.ps1
+          Get-ArgusLocalEnv | Out-Null
+          $m = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/rls-matrix-checks.sql" -AllowFailure
+          $m.Output | ForEach-Object { Write-Host $_ }
+          if ($m.ExitCode -ne 0) { Write-Error "RLS matrix aborted (exit $($m.ExitCode))"; exit 1 }
+          $fails = @($m.Output | Select-String -Pattern "RLS_TEST_FAIL")
+          if ($fails.Count -gt 0) { Write-Error "RLS_TEST_FAIL:`n$($fails -join "`n")"; exit 1 }
+          $pos = @($m.Output | Select-String -Pattern "RLS_TEST_PASS \| positive").Count
+          $neg = @($m.Output | Select-String -Pattern "RLS_TEST_PASS \| negative").Count
+          $sec = @($m.Output | Select-String -Pattern "RLS_TEST_PASS \| role_security").Count
+          $stub = @($m.Output | Select-String -Pattern "RLS_TEST_PASS \| helper_not_stub").Count
+          Write-Host "RLS_POSITIVE_PASS=$pos RLS_NEGATIVE_PASS=$neg RLS_ROLE_SECURITY_PASS=$sec HELPERS_NOT_STUB=$stub"
+          if ($pos -lt 5)  { Write-Error "Too few positive RLS cases ($pos) - a deny-everything suite is not RLS validation"; exit 1 }
+          if ($neg -lt 10) { Write-Error "Too few negative RLS cases ($neg)"; exit 1 }
+          if ($sec -lt 2)  { Write-Error "Role-security preconditions did not pass"; exit 1 }
+          if ($stub -lt 3) { Write-Error "One or more RLS helpers is still a stub"; exit 1 }
+
+      - name: Assert zero BYPASSRLS / superuser among application roles (blocking)
+        shell: pwsh
+        run: |
+          . ./scripts/migration-rehearsal/lib/Common.ps1
+          Get-ArgusLocalEnv | Out-Null
+          $r = Invoke-ArgusPsql -SqlText "SELECT count(*) FROM pg_roles WHERE rolname IN ('app_api','ingest_worker','jobs_worker','audit_reader','readonly_inspector','migration_owner') AND (rolsuper OR rolbypassrls);"
+          $r.Output | ForEach-Object { Write-Host $_ }
+          if (($r.Output -join ' ') -notmatch '(^|\s)0(\s|$)') { Write-Error "An ARGUS role has SUPERUSER or BYPASSRLS"; exit 1 }
+
+      - name: Helper/reconciliation/rollback contract tests (static, blocking)
+        run: |
+          npx vitest run \
+            tests/database-target/rls-helper-is-owner.test.ts \
+            tests/database-target/rls-helper-command-role.test.ts \
+            tests/database-target/rls-helper-classification.test.ts \
+            tests/database-target/rls-non-superuser.test.ts \
+            tests/database-target/rls-no-bypassrls.test.ts \
+            tests/database-target/rls-positive-access.test.ts \
+            tests/database-target/rls-negative-access.test.ts \
+            tests/database-target/risk-schema-reconciliation.test.ts \
+            tests/database-target/command-schema-reconciliation.test.ts \
+            tests/database-target/risk-escalation-no-direct-incident.test.ts \
+            tests/database-target/command-membership-expiry.test.ts \
+            tests/database-target/command-jurisdiction-access.test.ts \
+            tests/database-target/schema-target-change-justification.test.ts \
+            tests/database-target/rollback-object-ownership.test.ts
+
+      - name: Rollback leaves ZERO ARGUS residue (blocking — full 100->000 cycle)
+        shell: pwsh
+        run: |
+          . ./scripts/migration-rehearsal/lib/Common.ps1
+          Get-ArgusLocalEnv | Out-Null
+          # Baseline was captured before any wave applied? No — this job's
+          # container already has 000-040 applied, so roll everything back and
+          # compare against a freshly-reset database instead.
+          $waves = @("000_preflight","010_foundation","020_identity","030_ingestion_observation_evidence","040_incident")
+          foreach ($w in ($waves | Sort-Object -Descending)) {
+            $dir = Join-Path (Join-Path $Script:ArgusRepoRoot "prisma/target-migrations") $w
+            $r = & ./scripts/migration-rehearsal/Invoke-Wave.ps1 -WaveDir $dir -Rollback
+            if (-not $r.Success) { Write-Error "Rollback of $w failed: $($r.Error)"; exit 1 }
+          }
+          $after = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/catalog-object-inventory.sql"
+          $after.Output | Set-Content -Path "$env:RUNNER_TEMP/catalog-after.txt" -Encoding utf8
+          # An empty baseline: everything ARGUS created must be gone, so any
+          # non-extension, non-public, non-pg_toast object is residue.
+          "" | Set-Content -Path "$env:RUNNER_TEMP/catalog-empty.txt" -Encoding utf8
+          node ./scripts/migration-rehearsal/lib/classify-catalog-residue.mjs "$env:RUNNER_TEMP/catalog-empty.txt" "$env:RUNNER_TEMP/catalog-after.txt"
+          if ($LASTEXITCODE -ne 0) { Write-Error "ROLLBACK_ZERO_RESIDUE_FAIL - ARGUS objects survived rollback"; exit 1 }
+          Write-Host "ROLLBACK_ZERO_RESIDUE_PASS"
+
       - name: Wave 3/4 — tear down local Postgres/PostGIS
         if: always()
         shell: bash

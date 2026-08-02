@@ -236,6 +236,11 @@ CREATE POLICY perimeters_command_role ON geo.perimeters
 -- ============================================================
 -- 5. Grants
 -- ============================================================
+-- SCHEMA-LEVEL USAGE (corrective session): table grants below are
+-- unreachable without USAGE on their schema ("permission denied for
+-- schema <x>" fires before RLS is even consulted). Proven by the real
+-- non-superuser RLS matrix, scripts/migration-rehearsal/sql/rls-matrix-checks.sql.
+GRANT USAGE ON SCHEMA geo TO app_api, ingest_worker, jobs_worker, readonly_inspector;
 GRANT SELECT ON geo.administrative_areas TO app_api, ingest_worker, jobs_worker, readonly_inspector;
 -- Write to administrative_areas is exclusive to migration_owner (no GRANT to
 -- any runtime role) — enforces the PUBLIC-catalog "write exclusive to

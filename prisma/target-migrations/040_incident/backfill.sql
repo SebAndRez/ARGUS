@@ -151,7 +151,12 @@ INSERT INTO risk.risk_assessments (hazard_type_id, classification, status, creat
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
 SELECT ht.id,
   'RESTRICTED'::security.information_classification_enum,
-  CASE WHEN ra.status = 'active' THEN 'ACTIVE'::risk.risk_assessment_status_enum ELSE 'CLOSED'::risk.risk_assessment_status_enum END,
+  -- 'CLOSED' -> 'REVISED': risk_assessment_status_enum was reconciled to
+  -- schema.target.prisma's RiskAssessmentStatus (ACTIVE/REVISED) by the
+  -- corrective session; 'REVISED' is the only non-ACTIVE value the target
+  -- enum has, and is the conservative mapping for any legacy non-active
+  -- assessment (D-02: never the more privileged value).
+  CASE WHEN ra.status = 'active' THEN 'ACTIVE'::risk.risk_assessment_status_enum ELSE 'REVISED'::risk.risk_assessment_status_enum END,
   ra."createdAt",
   'RiskAssessment', ra.id,
   CASE WHEN ht.id IS NOT NULL THEN 'HIGH' ELSE 'LOW' END,
@@ -164,7 +169,11 @@ ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL
 -- 7. risk.risk_assessment_revisions <- RiskAssessmentRevision (50 rows,
 --    MIGRAR 1:1). Single batch.
 -- ============================================================
-INSERT INTO risk.risk_assessment_revisions (risk_assessment_id, revision_number, changes, created_at,
+-- `changes` renamed to `content_snapshot` (jsonb NOT NULL) by the
+-- corrective session's risk.* reconciliation against schema.target.prisma's
+-- RiskAssessmentRevision.contentSnapshot — the jsonb_build_object below
+-- already always produces a non-NULL value, so NOT NULL is satisfied.
+INSERT INTO risk.risk_assessment_revisions (risk_assessment_id, revision_number, content_snapshot, created_at,
   legacy_source, legacy_record_id, migration_confidence, migration_review_status)
 SELECT ra.id, row_number() OVER (PARTITION BY rar."assessmentId" ORDER BY rar."createdAt"),
   jsonb_build_object('previousStatus', rar."previousStatus", 'newStatus', rar."newStatus", 'reason', rar.reason, 'evidence', rar.evidence),

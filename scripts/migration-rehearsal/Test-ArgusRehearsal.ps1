@@ -44,6 +44,43 @@ if ($rlsFailures) {
     $summary.RlsResult = "PASS"
 }
 
+# ============================================================
+# Fase 6/7 (corrective mandate): REAL RLS matrix under non-superuser,
+# NOBYPASSRLS roles. Unlike rls-runtime-checks.sql (posture only), this
+# asserts BEHAVIOR in both directions and THROWS on any failure — a
+# rehearsal that reports "RLS ok" while a negative case leaked rows is
+# exactly the false green this mandate forbids.
+# ============================================================
+Write-ArgusLog "=== Fase 6/7: RLS matrix (non-superuser roles, positive + negative) ==="
+$rlsMatrix = Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "sql\rls-matrix-checks.sql") -AllowFailure
+$summary.RlsMatrixOutput = $rlsMatrix.Output
+
+$matrixFailures = $rlsMatrix.Output | Select-String -Pattern "RLS_TEST_FAIL"
+$matrixPositives = @($rlsMatrix.Output | Select-String -Pattern "RLS_TEST_PASS \| positive")
+$matrixNegatives = @($rlsMatrix.Output | Select-String -Pattern "RLS_TEST_PASS \| negative")
+$matrixRoleSec  = @($rlsMatrix.Output | Select-String -Pattern "RLS_TEST_PASS \| role_security")
+$matrixNotStub  = @($rlsMatrix.Output | Select-String -Pattern "RLS_TEST_PASS \| helper_not_stub")
+
+if ($matrixFailures) {
+    throw "RLS_MATRIX_FAIL - the RLS matrix reported failures:`n$($matrixFailures -join "`n")"
+}
+if ($rlsMatrix.ExitCode -ne 0) {
+    throw "RLS_MATRIX_FAIL - rls-matrix-checks.sql exited $($rlsMatrix.ExitCode); an aborted matrix is not a passing matrix."
+}
+# A suite where nothing is asserted, or where only negatives pass, proves
+# nothing (mandate Fase 7: "Un suite donde todo devuelve false no se
+# considera RLS validado").
+if ($matrixPositives.Count -lt 5)  { throw "RLS_MATRIX_FAIL - only $($matrixPositives.Count) positive cases passed; expected at least 5." }
+if ($matrixNegatives.Count -lt 10) { throw "RLS_MATRIX_FAIL - only $($matrixNegatives.Count) negative cases passed; expected at least 10." }
+if ($matrixRoleSec.Count  -lt 2)   { throw "RLS_MATRIX_FAIL - role-security preconditions did not pass (superuser/BYPASSRLS check missing)." }
+if ($matrixNotStub.Count  -lt 3)   { throw "RLS_MATRIX_FAIL - helper-not-stub assertions did not pass for all 3 RLS helpers." }
+
+$summary.RlsPositivePass    = $matrixPositives.Count
+$summary.RlsNegativePass    = $matrixNegatives.Count
+$summary.RlsRoleSecurityPass = $matrixRoleSec.Count
+$summary.RlsMatrixResult    = "PASS"
+Write-ArgusLog "RLS_POSITIVE_PASS=$($matrixPositives.Count) RLS_NEGATIVE_PASS=$($matrixNegatives.Count) RLS_ROLE_SECURITY_PASS=$($matrixRoleSec.Count)"
+
 Write-ArgusLog "=== Fase 16: prisma validate --schema prisma/schema.target.prisma ==="
 Push-Location $Script:ArgusRepoRoot
 try {

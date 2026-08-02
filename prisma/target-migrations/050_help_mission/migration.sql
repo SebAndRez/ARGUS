@@ -470,6 +470,12 @@ CREATE POLICY mmpa_inherit ON mission.mission_meeting_point_assignments
 -- GRANT ... ON ALL TABLES IN SCHEMA help alone is not reachable without
 -- schema USAGE too (rls-runtime-checks.sql Fase 12: "permission denied for
 -- schema help" without this).
+-- SCHEMA-LEVEL USAGE (corrective session): table grants below are
+-- unreachable without USAGE on their schema ("permission denied for
+-- schema <x>" fires before RLS is even consulted). Proven by the real
+-- non-superuser RLS matrix, scripts/migration-rehearsal/sql/rls-matrix-checks.sql.
+GRANT USAGE ON SCHEMA help TO readonly_inspector;
+GRANT USAGE ON SCHEMA mission TO app_api, jobs_worker, readonly_inspector;
 GRANT USAGE ON SCHEMA help TO app_api;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA help TO app_api;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA mission TO app_api;
@@ -493,3 +499,68 @@ GRANT EXECUTE ON FUNCTION help.close_help_request_authorized(uuid, security.acto
 -- confirmed by rls-runtime-checks.sql Fase 12 (app_api must be denied a
 -- direct UPDATE of help_requests.status).
 REVOKE UPDATE ON help.help_requests FROM app_api;
+
+-- ============================================================
+-- security.fn_is_owner — REAL body (corrective session)
+-- ============================================================
+-- 010_foundation/rls_policies.sql defines this function as a
+-- `SELECT false` stub (documented there) because it dispatches on
+-- identity.*/institution.*/incident.*/help.* tables that do not all exist
+-- at wave 010 time, and `CREATE FUNCTION ... LANGUAGE sql` validates table
+-- references against the catalog at creation time (confirmed empirically).
+-- Redefined here, the last wave among its dependencies (identity/
+-- institution from wave 020, incident.* from wave 040, help.help_requests
+-- from this wave) to apply, so every branch below is real.
+--
+-- Dispatches on a FIXED, explicit whitelist of `p_target_table` values,
+-- each mapped to its real owning-actor column (per
+-- ARGUS_PHYSICAL_ACCESS_CONTROL_v1.1_FROZEN.md §4's Owner column) — never
+-- dynamic SQL against an arbitrary table name (that would let a caller
+-- probe/enumerate objects by table name; the CASE below only ever runs a
+-- literal, pre-written query per branch). An unsupported/unlisted
+-- `p_target_table` falls to the ELSE branch and returns false, never an
+-- error and never a guess. `p_actor_id`/`p_target_table`/`p_target_id`
+-- being NULL is rejected up front (fails closed) rather than relying on
+-- implicit NULL-comparison semantics.
+CREATE OR REPLACE FUNCTION security.fn_is_owner(p_actor_id uuid, p_target_table text, p_target_id uuid)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+  SELECT CASE
+    WHEN p_actor_id IS NULL OR p_target_table IS NULL OR p_target_id IS NULL THEN false
+    ELSE (
+      CASE p_target_table
+        WHEN 'identity.people' THEN
+          EXISTS (SELECT 1 FROM identity.people WHERE id = p_target_id AND id = p_actor_id)
+        WHEN 'identity.user_accounts' THEN
+          EXISTS (SELECT 1 FROM identity.user_accounts WHERE id = p_target_id AND person_id = p_actor_id)
+        WHEN 'identity.devices' THEN
+          EXISTS (SELECT 1 FROM identity.devices WHERE id = p_target_id AND person_id = p_actor_id)
+        WHEN 'identity.reputation_events' THEN
+          EXISTS (SELECT 1 FROM identity.reputation_events WHERE id = p_target_id AND person_id = p_actor_id)
+        WHEN 'identity.consents' THEN
+          EXISTS (SELECT 1 FROM identity.consents WHERE id = p_target_id AND person_id = p_actor_id)
+        WHEN 'institution.institutional_memberships' THEN
+          EXISTS (SELECT 1 FROM institution.institutional_memberships WHERE id = p_target_id AND person_id = p_actor_id)
+        WHEN 'help.help_requests' THEN
+          EXISTS (SELECT 1 FROM help.help_requests WHERE id = p_target_id AND requester_person_id = p_actor_id)
+        WHEN 'incident.incident_promotions' THEN
+          EXISTS (SELECT 1 FROM incident.incident_promotions WHERE id = p_target_id AND decided_by_actor_id = p_actor_id)
+        WHEN 'incident.discard_decisions' THEN
+          EXISTS (SELECT 1 FROM incident.discard_decisions WHERE id = p_target_id AND decided_by_actor_id = p_actor_id)
+        WHEN 'incident.incident_transitions' THEN
+          EXISTS (SELECT 1 FROM incident.incident_transitions WHERE id = p_target_id AND decided_by_actor_id = p_actor_id)
+        WHEN 'incident.incident_merges' THEN
+          EXISTS (SELECT 1 FROM incident.incident_merges WHERE id = p_target_id AND decided_by_actor_id = p_actor_id)
+        WHEN 'incident.incident_splits' THEN
+          EXISTS (SELECT 1 FROM incident.incident_splits WHERE id = p_target_id AND decided_by_actor_id = p_actor_id)
+        WHEN 'incident.incident_observation_links' THEN
+          EXISTS (SELECT 1 FROM incident.incident_observation_links WHERE id = p_target_id AND linked_by_actor_id = p_actor_id)
+        WHEN 'incident.incident_evidence_links' THEN
+          EXISTS (SELECT 1 FROM incident.incident_evidence_links WHERE id = p_target_id AND linked_by_actor_id = p_actor_id)
+        ELSE false
+      END
+    )
+  END;
+$$;

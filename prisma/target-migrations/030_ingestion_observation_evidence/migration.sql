@@ -461,6 +461,12 @@ CREATE POLICY corroborations_inherit ON evidence.corroborations
 -- ============================================================
 -- 5. Grants
 -- ============================================================
+-- SCHEMA-LEVEL USAGE (corrective session): table grants below are
+-- unreachable without USAGE on their schema ("permission denied for
+-- schema <x>" fires before RLS is even consulted). Proven by the real
+-- non-superuser RLS matrix, scripts/migration-rehearsal/sql/rls-matrix-checks.sql.
+GRANT USAGE ON SCHEMA ingest TO app_api, jobs_worker, readonly_inspector;
+GRANT USAGE ON SCHEMA evidence TO app_api, ingest_worker, jobs_worker, readonly_inspector;
 GRANT USAGE ON SCHEMA ingest TO ingest_worker;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA ingest TO ingest_worker;
 GRANT SELECT ON ALL TABLES IN SCHEMA ingest TO app_api, jobs_worker;

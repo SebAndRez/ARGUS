@@ -77,8 +77,6 @@ export interface Incident extends Partial<LegacyProvenance> {
   title: string;
   /** db: description — text NULL */
   description: string | null;
-  /** db: location — geography(Point,4326) NULL, projected back via GeoPoint at the API boundary */
-  location: GeoPoint | null;
   /** db: created_at */
   createdAt: string;
   /** db: closed_at */

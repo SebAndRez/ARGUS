@@ -70,12 +70,19 @@ DO $$ BEGIN CREATE TYPE incident.incident_link_type_enum AS ENUM
 DO $$ BEGIN CREATE TYPE incident.incident_link_status_enum AS ENUM ('RELEVANT','MARKED_IRRELEVANT'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE incident.causality_enum AS ENUM ('DIRECT','INDIRECT','UNKNOWN'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-DO $$ BEGIN CREATE TYPE risk.risk_assessment_status_enum AS ENUM ('ACTIVE','CLOSED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #39, 2
+-- RECONCILED (corrective session): value sets transcribed from
+-- schema.target.prisma's RiskAssessmentStatus/ForecastStatus/
+-- RiskScenarioStatus — 'CLOSED'->'REVISED' and 'DISCARDED'->'REPLACED'
+-- were prior-draft inventions with no authority.
+DO $$ BEGIN CREATE TYPE risk.risk_assessment_status_enum AS ENUM ('ACTIVE','REVISED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #39, 2
 DO $$ BEGIN CREATE TYPE risk.forecast_status_enum AS ENUM ('ACTIVE','SUPERSEDED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #40, 2
-DO $$ BEGIN CREATE TYPE risk.risk_scenario_status_enum AS ENUM ('ACTIVE','DISCARDED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #41, 2
+DO $$ BEGIN CREATE TYPE risk.risk_scenario_status_enum AS ENUM ('ACTIVE','REPLACED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #41, 2
 
+-- RECONCILED (corrective session): recommendation_status_enum was
+-- ('PENDING','ACTED_ON') — schema.target.prisma's RecommendationStatus is
+-- ('ACTIVE','OVERRIDDEN'), matching the HumanOverride override semantics.
 DO $$ BEGIN CREATE TYPE command.command_structure_status_enum AS ENUM ('ACTIVE','DISSOLVED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #42, 2
-DO $$ BEGIN CREATE TYPE command.recommendation_status_enum AS ENUM ('PENDING','ACTED_ON'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #43, 2
+DO $$ BEGIN CREATE TYPE command.recommendation_status_enum AS ENUM ('ACTIVE','OVERRIDDEN'); EXCEPTION WHEN duplicate_object THEN NULL; END $$; -- #43, 2
 
 -- ============================================================
 -- 2. incident schema — 17 tables
@@ -145,7 +152,6 @@ CREATE TABLE IF NOT EXISTS incident.incidents (
   classification       security.information_classification_enum NOT NULL DEFAULT 'CRITICAL',
   title                varchar(255) NOT NULL,
   description          text NULL,
-  location             geography(Point,4326) NULL,
   legacy_status        text NULL,
   legacy_source        varchar(100) NULL,
   legacy_record_id     text NULL,
@@ -158,7 +164,6 @@ CREATE TABLE IF NOT EXISTS incident.incidents (
   CONSTRAINT fk_incidents_origin_candidate FOREIGN KEY (origin_candidate_id) REFERENCES incident.incident_candidates(id) ON DELETE RESTRICT,
   CONSTRAINT uq_incidents_origin_candidate_id UNIQUE (origin_candidate_id)
 );
-CREATE INDEX IF NOT EXISTS gix_incidents_location ON incident.incidents USING GIST (location);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_incidents_legacy ON incident.incidents (legacy_source, legacy_record_id)
   WHERE legacy_record_id IS NOT NULL;
 
@@ -383,14 +388,22 @@ CREATE TABLE IF NOT EXISTS incident.incident_aliases (
 );
 
 -- ============================================================
--- 3. risk schema — 6 tables (OUT OF SCOPE for this reconciliation pass —
---    not named by the wave-4 mandate's explicit table list; carried over
---    unchanged, VERIFY_AGAINST_V1.0 markers retained as a known, separately
---    tracked gap).
+-- 3. risk schema — 6 tables
 -- ============================================================
+-- RECONCILED (corrective session): transcribed column-for-column from
+-- schema.target.prisma's RiskAssessment/Forecast/RiskScenario/
+-- ExposedPopulation/RiskAssessmentRevision/RiskAreaVersion models. No
+-- `VERIFY_AGAINST_V1.0` marker remains on any risk.* table.
+--
+-- D-02 legacy provenance is carried ONLY by the 2 tables that actually
+-- receive backfill per ARGUS_BACKFILL_CATALOG_v1.0.md Fase 9
+-- (`risk_assessments` <- RiskAssessment, 45 rows; `risk_assessment_revisions`
+-- <- RiskAssessmentRevision, 50 rows) — the other 4 risk.* tables receive
+-- no backfill and therefore carry no mixin (D-02 mandates it for
+-- backfilled tables, not universally).
 
--- Partial ficha given directly in Table Catalog v1.1 (P1-02/Corrección#8) —
--- hazard_type_id column transcribed verbatim, rest VERIFY_AGAINST_V1.0.
+-- classification/status/created_at match Prisma; legacy provenance retained
+-- (real backfill recipient, 45 rows).
 CREATE TABLE IF NOT EXISTS risk.risk_assessments (
   id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   hazard_type_id        uuid NOT NULL,
@@ -409,39 +422,56 @@ CREATE TABLE IF NOT EXISTS risk.risk_assessments (
   CONSTRAINT fk_risk_assessments_incident FOREIGN KEY (incident_id) REFERENCES incident.incidents(id) ON DELETE SET NULL
 );
 
+-- RECONCILED: risk_assessment_id made NULLABLE (Prisma `String?` with
+-- onDelete: SetNull — a NOT NULL column can never receive SET NULL);
+-- forecast_horizon renamed to `horizon` and made NOT NULL (Prisma
+-- `Unsupported("interval")`, no `?`); `scenario` text NOT NULL ADDED (was
+-- missing entirely); created_at renamed to issued_at (Prisma `issuedAt`).
 CREATE TABLE IF NOT EXISTS risk.forecasts (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  risk_assessment_id uuid NOT NULL,
-  forecast_horizon   interval NULL,
+  risk_assessment_id uuid NULL,
+  horizon            interval NOT NULL,
+  scenario           text NOT NULL,
   status             risk.forecast_status_enum NOT NULL DEFAULT 'ACTIVE',
-  created_at         timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_forecasts_risk_assessment FOREIGN KEY (risk_assessment_id) REFERENCES risk.risk_assessments(id) ON DELETE RESTRICT
+  issued_at          timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT fk_forecasts_risk_assessment FOREIGN KEY (risk_assessment_id) REFERENCES risk.risk_assessments(id) ON DELETE SET NULL
 );
 
+-- RECONCILED: `probability` numeric(5,2) NULL ADDED (was missing);
+-- created_at REMOVED (not on the Prisma model); ON DELETE CASCADE
+-- (Prisma `onDelete: Cascade`, was RESTRICT).
 CREATE TABLE IF NOT EXISTS risk.risk_scenarios (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   risk_assessment_id uuid NOT NULL,
   description        text NOT NULL,
+  probability        numeric(5,2) NULL,
   status             risk.risk_scenario_status_enum NOT NULL DEFAULT 'ACTIVE',
-  created_at         timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_risk_scenarios_risk_assessment FOREIGN KEY (risk_assessment_id) REFERENCES risk.risk_assessments(id) ON DELETE RESTRICT
+  CONSTRAINT fk_risk_scenarios_risk_assessment FOREIGN KEY (risk_assessment_id) REFERENCES risk.risk_assessments(id) ON DELETE CASCADE
 );
 
+-- RECONCILED: estimated_count renamed to population_estimate (Prisma
+-- `populationEstimate`); `classification` ADDED (was missing, Prisma
+-- default RESTRICTED); created_at REMOVED (not on the Prisma model);
+-- ON DELETE CASCADE (Prisma `onDelete: Cascade`, was RESTRICT).
 CREATE TABLE IF NOT EXISTS risk.exposed_populations (
   id                       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   risk_assessment_id       uuid NOT NULL,
   administrative_area_id   uuid NULL,   -- FK to geo.administrative_areas deferred to Wave 080
   operational_zone_id      uuid NULL,   -- FK to geo.operational_zones deferred to Wave 080
-  estimated_count          integer NULL,
-  created_at               timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_exposed_populations_risk_assessment FOREIGN KEY (risk_assessment_id) REFERENCES risk.risk_assessments(id) ON DELETE RESTRICT
+  population_estimate      integer NULL,
+  classification           security.information_classification_enum NOT NULL DEFAULT 'RESTRICTED',
+  CONSTRAINT fk_exposed_populations_risk_assessment FOREIGN KEY (risk_assessment_id) REFERENCES risk.risk_assessments(id) ON DELETE CASCADE
 );
 
+-- RECONCILED: `changes` jsonb NULL renamed to `content_snapshot` jsonb
+-- NOT NULL (Prisma `contentSnapshot Json`, no `?`); constraint renamed to
+-- the Prisma @@unique map name. Legacy provenance retained (real backfill
+-- recipient, 50 rows).
 CREATE TABLE IF NOT EXISTS risk.risk_assessment_revisions (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   risk_assessment_id   uuid NOT NULL,
   revision_number      integer NOT NULL,
-  changes              jsonb NULL,
+  content_snapshot     jsonb NOT NULL,
   legacy_status        text NULL,
   legacy_source        varchar(100) NULL,
   legacy_record_id     text NULL,
@@ -449,10 +479,11 @@ CREATE TABLE IF NOT EXISTS risk.risk_assessment_revisions (
   migration_review_status varchar(30) NULL,
   created_at           timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_rar_risk_assessment FOREIGN KEY (risk_assessment_id) REFERENCES risk.risk_assessments(id) ON DELETE RESTRICT,
-  CONSTRAINT uq_rar_assessment_number UNIQUE (risk_assessment_id, revision_number)
+  CONSTRAINT uq_risk_assessment_revisions_number UNIQUE (risk_assessment_id, revision_number)
 );
 
--- Ficha given directly in Table Catalog v1.1 (P1-06 modification, centroid_cache).
+-- Column shape already matched Prisma; only the UNIQUE constraint name was
+-- reconciled to the Prisma @@unique map name.
 CREATE TABLE IF NOT EXISTS risk.risk_area_versions (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   risk_assessment_id uuid NOT NULL,
@@ -463,24 +494,41 @@ CREATE TABLE IF NOT EXISTS risk.risk_area_versions (
   created_at         timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_rav_risk_assessment FOREIGN KEY (risk_assessment_id) REFERENCES risk.risk_assessments(id) ON DELETE RESTRICT,
   CONSTRAINT fk_rav_superseded FOREIGN KEY (superseded_by_id) REFERENCES risk.risk_area_versions(id) ON DELETE SET NULL,
-  CONSTRAINT uq_rav_assessment_number UNIQUE (risk_assessment_id, version_number)
+  CONSTRAINT uq_risk_area_versions_number UNIQUE (risk_assessment_id, version_number)
 );
 CREATE INDEX IF NOT EXISTS gix_risk_area_versions_geometry ON risk.risk_area_versions USING GIST (geometry);
 
 -- ============================================================
--- 4. command schema — 6 tables (OUT OF SCOPE, same note as risk.* above)
+-- 4. command schema — 6 tables
 -- ============================================================
+-- RECONCILED (corrective session): transcribed column-for-column from
+-- schema.target.prisma's IncidentCommandStructure/CommandRole/
+-- CommandHandover/OperationalDecision/AutomatedRecommendation/
+-- HumanOverride models. No `VERIFY_AGAINST_V1.0` marker remains on any
+-- command.* table.
+--
+-- No command.* table receives backfill (confirmed against
+-- ARGUS_BACKFILL_CATALOG_v1.0.md Fase 9 — command.* appears in no wave's
+-- backfill list), so per D-02 no command.* table carries the legacy
+-- provenance mixin. `automated_recommendations` previously carried it
+-- with no backfill to justify it — removed.
 
+-- RECONCILED: established_at renamed to created_at (Prisma `createdAt`);
+-- UNIQUE on incident_id ADDED (Prisma `@unique(map:
+-- "uq_incident_command_structures_incident_id")` — at most one command
+-- structure per incident, was missing).
 CREATE TABLE IF NOT EXISTS command.incident_command_structures (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_id   uuid NOT NULL,
   status        command.command_structure_status_enum NOT NULL DEFAULT 'ACTIVE',
-  established_at timestamptz NOT NULL DEFAULT now(),
+  created_at    timestamptz NOT NULL DEFAULT now(),
   dissolved_at  timestamptz NULL,
-  CONSTRAINT fk_ics_incident FOREIGN KEY (incident_id) REFERENCES incident.incidents(id) ON DELETE RESTRICT
+  CONSTRAINT fk_ics_incident FOREIGN KEY (incident_id) REFERENCES incident.incidents(id) ON DELETE RESTRICT,
+  CONSTRAINT uq_incident_command_structures_incident_id UNIQUE (incident_id)
 );
 
--- Full ficha given directly in Table Catalog v1.1 (P1-01) — transcribed verbatim.
+-- Full ficha given directly in Table Catalog v1.1 (P1-01) — already matched
+-- schema.target.prisma's CommandRole column-for-column, unchanged.
 CREATE TABLE IF NOT EXISTS command.command_roles (
   id                             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_command_structure_id uuid NOT NULL,
@@ -496,44 +544,69 @@ CREATE TABLE IF NOT EXISTS command.command_roles (
 CREATE INDEX IF NOT EXISTS ix_command_roles_structure_id ON command.command_roles (incident_command_structure_id);
 CREATE INDEX IF NOT EXISTS ix_command_roles_actor ON command.command_roles (actor_type, actor_id);
 
+-- RECONCILED: from_actor_type/from_actor_id (both NULL — the first handover
+-- of an incident has no predecessor) and to_actor_type (NOT NULL) ADDED —
+-- all three present on Prisma's CommandHandover, all three were missing;
+-- handed_over_at renamed to occurred_at (Prisma `occurredAt`).
 CREATE TABLE IF NOT EXISTS command.command_handovers (
   id                             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_command_structure_id uuid NOT NULL,
+  from_actor_type                security.actor_type_enum NULL,
+  from_actor_id                  uuid NULL,
+  to_actor_type                  security.actor_type_enum NOT NULL,
   to_actor_id                    uuid NOT NULL,
-  handed_over_at                 timestamptz NOT NULL DEFAULT now(),
+  occurred_at                    timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_command_handovers_structure FOREIGN KEY (incident_command_structure_id) REFERENCES command.incident_command_structures(id) ON DELETE RESTRICT
 );
 
+-- RECONCILED: decided_by_actor_type ADDED (present on Prisma, was missing);
+-- decided_by_actor_id made NOT NULL (Prisma `String`, no `?` — an
+-- operational decision always has a decider, that is the whole point of
+-- the table).
 CREATE TABLE IF NOT EXISTS command.operational_decisions (
   id                             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_command_structure_id uuid NOT NULL,
-  decided_by_actor_id            uuid NULL,
+  decided_by_actor_type          security.actor_type_enum NOT NULL,
+  decided_by_actor_id            uuid NOT NULL,
   description                    text NOT NULL,
   decided_at                     timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_operational_decisions_structure FOREIGN KEY (incident_command_structure_id) REFERENCES command.incident_command_structures(id) ON DELETE RESTRICT
 );
 
+-- RECONCILED: generated_by_rule_id + its FK to governance.automation_rules
+-- ADDED (present on Prisma, was missing — this is the audit link back to
+-- the AutomationRule that produced the recommendation);
+-- recommendation_text renamed to `content` (Prisma `content`); created_at
+-- renamed to generated_at (Prisma `generatedAt`); default status is now
+-- 'ACTIVE' (matching the reconciled enum); legacy provenance mixin REMOVED
+-- (no backfill targets this table — see section note above).
 CREATE TABLE IF NOT EXISTS command.automated_recommendations (
   id                             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_command_structure_id uuid NOT NULL,
-  recommendation_text            text NOT NULL,
-  status                          command.recommendation_status_enum NOT NULL DEFAULT 'PENDING',
-  legacy_status                  text NULL,
-  legacy_source                  varchar(100) NULL,
-  legacy_record_id                text NULL,
-  migration_confidence            varchar(10) NULL,
-  migration_review_status         varchar(30) NULL,
-  created_at                      timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_automated_recommendations_structure FOREIGN KEY (incident_command_structure_id) REFERENCES command.incident_command_structures(id) ON DELETE RESTRICT
+  generated_by_rule_id           uuid NULL,
+  content                        text NOT NULL,
+  status                          command.recommendation_status_enum NOT NULL DEFAULT 'ACTIVE',
+  generated_at                    timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT fk_automated_recommendations_structure FOREIGN KEY (incident_command_structure_id) REFERENCES command.incident_command_structures(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_automated_recommendations_rule FOREIGN KEY (generated_by_rule_id) REFERENCES governance.automation_rules(id) ON DELETE SET NULL
 );
 
+-- RECONCILED: overridden_by_actor_type ADDED (present on Prisma, was
+-- missing); overridden_by_actor_id made NOT NULL; `reason` text NULL
+-- renamed to `justification` text NOT NULL (Prisma `justification String`
+-- — a Clause V human-override safeguard record with no justification would
+-- defeat its own purpose); UNIQUE on automated_recommendation_id ADDED
+-- (Prisma `@unique(map: "uq_human_overrides_recommendation_id")` — at most
+-- one override per recommendation, was missing).
 CREATE TABLE IF NOT EXISTS command.human_overrides (
   id                           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   automated_recommendation_id  uuid NOT NULL,
-  overridden_by_actor_id       uuid NULL,
-  reason                       text NULL,
+  overridden_by_actor_type     security.actor_type_enum NOT NULL,
+  overridden_by_actor_id       uuid NOT NULL,
+  justification                text NOT NULL,
   overridden_at                timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_human_overrides_recommendation FOREIGN KEY (automated_recommendation_id) REFERENCES command.automated_recommendations(id) ON DELETE RESTRICT
+  CONSTRAINT fk_human_overrides_recommendation FOREIGN KEY (automated_recommendation_id) REFERENCES command.automated_recommendations(id) ON DELETE RESTRICT,
+  CONSTRAINT uq_human_overrides_recommendation_id UNIQUE (automated_recommendation_id)
 );
 
 -- ============================================================
@@ -671,8 +744,12 @@ CREATE POLICY risk_scenarios_inherit ON risk.risk_scenarios
 
 ALTER TABLE risk.exposed_populations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE risk.exposed_populations FORCE ROW LEVEL SECURITY;
+-- Now reads the row's OWN classification column (added by the corrective
+-- session's risk.* reconciliation) instead of a hardcoded 'RESTRICTED'
+-- literal — the row's real classification is what Access Control v1.1 §3's
+-- formula requires.
 CREATE POLICY exposed_populations_restricted ON risk.exposed_populations
-  FOR ALL USING ( security.fn_classification_allowed(current_setting('argus.actor_id')::uuid, 'RESTRICTED') );
+  FOR ALL USING ( security.fn_classification_allowed(current_setting('argus.actor_id')::uuid, classification) );
 
 ALTER TABLE risk.risk_assessment_revisions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE risk.risk_assessment_revisions FORCE ROW LEVEL SECURITY;
@@ -728,9 +805,63 @@ CREATE POLICY human_overrides_inherit ON command.human_overrides
 -- ============================================================
 -- 7. Grants
 -- ============================================================
+-- SCHEMA-LEVEL USAGE (corrective session): table grants below are
+-- unreachable without USAGE on their schema ("permission denied for
+-- schema <x>" fires before RLS is even consulted). Proven by the real
+-- non-superuser RLS matrix, scripts/migration-rehearsal/sql/rls-matrix-checks.sql.
+GRANT USAGE ON SCHEMA incident TO app_api, ingest_worker, jobs_worker, readonly_inspector;
+GRANT USAGE ON SCHEMA risk TO app_api, jobs_worker, readonly_inspector;
+GRANT USAGE ON SCHEMA command TO app_api, readonly_inspector;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA incident TO app_api;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA risk TO app_api;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA command TO app_api;
 GRANT SELECT ON ALL TABLES IN SCHEMA incident TO ingest_worker, jobs_worker, readonly_inspector;
 GRANT SELECT ON ALL TABLES IN SCHEMA risk TO jobs_worker, readonly_inspector;
 GRANT SELECT ON ALL TABLES IN SCHEMA command TO readonly_inspector;
+
+-- ============================================================
+-- 8. security.fn_has_command_role — REAL body (corrective session)
+-- ============================================================
+-- 010_foundation/rls_policies.sql defines this function as a
+-- `SELECT false` stub (documented there) because `command.command_roles`/
+-- `command.incident_command_structures` do not exist at wave 010 time, and
+-- `CREATE FUNCTION ... LANGUAGE sql` validates table references against
+-- the catalog at creation time (confirmed empirically — a real body in
+-- wave 010 fails that wave outright with "relation does not exist").
+-- Redefined here, now that this wave has created both tables (and
+-- institution.institutional_memberships already exists from wave 020).
+--
+-- Rejects: actor absent, incident absent, no command_roles row for that
+-- (actor, incident) pair, a REVOKED role (revoked_at IS NOT NULL), a role
+-- not yet in effect (assigned_at > now()), a command structure that is not
+-- ACTIVE or has been dissolved, and — the corrective mandate's explicit
+-- addition over the original stub's own sketch — an EXPIRED or non-ACTIVE
+-- institutional membership when the role is tied to one
+-- (`institutional_membership_id` is nullable on `command_roles`: some
+-- command roles are held by actors without a modeled institutional
+-- membership, e.g. `actor_type='SYSTEM'`, in which case the membership
+-- check does not apply).
+CREATE OR REPLACE FUNCTION security.fn_has_command_role(p_actor_id uuid, p_incident_id uuid)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM command.command_roles cr
+    JOIN command.incident_command_structures ics ON ics.id = cr.incident_command_structure_id
+    LEFT JOIN institution.institutional_memberships im ON im.id = cr.institutional_membership_id
+    WHERE p_actor_id IS NOT NULL
+      AND p_incident_id IS NOT NULL
+      AND ics.incident_id = p_incident_id
+      AND cr.actor_id = p_actor_id
+      AND cr.revoked_at IS NULL
+      AND cr.assigned_at <= now()
+      AND ics.status = 'ACTIVE'
+      AND ics.dissolved_at IS NULL
+      AND (
+        cr.institutional_membership_id IS NULL
+        OR (im.status = 'ACTIVE' AND (im.effective_to IS NULL OR im.effective_to > now()))
+      )
+  );
+$$;

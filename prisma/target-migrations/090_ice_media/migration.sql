@@ -411,6 +411,13 @@ CREATE POLICY publication_authorizations_inherit ON media.publication_authorizat
 -- GRANT ... ON ALL TABLES IN SCHEMA ice alone is not reachable without
 -- schema USAGE too (rls-runtime-checks.sql Fase 12: "permission denied for
 -- schema ice" without this).
+-- SCHEMA-LEVEL USAGE (corrective session): table grants below are
+-- unreachable without USAGE on their schema ("permission denied for
+-- schema <x>" fires before RLS is even consulted). Proven by the real
+-- non-superuser RLS matrix, scripts/migration-rehearsal/sql/rls-matrix-checks.sql.
+GRANT USAGE ON SCHEMA ice TO readonly_inspector;
+GRANT USAGE ON SCHEMA community TO app_api, jobs_worker, readonly_inspector;
+GRANT USAGE ON SCHEMA media TO app_api, jobs_worker, readonly_inspector;
 GRANT USAGE ON SCHEMA ice TO app_api;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA ice TO app_api;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA community TO app_api;

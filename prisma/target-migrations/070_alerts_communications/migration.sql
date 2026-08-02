@@ -419,6 +419,12 @@ CREATE POLICY instruction_compliance_records_inherit ON alert.instruction_compli
 -- ============================================================
 -- 5. Grants
 -- ============================================================
+-- SCHEMA-LEVEL USAGE (corrective session): table grants below are
+-- unreachable without USAGE on their schema ("permission denied for
+-- schema <x>" fires before RLS is even consulted). Proven by the real
+-- non-superuser RLS matrix, scripts/migration-rehearsal/sql/rls-matrix-checks.sql.
+GRANT USAGE ON SCHEMA comms TO app_api, jobs_worker, readonly_inspector;
+GRANT USAGE ON SCHEMA alert TO app_api, jobs_worker, readonly_inspector;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA comms TO app_api;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA alert TO app_api;
 GRANT SELECT ON ALL TABLES IN SCHEMA comms TO jobs_worker, readonly_inspector;

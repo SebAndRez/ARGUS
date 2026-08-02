@@ -443,6 +443,12 @@ ALTER TABLE knowledge.simulation_results FORCE ROW LEVEL SECURITY;
 CREATE POLICY simulation_results_institutional ON knowledge.simulation_results
   FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
 
+-- SCHEMA-LEVEL USAGE (corrective session): table grants below are
+-- unreachable without USAGE on their schema ("permission denied for
+-- schema <x>" fires before RLS is even consulted). Proven by the real
+-- non-superuser RLS matrix, scripts/migration-rehearsal/sql/rls-matrix-checks.sql.
+GRANT USAGE ON SCHEMA knowledge TO app_api, jobs_worker, readonly_inspector;
+GRANT USAGE ON SCHEMA proj TO app_api, ingest_worker, jobs_worker, readonly_inspector;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA knowledge TO app_api;
 GRANT SELECT ON ALL TABLES IN SCHEMA knowledge TO readonly_inspector, jobs_worker;
 

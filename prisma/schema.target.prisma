@@ -2137,8 +2137,6 @@ model Incident {
   classification     InformationClassification  @default(CRITICAL)
   title              String                     @db.VarChar(255)
   description        String?                    @db.Text
-  /// SQL_COMPLEMENTARY_REQUIRED: PostGIS geography column + GIST index, see prisma/target-migrations/040_incident/migration.sql
-  location           Unsupported("geography(Point,4326)")?
   /// D-02 legacy provenance mixin — this table receives backfill from `KnowledgeIncident`; see IngestionRun's identical note.
   legacyStatus         String?  @map("legacy_status") @db.Text
   legacySource         String?  @map("legacy_source") @db.VarChar(100)
@@ -2413,6 +2411,12 @@ model RiskAssessment {
   incidentId          String?                   @map("incident_id") @db.Uuid
   classification      InformationClassification @default(RESTRICTED)
   status              RiskAssessmentStatus      @default(ACTIVE)
+  /// D-02 legacy provenance mixin — this table receives backfill from `RiskAssessment` (45 rows, ARGUS_BACKFILL_CATALOG_v1.0.md Fase 9); see IngestionRun's identical note.
+  legacyStatus          String?  @map("legacy_status") @db.Text
+  legacySource          String?  @map("legacy_source") @db.VarChar(100)
+  legacyRecordId        String?  @map("legacy_record_id") @db.Text
+  migrationConfidence   String?  @map("migration_confidence") @db.VarChar(10)
+  migrationReviewStatus String?  @map("migration_review_status") @db.VarChar(30)
   createdAt           DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   hazardType        HazardType         @relation(fields: [hazardTypeId], references: [id], onDelete: Restrict)
@@ -2487,6 +2491,12 @@ model RiskAssessmentRevision {
   riskAssessmentId String   @map("risk_assessment_id") @db.Uuid
   revisionNumber   Int      @map("revision_number")
   contentSnapshot  Json     @map("content_snapshot")
+  /// D-02 legacy provenance mixin — this table receives backfill from `RiskAssessmentRevision` (50 rows, ARGUS_BACKFILL_CATALOG_v1.0.md Fase 9); see IngestionRun's identical note.
+  legacyStatus          String?  @map("legacy_status") @db.Text
+  legacySource          String?  @map("legacy_source") @db.VarChar(100)
+  legacyRecordId        String?  @map("legacy_record_id") @db.Text
+  migrationConfidence   String?  @map("migration_confidence") @db.VarChar(10)
+  migrationReviewStatus String?  @map("migration_review_status") @db.VarChar(30)
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   riskAssessment RiskAssessment @relation(fields: [riskAssessmentId], references: [id], onDelete: Restrict)

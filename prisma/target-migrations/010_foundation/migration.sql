@@ -482,6 +482,17 @@ CREATE INDEX IF NOT EXISTS ix_legal_holds_target ON security.legal_holds (target
 -- app_api: read on public/operational catalogs, no write on security.*
 -- (security.* is governance/audit territory, not application-runtime write
 -- territory except where a later wave's SECURITY DEFINER function needs it).
+-- SCHEMA-LEVEL USAGE (corrective session): a table-level GRANT is
+-- unreachable without USAGE on its schema — the role gets "permission
+-- denied for schema <x>" before RLS is even consulted. The comment 12
+-- lines below already knew this for `security`/audit_reader; the same rule
+-- was simply never applied to the other role/schema pairs. Confirmed by
+-- running the real non-superuser RLS matrix
+-- (scripts/migration-rehearsal/sql/rls-matrix-checks.sql), which failed
+-- with exactly that error until these were added.
+GRANT USAGE ON SCHEMA governance TO app_api, ingest_worker, jobs_worker, readonly_inspector;
+GRANT USAGE ON SCHEMA security TO app_api, ingest_worker, jobs_worker, readonly_inspector;
+
 GRANT SELECT ON ALL TABLES IN SCHEMA governance TO app_api, ingest_worker, jobs_worker;
 GRANT SELECT ON security.access_policies, security.permissions, security.access_roles,
   security.access_role_permissions TO app_api, ingest_worker, jobs_worker;
