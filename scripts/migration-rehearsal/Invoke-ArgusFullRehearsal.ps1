@@ -13,7 +13,10 @@
   3. Applies waves 000..100 in folder order via Invoke-Wave.ps1 (migration +
      backfill x2 + validation, catalog snapshot before/after each).
   4. Test-ArgusRehearsal.ps1: fixtures, RLS runtime checks, physical
-     validations, prisma validate, repo test suites.
+     validations, the security.audit_logs monthly-partition lifecycle
+     (structure/UTC bounds/index attachment/operational window/backfill
+     months/tableoid routing/RLS matrix, plus real multi-connection
+     concurrency), prisma validate, repo test suites.
   5. Rolls back waves 100..000 via Invoke-Wave.ps1 -Rollback, verifies the
      post-rollback catalog against the pre-Wave-000 snapshot.
   6. Reapplies waves 000..100 again (Fase 7 reproducibility, immediately
@@ -164,6 +167,26 @@ try {
     $overallResult.RollbackZeroResiduePass = $true
     Write-ArgusLog "ROLLBACK_ZERO_RESIDUE_PASS"
 
+    # ---- Audit partition rollback: zero partitions, zero functions ----
+    # The generic residue classifier above would already catch a surviving
+    # partition or function, but it reports them as anonymous "unexpected
+    # objects". This asserts the specific claim the corrective mandate makes,
+    # by name, so a regression names itself: the partition set is DYNAMIC now
+    # (created on demand for arbitrary months), so a rollback that only knew
+    # how to drop `audit_logs_y2026m07` would leave orphans behind.
+    Write-ArgusLog "=== Audit partition rollback: asserting zero partitions and zero lifecycle functions survive ==="
+    $auditRollback = Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "sql\audit-partition-residue.sql") -AllowFailure
+    $auditResidue = @($auditRollback.Output | Select-String -Pattern "AUDIT_PARTITION_RESIDUE\|")
+    $overallResult.AuditPartitionRollbackResidue = $auditResidue
+    if ($auditRollback.ExitCode -ne 0) {
+        throw "AUDIT_PARTITION_ROLLBACK_FAIL - the residue query itself failed (exit $($auditRollback.ExitCode))."
+    }
+    if ($auditResidue.Count -gt 0) {
+        throw "AUDIT_PARTITION_ROLLBACK_FAIL - audit partition objects survived the full 100->000 rollback:`n$($auditResidue -join "`n")"
+    }
+    $overallResult.AuditPartitionRollbackPass = $true
+    Write-ArgusLog "AUDIT_PARTITION_ROLLBACK_PASS"
+
     # ---- Fase 7 (reproducibility within the SAME volume): reapply 000-100 ----
     Write-ArgusLog "=== Fase 7: reapplying all 11 waves after rollback (same volume) ==="
     $overallResult.ReapplyWaves = Invoke-ArgusWaveCycle
@@ -177,6 +200,34 @@ try {
         $overallResult.SecondInstallWaves = Invoke-ArgusWaveCycle
         $overallResult.SecondInstallTests = & (Join-Path $PSScriptRoot "Test-ArgusRehearsal.ps1")
     }
+
+    # ---- Audit partition summary (mandate: the rehearsal summary must carry
+    # these five markers explicitly). Every one is DERIVED from a result
+    # captured above - none is printed unconditionally, so a marker present in
+    # the summary always means the corresponding assertion actually ran and
+    # passed.
+    $auditMarkers = @()
+    $firstTests = $overallResult.FirstInstallTests
+    if ($firstTests -and ($firstTests.AuditPartitionChecksOutput -join "`n") -match "AUDIT_PARTITION_WINDOW_PASS")   { $auditMarkers += "AUDIT_PARTITION_WINDOW_PASS" }
+    if ($firstTests -and $firstTests.AuditPartitionConcurrencyResult -eq "PASS")                                     { $auditMarkers += "AUDIT_PARTITION_CONCURRENCY_PASS" }
+    if ($firstTests -and ($firstTests.AuditPartitionChecksOutput -join "`n") -match "AUDIT_PARTITION_RLS_PASS")      { $auditMarkers += "AUDIT_PARTITION_RLS_PASS" }
+    if ($firstTests -and ($firstTests.AuditPartitionChecksOutput -join "`n") -match "AUDIT_PARTITION_BACKFILL_PASS") { $auditMarkers += "AUDIT_PARTITION_BACKFILL_PASS" }
+    if ($overallResult.AuditPartitionRollbackPass)                                                                   { $auditMarkers += "AUDIT_PARTITION_ROLLBACK_PASS" }
+
+    $expectedAuditMarkers = @(
+        "AUDIT_PARTITION_WINDOW_PASS",
+        "AUDIT_PARTITION_CONCURRENCY_PASS",
+        "AUDIT_PARTITION_RLS_PASS",
+        "AUDIT_PARTITION_BACKFILL_PASS",
+        "AUDIT_PARTITION_ROLLBACK_PASS"
+    )
+    $missingAuditMarkers = @($expectedAuditMarkers | Where-Object { $auditMarkers -notcontains $_ })
+    $overallResult.AuditPartitionMarkers = $auditMarkers
+    if ($missingAuditMarkers.Count -gt 0) {
+        throw "AUDIT_PARTITION_SUMMARY_FAIL - the rehearsal completed without proving: $($missingAuditMarkers -join ', ')"
+    }
+    Write-ArgusLog "=== Audit partition summary ==="
+    foreach ($marker in $auditMarkers) { Write-ArgusLog $marker }
 
     $overallResult.Success = $true
 } catch {
@@ -201,6 +252,9 @@ try {
 
 Generated: $(Get-Date -Format o)
 Status: $status
+
+Audit partition lifecycle markers proven this run:
+$(if ($overallResult.AuditPartitionMarkers) { ($overallResult.AuditPartitionMarkers | ForEach-Object { "- $_" }) -join "`n" } else { "- (none - the run did not reach the audit partition summary)" })
 
 Full machine-readable detail: migration-rehearsal-artifacts/full-rehearsal-result.json
 (git-excluded, see .git/info/exclude)

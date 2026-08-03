@@ -415,17 +415,344 @@ CREATE TABLE IF NOT EXISTS security.audit_logs (
     FOREIGN KEY (jurisdiction_id) REFERENCES governance.jurisdictions(id) ON DELETE SET NULL
 ) PARTITION BY RANGE (occurred_at);
 
--- SQL_COMPLEMENTARY_REQUIRED: automated monthly partition creation
--- (pg_partman or an equivalent scheduled job) for security.audit_logs.
--- One illustrative initial partition, NOT a substitute for the automated
--- mechanism:
-CREATE TABLE IF NOT EXISTS security.audit_logs_y2026m07
-  PARTITION OF security.audit_logs
-  FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
-
 CREATE INDEX IF NOT EXISTS ix_audit_logs_target ON security.audit_logs (target_table, target_id);
 CREATE INDEX IF NOT EXISTS ix_audit_logs_actor ON security.audit_logs (actor_type, actor_id);
 CREATE INDEX IF NOT EXISTS ix_audit_logs_occurred_at ON security.audit_logs (occurred_at);
+
+-- ============================================================
+-- 4.bis  security.audit_logs monthly partition LIFECYCLE
+-- ============================================================
+-- Replaces the previous "SQL_COMPLEMENTARY_REQUIRED: use pg_partman or an
+-- equivalent scheduled job" note plus its single illustrative
+-- audit_logs_y2026m07 partition. That combination was a real production
+-- blocker, not a documentation gap: with exactly one partition and no
+-- DEFAULT partition, EVERY insert whose occurred_at fell outside July 2026
+-- failed with "no partition of relation \"audit_logs\" found for row" —
+-- which is exactly what a legitimate audit write outside that month is.
+--
+-- The contract implemented below:
+--   * one partition per CALENDAR MONTH, half-open [month_start, next_month)
+--     computed in UTC — never a 30-day interval, never the server's local
+--     timezone;
+--   * occurred_at is the ONLY routing authority; the incoming value's own
+--     offset is normalized to UTC for the month computation and the stored
+--     value is never altered;
+--   * naming derived exclusively from the validated timestamp:
+--     audit_logs_yYYYYmMM;
+--   * NO DEFAULT partition, deliberately — a DEFAULT partition silently
+--     absorbs mis-routed rows and makes every later ATTACH require a full
+--     scan. Missing coverage must fail loudly or be created explicitly,
+--     never be swallowed;
+--   * creation is idempotent and concurrency-safe (per-month advisory
+--     transaction lock + re-check after the lock);
+--   * an existing object under the expected name with the WRONG contract
+--     (not a partition of this parent, or wrong bounds) is a hard error —
+--     never silently adopted, never silently altered.
+--
+-- Why the write path does not depend on a cron job alone: the canonical
+-- target audit writer calls fn_ensure_audit_log_partition BEFORE its
+-- INSERT (src/lib/database-target/repositories/auditLogPartitionRepository
+-- .ts), so a legitimate audit event can never be lost to a missed
+-- maintenance run. The scheduled window maintenance
+-- (fn_ensure_audit_log_partition_window) exists so that, in the normal
+-- case, the writer's ensure call is a pure catalog read that takes no lock
+-- on the parent at all.
+
+-- Helper 1/3 — UTC month start of an arbitrary instant. IMMUTABLE: the
+-- double `AT TIME ZONE 'UTC'` makes this independent of the session
+-- TimeZone (timestamptz -> timestamp -> timestamptz, both conversions
+-- pinned to UTC), which is precisely why an offset-bearing input such as
+-- '2026-08-01T00:30:00+02:00' routes by its UTC instant (July 2026) and not
+-- by its wall-clock month.
+CREATE OR REPLACE FUNCTION security.fn_audit_log_month_start(p_occurred_at timestamptz)
+RETURNS timestamptz
+LANGUAGE sql
+IMMUTABLE
+SET search_path = pg_catalog
+AS $fn$
+  SELECT date_trunc('month', p_occurred_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC';
+$fn$;
+
+-- Helper 2/3 — start of the FOLLOWING UTC month. Uses interval '1 month'
+-- arithmetic on the truncated month, so year rollover (Dec -> Jan),
+-- February, and leap years are handled by the calendar, never by a
+-- 30-day approximation.
+CREATE OR REPLACE FUNCTION security.fn_audit_log_next_month_start(p_occurred_at timestamptz)
+RETURNS timestamptz
+LANGUAGE sql
+IMMUTABLE
+SET search_path = pg_catalog
+AS $fn$
+  SELECT (date_trunc('month', p_occurred_at AT TIME ZONE 'UTC') + interval '1 month') AT TIME ZONE 'UTC';
+$fn$;
+
+-- Helper 3/3 — the partition's relation name. Derived ONLY from the
+-- validated timestamp: no caller ever supplies a schema, a table name, or
+-- any other SQL identifier to this lifecycle (mandate: "No usar nombres de
+-- tabla recibidos desde cliente").
+CREATE OR REPLACE FUNCTION security.fn_audit_log_partition_name(p_occurred_at timestamptz)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SET search_path = pg_catalog
+AS $fn$
+  SELECT 'audit_logs_y' || to_char(date_trunc('month', p_occurred_at AT TIME ZONE 'UTC'), 'YYYY"m"MM');
+$fn$;
+
+-- Contract assertion for an ALREADY-EXISTING relation carrying the expected
+-- name. Deliberately raises instead of repairing: silently ALTERing or
+-- re-bounding a partition that already holds rows is a data-movement
+-- operation, and this lifecycle is explicitly forbidden from relocating
+-- rows. TimeZone/DateStyle are pinned so pg_get_expr's rendering of the
+-- bound literals is deterministic and comparable.
+CREATE OR REPLACE FUNCTION security.fn_assert_audit_log_partition(
+  p_partition   regclass,
+  p_month_start timestamptz,
+  p_next_start  timestamptz
+)
+RETURNS void
+LANGUAGE plpgsql
+STABLE
+SET search_path = pg_catalog, security
+SET TimeZone = 'UTC'
+SET DateStyle = 'ISO, MDY'
+AS $fn$
+DECLARE
+  v_bound    text;
+  v_expected text;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_inherits i
+    WHERE i.inhrelid = p_partition
+      AND i.inhparent = 'security.audit_logs'::regclass
+  ) THEN
+    RAISE EXCEPTION
+      'AUDIT_PARTITION_NOT_A_PARTITION: relation % already exists but is not a partition of security.audit_logs',
+      p_partition::text
+      USING ERRCODE = 'invalid_table_definition';
+  END IF;
+
+  SELECT pg_get_expr(c.relpartbound, c.oid) INTO v_bound
+  FROM pg_class c WHERE c.oid = p_partition;
+
+  IF v_bound IS NULL OR v_bound = 'DEFAULT' THEN
+    RAISE EXCEPTION
+      'AUDIT_PARTITION_UNEXPECTED_DEFAULT: relation % is a DEFAULT partition; security.audit_logs must never have one',
+      p_partition::text
+      USING ERRCODE = 'invalid_table_definition';
+  END IF;
+
+  v_expected := format(
+    'FOR VALUES FROM (%L) TO (%L)',
+    to_char(p_month_start, 'YYYY-MM-DD HH24:MI:SS') || '+00',
+    to_char(p_next_start,  'YYYY-MM-DD HH24:MI:SS') || '+00'
+  );
+
+  IF v_bound <> v_expected THEN
+    RAISE EXCEPTION
+      'AUDIT_PARTITION_BOUND_MISMATCH: relation % has bound %, the UTC calendar-month contract requires %',
+      p_partition::text, v_bound, v_expected
+      USING ERRCODE = 'invalid_table_definition';
+  END IF;
+END
+$fn$;
+
+-- The single-month entry point. Returns 'CREATED' or 'ALREADY_EXISTS'.
+--
+-- SECURITY DEFINER is genuinely required, not decorative: CREATE TABLE ...
+-- PARTITION OF is DDL in schema `security`, and NO application role has (or
+-- may ever be granted) CREATE ON SCHEMA security. Running as the schema
+-- owner is what lets the authorized maintenance role create a partition
+-- WITHOUT ever holding schema-level CREATE itself. The privilege boundary
+-- is therefore the function's grant list, and it is kept narrow:
+--   * REVOKE EXECUTE FROM PUBLIC (below);
+--   * no GRANT to app_api / ingest_worker — they cannot call this at all;
+--   * search_path is pinned to `pg_catalog, security` so no caller-supplied
+--     schema can shadow any function or operator used in the body;
+--   * every identifier is produced internally from the validated timestamp
+--     and interpolated with format('%I', ...); the bounds are literals
+--     rendered by format('%L', ...). No caller string ever reaches the
+--     dynamic statement.
+CREATE OR REPLACE FUNCTION security.fn_ensure_audit_log_partition(p_occurred_at timestamptz)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, security
+SET TimeZone = 'UTC'
+SET DateStyle = 'ISO, MDY'
+AS $fn$
+DECLARE
+  v_month_start timestamptz;
+  v_next_start  timestamptz;
+  v_name        text;
+  v_oid         oid;
+  v_lock_key    bigint;
+BEGIN
+  IF p_occurred_at IS NULL THEN
+    RAISE EXCEPTION 'AUDIT_PARTITION_NULL_TIMESTAMP: p_occurred_at must not be NULL'
+      USING ERRCODE = 'null_value_not_allowed';
+  END IF;
+
+  v_month_start := security.fn_audit_log_month_start(p_occurred_at);
+  v_next_start  := security.fn_audit_log_next_month_start(p_occurred_at);
+  v_name        := security.fn_audit_log_partition_name(p_occurred_at);
+
+  -- Existence is checked by QUERYING pg_class, deliberately NOT with
+  -- to_regclass(). This is load-bearing and was found by a real concurrency
+  -- test, not reasoned about: to_regclass() resolves through the relation
+  -- syscache, which is read under the backend's cached CATALOG snapshot and
+  -- is not refreshed by waiting on an advisory lock (a NoLock name lookup
+  -- never processes invalidation messages). A session that took the slow
+  -- path, waited for the lock, and then re-checked with to_regclass() could
+  -- therefore still observe the pre-creation catalog and go on to issue a
+  -- CREATE TABLE that failed with duplicate_table (42P07) despite holding
+  -- the lock. A plain SQL scan of pg_class runs under a fresh READ COMMITTED
+  -- statement snapshot, so it sees the other session's committed DDL.
+  --
+  -- Fast path: no advisory lock, no lock on the parent at all, one catalog
+  -- read. This is the path the audit writer takes on every normal insert
+  -- once the maintenance window has already created the month.
+  SELECT c.oid INTO v_oid
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'security' AND c.relname = v_name;
+
+  IF v_oid IS NOT NULL THEN
+    PERFORM security.fn_assert_audit_log_partition(v_oid::regclass, v_month_start, v_next_start);
+    RETURN 'ALREADY_EXISTS';
+  END IF;
+
+  -- Slow path. The advisory key is deterministic per (parent, YYYY-MM), so
+  -- N concurrent sessions asking for the SAME month serialize here while
+  -- sessions asking for DIFFERENT months never block each other on this
+  -- lock. It is a transaction-scoped lock: released by COMMIT/ROLLBACK, so
+  -- a crashed session can never leave the month wedged.
+  --
+  -- This is NOT "catch duplicate_table and pretend it succeeded": the lock
+  -- plus the re-check below mean the duplicate is never attempted, and any
+  -- OTHER error still propagates untouched.
+  v_lock_key := ('x' || substr(md5('security.audit_logs:' || to_char(v_month_start, 'YYYY-MM')), 1, 16))::bit(64)::bigint;
+  PERFORM pg_advisory_xact_lock(v_lock_key);
+
+  SELECT c.oid INTO v_oid
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'security' AND c.relname = v_name;
+
+  IF v_oid IS NOT NULL THEN
+    PERFORM security.fn_assert_audit_log_partition(v_oid::regclass, v_month_start, v_next_start);
+    RETURN 'ALREADY_EXISTS';
+  END IF;
+
+  -- Indexes are NOT recreated here on purpose: PostgreSQL attaches a child
+  -- index for every partitioned index on the parent (ix_audit_logs_target,
+  -- ix_audit_logs_actor, ix_audit_logs_occurred_at, audit_logs_pkey, and
+  -- uq_audit_logs_legacy once backfill.sql has created it) automatically as
+  -- part of this statement. Duplicating them by hand would produce a second,
+  -- redundant, non-attached index per partition. validation.sql verifies the
+  -- attachment physically rather than assuming it.
+  EXECUTE format(
+    'CREATE TABLE security.%I PARTITION OF security.audit_logs FOR VALUES FROM (%L) TO (%L)',
+    v_name,
+    to_char(v_month_start, 'YYYY-MM-DD HH24:MI:SS') || '+00',
+    to_char(v_next_start,  'YYYY-MM-DD HH24:MI:SS') || '+00'
+  );
+
+  -- Defense in depth. Reads/writes routed THROUGH the parent are already
+  -- governed by the parent's own policies (audit_logs_audit_only /
+  -- audit_logs_insert_service_roles, rls_policies.sql), and enabling RLS on
+  -- the child does not interfere with that — verified against the real
+  -- rehearsal database, both directions: audit_reader still reads through
+  -- the parent and app_api still inserts through the parent with
+  -- argus.actor_role='SYSTEM', while a wrong actor_role is still denied.
+  -- What this adds is that a partition can never become a side door: with
+  -- RLS enabled and zero policies of its own, DIRECT access to the child
+  -- yields nothing even if some future GRANT mistakenly exposed it.
+  EXECUTE format('ALTER TABLE security.%I ENABLE ROW LEVEL SECURITY', v_name);
+  EXECUTE format('ALTER TABLE security.%I FORCE ROW LEVEL SECURITY', v_name);
+
+  RETURN 'CREATED';
+END
+$fn$;
+
+-- The maintenance entry point: a CONTIGUOUS monthly window around an
+-- anchor. Never drops, never detaches, never touches a single row — the
+-- only DDL it can reach is fn_ensure_audit_log_partition's CREATE TABLE.
+-- Bounded to 0..24 months per side so a bad argument cannot spray thousands
+-- of partitions into the catalog.
+CREATE OR REPLACE FUNCTION security.fn_ensure_audit_log_partition_window(
+  p_anchor        timestamptz DEFAULT now(),
+  p_months_before integer     DEFAULT 1,
+  p_months_after  integer     DEFAULT 3
+)
+RETURNS TABLE (partition_name text, range_start timestamptz, range_end timestamptz, result text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, security
+SET TimeZone = 'UTC'
+SET DateStyle = 'ISO, MDY'
+AS $fn$
+DECLARE
+  v_anchor_month timestamptz;
+  v_month        timestamptz;
+  v_offset       integer;
+BEGIN
+  IF p_anchor IS NULL THEN
+    RAISE EXCEPTION 'AUDIT_PARTITION_WINDOW_NULL_ANCHOR: p_anchor must not be NULL'
+      USING ERRCODE = 'null_value_not_allowed';
+  END IF;
+  IF p_months_before IS NULL OR p_months_after IS NULL THEN
+    RAISE EXCEPTION 'AUDIT_PARTITION_WINDOW_NULL_BOUND: p_months_before/p_months_after must not be NULL'
+      USING ERRCODE = 'null_value_not_allowed';
+  END IF;
+  IF p_months_before < 0 OR p_months_after < 0 THEN
+    RAISE EXCEPTION 'AUDIT_PARTITION_WINDOW_NEGATIVE: p_months_before=% p_months_after=% - a window side cannot be negative',
+      p_months_before, p_months_after
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  IF p_months_before > 24 OR p_months_after > 24 THEN
+    RAISE EXCEPTION 'AUDIT_PARTITION_WINDOW_TOO_WIDE: p_months_before=% p_months_after=% - each side is capped at 24 months',
+      p_months_before, p_months_after
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  v_anchor_month := security.fn_audit_log_month_start(p_anchor);
+
+  FOR v_offset IN (0 - p_months_before) .. p_months_after LOOP
+    v_month := ((v_anchor_month AT TIME ZONE 'UTC') + make_interval(months => v_offset)) AT TIME ZONE 'UTC';
+    partition_name := security.fn_audit_log_partition_name(v_month);
+    range_start    := security.fn_audit_log_month_start(v_month);
+    range_end      := security.fn_audit_log_next_month_start(v_month);
+    result         := security.fn_ensure_audit_log_partition(v_month);
+    RETURN NEXT;
+  END LOOP;
+END
+$fn$;
+
+-- Privilege boundary (mandate Fase 4/9). PUBLIC loses EXECUTE on all five;
+-- the ONLY runtime role that gains anything is jobs_worker, and only on the
+-- window maintenance function — not on the single-month DDL entry point, not
+-- on the helpers. app_api and ingest_worker gain nothing: they cannot create
+-- a partition, cannot call the ensure function, and (per Wave 000) hold no
+-- CREATE ON SCHEMA security.
+REVOKE ALL ON FUNCTION security.fn_audit_log_month_start(timestamptz) FROM PUBLIC;
+REVOKE ALL ON FUNCTION security.fn_audit_log_next_month_start(timestamptz) FROM PUBLIC;
+REVOKE ALL ON FUNCTION security.fn_audit_log_partition_name(timestamptz) FROM PUBLIC;
+REVOKE ALL ON FUNCTION security.fn_assert_audit_log_partition(regclass, timestamptz, timestamptz) FROM PUBLIC;
+REVOKE ALL ON FUNCTION security.fn_ensure_audit_log_partition(timestamptz) FROM PUBLIC;
+REVOKE ALL ON FUNCTION security.fn_ensure_audit_log_partition_window(timestamptz, integer, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION security.fn_ensure_audit_log_partition_window(timestamptz, integer, integer) TO jobs_worker;
+
+-- The historical partition this wave has always declared, now created
+-- through the same single code path as every other partition (so its bounds
+-- are provably identical in shape to the generated ones) instead of a
+-- hand-written CREATE TABLE.
+SELECT security.fn_ensure_audit_log_partition(TIMESTAMPTZ '2026-07-01 00:00:00+00');
+
+-- Initial operational window: previous month, current month, next 3 months.
+-- Running this at install time is what makes the very first audit write
+-- after a fresh install succeed without waiting for any scheduled job.
+SELECT * FROM security.fn_ensure_audit_log_partition_window(now(), 1, 3);
 
 -- D-03: explicit, named REVOKE — audit_logs is append-only for every
 -- non-audit role. Deferred until app_api/ingest_worker/jobs_worker exist
@@ -498,6 +825,15 @@ GRANT SELECT ON security.access_policies, security.permissions, security.access_
   security.access_role_permissions TO app_api, ingest_worker, jobs_worker;
 GRANT SELECT, INSERT ON security.contextual_accesses, security.access_decisions,
   security.audit_logs, security.security_events TO app_api, ingest_worker, jobs_worker;
+-- audit_logs.sequence_number is a bigserial, so an INSERT grant alone is not
+-- an insertable audit log: nextval() on the owning sequence needs its own
+-- USAGE grant. Found by actually exercising the authorized server-side audit
+-- write as app_api (Fase 9 case 1) — it failed with "permission denied for
+-- sequence audit_logs_sequence_number_seq" long before RLS was consulted,
+-- which means the append-only audit path this wave declares was not in fact
+-- reachable by any runtime role. USAGE grants nextval/currval only: no
+-- setval, so no role can rewind or fast-forward the audit sequence.
+GRANT USAGE ON SEQUENCE security.audit_logs_sequence_number_seq TO app_api, ingest_worker, jobs_worker;
 -- audit_reader: read-only on the two audit-grade tables, nothing else in
 -- this wave. GRANT SELECT ON ... alone is not reachable without schema
 -- USAGE too (rls-runtime-checks.sql Fase 12: "permission denied for schema
@@ -507,6 +843,30 @@ GRANT SELECT ON security.audit_logs, security.access_decisions TO audit_reader;
 -- readonly_inspector: read-only on everything created in this wave.
 GRANT SELECT ON ALL TABLES IN SCHEMA governance TO readonly_inspector;
 GRANT SELECT ON ALL TABLES IN SCHEMA security TO readonly_inspector;
+
+-- Partitions of security.audit_logs are NOT part of any role's grant surface.
+-- `GRANT ... ON ALL TABLES IN SCHEMA security` above is a one-time snapshot:
+-- it silently included whichever audit_logs partitions happened to exist at
+-- this moment, while every partition created later (by the maintenance window
+-- or by the audit writer's ensure-before-insert) would get nothing. That
+-- inconsistency is removed here rather than left to chance, so the posture is
+-- uniform for all partitions, present and future: audit access is exclusively
+-- through the parent, where the RLS policies live. Reading the parent still
+-- reads every partition's rows — PostgreSQL does not consult partition
+-- privileges for a query routed through the partitioned table.
+DO $$
+DECLARE v_child text;
+BEGIN
+  FOR v_child IN
+    SELECT quote_ident(n.nspname) || '.' || quote_ident(c.relname)
+    FROM pg_inherits i
+    JOIN pg_class c ON c.oid = i.inhrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE i.inhparent = 'security.audit_logs'::regclass
+  LOOP
+    EXECUTE 'REVOKE ALL ON ' || v_child || ' FROM PUBLIC, app_api, ingest_worker, jobs_worker, audit_reader, readonly_inspector';
+  END LOOP;
+END $$;
 -- Writes to governance.* catalogs (rule/policy publication) are reserved
 -- for migration_owner / a future governance-admin role, never app_api —
 -- no INSERT/UPDATE/DELETE grant on governance.* to any runtime role here.

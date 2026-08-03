@@ -83,6 +83,48 @@ ALTER TABLE security.audit_logs ADD COLUMN IF NOT EXISTS migration_review_status
 -- occurred_at, so this is not a semantic weakening in practice).
 CREATE UNIQUE INDEX IF NOT EXISTS uq_audit_logs_legacy ON security.audit_logs (legacy_source, legacy_record_id, occurred_at) WHERE legacy_record_id IS NOT NULL;
 
+-- ------------------------------------------------------------
+-- 2.0 Historical partition preparation (MUST precede the INSERT below)
+-- ------------------------------------------------------------
+-- A backfill's months are whatever the legacy data says they are — they are
+-- NOT a window around today. Reading legacy AuditLog rows from April 2026
+-- and January 2027 into a database whose only partitions cover
+-- [today-1mo, today+3mo] fails with `no partition of relation "audit_logs"
+-- found for row`, and the only correct fix is to prepare exactly the months
+-- the source actually contains.
+--
+-- Deliberately driven by DISTINCT UTC month of the SOURCE timestamp:
+--   * no month is created that does not appear in the source (no speculative
+--     padding of the range);
+--   * no timestamp is invented, shifted, or rounded — "createdAt" flows
+--     straight through to occurred_at exactly as before, and the month is
+--     only ever READ from it;
+--   * idempotent: fn_ensure_audit_log_partition returns ALREADY_EXISTS on
+--     every re-run, so the second backfill pass creates nothing new.
+DO $$
+DECLARE
+  v_month   timestamptz;
+  v_result  text;
+  v_created integer := 0;
+  v_existing integer := 0;
+BEGIN
+  FOR v_month IN
+    SELECT DISTINCT date_trunc('month', al."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+    FROM "AuditLog" al
+    WHERE al."createdAt" IS NOT NULL
+    ORDER BY 1
+  LOOP
+    v_result := security.fn_ensure_audit_log_partition(v_month);
+    IF v_result = 'CREATED' THEN
+      v_created := v_created + 1;
+    ELSE
+      v_existing := v_existing + 1;
+    END IF;
+    RAISE NOTICE 'ARGUS_BACKFILL_AUDIT_PARTITION % %', to_char(v_month, 'YYYY-MM'), v_result;
+  END LOOP;
+  RAISE NOTICE 'ARGUS_BACKFILL_AUDIT_PARTITIONS created=% already_existing=%', v_created, v_existing;
+END $$;
+
 -- SQL_COMPLEMENTARY_REQUIRED: the actual HMAC chain computation
 -- (integrity_algorithm='HMAC-SHA256', canonicalization_version=1) requires
 -- an application-side or plpgsql routine not fully specified in any frozen

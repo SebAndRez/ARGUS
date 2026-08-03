@@ -20,6 +20,7 @@ name: ARGUS Database Rehearsal
 on:
   pull_request:
     paths:
+      - "package.json"
       - "prisma/schema.target.prisma"
       - "prisma/target-migrations/**"
       - "scripts/migration-rehearsal/**"
@@ -151,6 +152,71 @@ jobs:
         run: npx vitest run tests/database-target/wave4-no-direct-incident-creation.test.ts tests/database-target/incident-promotion-rls.test.ts
 
       # ---------------------------------------------------------------------
+      # security.audit_logs monthly partition lifecycle. Reuses the SAME
+      # already-up waves-000-040 container as the wave 3/4 sections above.
+      #
+      # Every case here is BLOCKING. The bug this covers was not theoretical:
+      # audit_logs shipped with a single July-2026 partition and no DEFAULT
+      # partition, so every legitimate audit write outside that month failed
+      # with "no partition of relation \"audit_logs\" found for row".
+      #
+      # No production secrets, no remote TARGET_DATABASE_URL: the URL comes
+      # from .env.argus-migration.local, i.e. the disposable loopback
+      # container the harness created itself, and target-client-factory-anti-
+      # remote.test.ts (run below) asserts that a non-loopback/managed URL is
+      # refused outright.
+      # ---------------------------------------------------------------------
+      - name: Audit partitions — UTC bounds, naming, year boundary, leap year, concurrency, historical backfill, no DEFAULT, security, writer
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATABASE_URL=$(grep '^DATABASE_URL=' .env.argus-migration.local | cut -d= -f2-)
+          export ARGUS_WAVE3_INTEGRATION_TEST=true
+          export TARGET_DATABASE_URL="$DATABASE_URL"
+          npx vitest run \
+            tests/database-target/audit-log-partition-name.test.ts \
+            tests/database-target/audit-log-partition-utc-bounds.test.ts \
+            tests/database-target/audit-log-partition-window.test.ts \
+            tests/database-target/audit-log-partition-no-default.test.ts \
+            tests/database-target/audit-log-partition-security.test.ts \
+            tests/database-target/audit-log-partition-idempotency.test.ts \
+            tests/database-target/audit-log-partition-concurrency.test.ts \
+            tests/database-target/audit-log-partition-year-boundary.test.ts \
+            tests/database-target/audit-log-partition-leap-year.test.ts \
+            tests/database-target/audit-log-backfill-partitions.test.ts \
+            tests/database-target/audit-log-writer-ensures-partition.test.ts
+
+      - name: Audit partitions — physical checks + real multi-connection concurrency + RLS matrix (blocking)
+        shell: pwsh
+        run: |
+          . ./scripts/migration-rehearsal/lib/Common.ps1
+          Get-ArgusLocalEnv | Out-Null
+          $c = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/audit-partition-checks.sql" -AllowFailure
+          $c.Output | ForEach-Object { Write-Host $_ }
+          if ($c.ExitCode -ne 0) { Write-Error "audit-partition-checks.sql aborted (exit $($c.ExitCode))"; exit 1 }
+          $fails = @($c.Output | Select-String -Pattern "AUDIT_PARTITION_[A-Z_]*FAIL")
+          if ($fails.Count -gt 0) { Write-Error "AUDIT_PARTITION_FAIL:`n$($fails -join "`n")"; exit 1 }
+          $text = $c.Output -join "`n"
+          foreach ($m in @("AUDIT_PARTITION_PARENT_PASS","AUDIT_PARTITION_NO_DEFAULT_PASS","AUDIT_PARTITION_BOUNDS_PASS","AUDIT_PARTITION_INDEX_PASS","AUDIT_PARTITION_WINDOW_PASS","AUDIT_PARTITION_SECURITY_PASS","AUDIT_PARTITION_BACKFILL_PASS","AUDIT_PARTITION_RLS_PASS","AUDIT_PARTITION_MAINTENANCE_IDEMPOTENT_PASS")) {
+            if ($text -notmatch [regex]::Escape($m)) { Write-Error "Required marker $m missing"; exit 1 }
+          }
+          $routing = @($c.Output | Select-String -Pattern "AUDIT_PARTITION_ROUTING_OK").Count
+          if ($routing -lt 8) { Write-Error "Only $routing of 8 boundary instants routing-verified via tableoid"; exit 1 }
+          Write-Host "AUDIT_PARTITION_ROUTING_VERIFIED=$routing"
+
+      - name: Audit partitions — maintenance is OFF while every target flag is off, and never reads DATABASE_URL/DIRECT_URL
+        # Deliberately runs with NO ARGUS_TARGET_DB_* variable and NO
+        # TARGET_DATABASE_URL set: the flags-off path must return NOT_ENABLED
+        # without constructing a client, so it must not need a URL at all.
+        run: |
+          npx vitest run \
+            tests/database-target/audit-log-maintenance-disabled.test.ts \
+            tests/database-target/audit-log-partition-observability-redaction.test.ts \
+            tests/database-target/audit-log-partition-rollback.test.ts \
+            tests/database-target/target-feature-flags.test.ts \
+            tests/database-target/target-client-factory-anti-remote.test.ts
+
+      # ---------------------------------------------------------------------
       # Corrective session — real RLS + zero-residue rollback + risk/command
       # reconciliation. Every one of these is BLOCKING: the mandate forbids
       # accepting "the script exited 0" as proof of rollback correctness, and
@@ -225,6 +291,30 @@ jobs:
           node ./scripts/migration-rehearsal/lib/classify-catalog-residue.mjs "$env:RUNNER_TEMP/catalog-empty.txt" "$env:RUNNER_TEMP/catalog-after.txt"
           if ($LASTEXITCODE -ne 0) { Write-Error "ROLLBACK_ZERO_RESIDUE_FAIL - ARGUS objects survived rollback"; exit 1 }
           Write-Host "ROLLBACK_ZERO_RESIDUE_PASS"
+
+      # The dynamic audit partition set is the specific thing a name-based
+      # rollback would have left behind, so it is asserted by name here rather
+      # than only as an anonymous entry in the residue classifier's output.
+      - name: Audit partitions leave ZERO residue after rollback (blocking)
+        shell: pwsh
+        run: |
+          . ./scripts/migration-rehearsal/lib/Common.ps1
+          Get-ArgusLocalEnv | Out-Null
+          $r = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/audit-partition-residue.sql" -AllowFailure
+          $r.Output | ForEach-Object { Write-Host $_ }
+          if ($r.ExitCode -ne 0) { Write-Error "AUDIT_PARTITION_ROLLBACK_FAIL - residue query failed"; exit 1 }
+          $residue = @($r.Output | Select-String -Pattern "AUDIT_PARTITION_RESIDUE\|")
+          if ($residue.Count -gt 0) { Write-Error "AUDIT_PARTITION_ROLLBACK_FAIL - survived rollback:`n$($residue -join "`n")"; exit 1 }
+          Write-Host "AUDIT_PARTITION_ROLLBACK_PASS"
+
+      - name: Audit partitions — post-rollback no-residue assertions (blocking)
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATABASE_URL=$(grep '^DATABASE_URL=' .env.argus-migration.local | cut -d= -f2-)
+          export ARGUS_WAVE3_INTEGRATION_TEST=true
+          export TARGET_DATABASE_URL="$DATABASE_URL"
+          npx vitest run tests/database-target/audit-log-partition-no-residue.test.ts
 
       - name: Wave 3/4 — tear down local Postgres/PostGIS
         if: always()

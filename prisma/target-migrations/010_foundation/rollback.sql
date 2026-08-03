@@ -24,6 +24,7 @@
 REVOKE SELECT ON ALL TABLES IN SCHEMA security FROM readonly_inspector;
 REVOKE SELECT ON ALL TABLES IN SCHEMA governance FROM readonly_inspector;
 REVOKE SELECT ON security.audit_logs, security.access_decisions FROM audit_reader;
+REVOKE USAGE ON SEQUENCE security.audit_logs_sequence_number_seq FROM app_api, ingest_worker, jobs_worker;
 REVOKE SELECT, INSERT ON security.contextual_accesses, security.access_decisions,
   security.audit_logs, security.security_events FROM app_api, ingest_worker, jobs_worker;
 REVOKE SELECT ON security.access_policies, security.permissions, security.access_roles,
@@ -40,11 +41,50 @@ DROP VIEW IF EXISTS governance.vw_migration_review_queue_010;
 DROP TABLE IF EXISTS security.legal_holds;
 DROP TABLE IF EXISTS security.retention_policies;
 DROP TABLE IF EXISTS security.security_events;
--- audit_logs: drop partition(s) before the parent (Postgres normally cascades
--- this automatically via DROP TABLE on the parent, but the partition is
--- listed explicitly for auditability of what disappears):
-DROP TABLE IF EXISTS security.audit_logs_y2026m07;
+-- audit_logs: drop EVERY partition before the parent. A hardcoded
+-- `DROP TABLE security.audit_logs_y2026m07` is no longer sufficient and no
+-- longer honest: the partition set is now dynamic (created on demand by
+-- security.fn_ensure_audit_log_partition for whatever months the data and
+-- the operational window require), so the rollback has to discover it from
+-- the catalog. Anything less leaves orphan partitions behind and breaks the
+-- ARGUS_TARGET_RESIDUAL_OBJECT_COUNT=0 assertion.
+--
+-- Discovery is by pg_inherits from the real parent, never by name pattern:
+-- a LIKE 'audit_logs_%' sweep would also match an unrelated table that
+-- merely shares the prefix. Each child is dropped by its own oid-derived,
+-- properly quoted identifier.
+DO $$
+DECLARE
+  v_child text;
+BEGIN
+  IF to_regclass('security.audit_logs') IS NULL THEN
+    RETURN;
+  END IF;
+  FOR v_child IN
+    SELECT quote_ident(n.nspname) || '.' || quote_ident(c.relname)
+    FROM pg_inherits i
+    JOIN pg_class c ON c.oid = i.inhrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE i.inhparent = 'security.audit_logs'::regclass
+    ORDER BY c.relname
+  LOOP
+    EXECUTE 'DROP TABLE IF EXISTS ' || v_child;
+    RAISE NOTICE 'ARGUS_ROLLBACK_DROPPED_AUDIT_PARTITION %', v_child;
+  END LOOP;
+END $$;
 DROP TABLE IF EXISTS security.audit_logs;
+
+-- The partition-lifecycle functions are standalone objects: they survive
+-- DROP TABLE on the parent and would otherwise show up as FUNCTION| residue
+-- in catalog-object-inventory.sql. Dropped in dependency order (window ->
+-- single -> assert -> helpers) even though no hard dependency links them,
+-- so the intent stays readable.
+DROP FUNCTION IF EXISTS security.fn_ensure_audit_log_partition_window(timestamptz, integer, integer);
+DROP FUNCTION IF EXISTS security.fn_ensure_audit_log_partition(timestamptz);
+DROP FUNCTION IF EXISTS security.fn_assert_audit_log_partition(regclass, timestamptz, timestamptz);
+DROP FUNCTION IF EXISTS security.fn_audit_log_partition_name(timestamptz);
+DROP FUNCTION IF EXISTS security.fn_audit_log_next_month_start(timestamptz);
+DROP FUNCTION IF EXISTS security.fn_audit_log_month_start(timestamptz);
 DROP TABLE IF EXISTS security.access_decisions;
 DROP TABLE IF EXISTS security.contextual_accesses;
 DROP TABLE IF EXISTS security.access_role_permissions;

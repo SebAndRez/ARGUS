@@ -32,6 +32,7 @@ import type {
 } from "../incident";
 import type { AuditLogInput } from "../security";
 import { computeAuditLogIntegrityValue, AUDIT_LOG_CANONICALIZATION_VERSION } from "../security";
+import { ensureAuditLogPartition } from "./auditLogPartitionRepository";
 
 export interface RawSqlClient {
   $queryRawUnsafe: <T = unknown>(query: string, ...values: unknown[]) => Promise<T[]>;
@@ -331,7 +332,37 @@ export async function markHypothesisDiscarded(tx: RawSqlClient, hypothesisId: st
 // security.audit_logs
 // ---------------------------------------------------------------------------
 
+/**
+ * The canonical target audit writer. Every wave-4 service path that records
+ * an AuditLog goes through here, and this is the ONLY place in the target
+ * layer that inserts into `security.audit_logs` — which is what makes
+ * "ensure the partition first" a single, un-bypassable step rather than a
+ * rule each caller has to remember.
+ *
+ * `occurredAt` is now explicit instead of `now()`. Two reasons, both real:
+ *   * `now()` inside the INSERT meant the row's own partition key was
+ *     decided by the database at INSERT time, so the writer could not
+ *     possibly have ensured the right partition beforehand — with the single
+ *     July-2026 partition this wave used to ship, every promotion/discard
+ *     audit write on any other date failed outright;
+ *   * an explicit timestamp is what lets the ensure call and the INSERT agree
+ *     on the same instant. It is NEVER adjusted to make a row fit an existing
+ *     partition: the partition is created for the timestamp, not the other
+ *     way round.
+ *
+ * The ensure call shares the caller's transaction, so a rolled-back audit
+ * write rolls back its partition too (DDL is transactional in PostgreSQL) and
+ * an audit row can never be committed into a partition that does not exist.
+ */
 export async function insertAuditLog(tx: RawSqlClient, id: string, input: AuditLogInput): Promise<void> {
+  const occurredAt = input.occurredAt ?? new Date();
+
+  // ENSURE BEFORE INSERT. Order is load-bearing — see
+  // auditLogPartitionRepository's header for why the reverse order
+  // deadlocks. A failure here throws: the audit write is not attempted
+  // against a database that cannot store it.
+  await ensureAuditLogPartition(tx, occurredAt, "audit-writer");
+
   // Sign ONLY the designated AuditLogSignableContent subset — `input` (an
   // AuditLogInput) also carries `correlationId`/`incidentId`, which must
   // NEVER participate in the integrity computation (a verifier recomputing
@@ -358,7 +389,7 @@ export async function insertAuditLog(tx: RawSqlClient, id: string, input: AuditL
         result, before_state, after_state, integrity_value, integrity_algorithm, canonicalization_version,
         correlation_id, incident_id, occurred_at)
      VALUES ($1::uuid, $2::security.actor_type_enum, $3::uuid, $4, $5, $6::uuid, $7::security.information_classification_enum,
-             $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14, 'HMAC-SHA256', $15, $16::uuid, $17::uuid, now())`,
+             $8::jsonb, $9, $10, $11, $12::jsonb, $13::jsonb, $14, 'HMAC-SHA256', $15, $16::uuid, $17::uuid, $18::timestamptz)`,
     id,
     input.actorType,
     input.actorId,
@@ -375,6 +406,7 @@ export async function insertAuditLog(tx: RawSqlClient, id: string, input: AuditL
     integrityValue,
     AUDIT_LOG_CANONICALIZATION_VERSION,
     input.correlationId ?? null,
-    input.incidentId ?? null
+    input.incidentId ?? null,
+    occurredAt
   );
 }

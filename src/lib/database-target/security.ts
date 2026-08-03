@@ -46,6 +46,19 @@ export interface AuditLogSignableContent {
 export interface AuditLogInput extends AuditLogSignableContent {
   correlationId?: string | null;
   incidentId?: string | null;
+  /**
+   * The instant the audited event occurred — also `security.audit_logs`'
+   * partition key. Optional; the canonical writer defaults it to "now" when
+   * omitted, so existing callers keep their previous semantics.
+   *
+   * Deliberately NOT part of `AuditLogSignableContent`: it does not
+   * participate in the integrity computation (see that interface's own
+   * comment — a verifier recomputing from a stored row signs the content
+   * columns only). It IS, however, the value that decides which monthly
+   * partition the row lands in, which is why the writer needs it explicitly
+   * rather than leaving it to the database's `now()` default.
+   */
+  occurredAt?: Date;
 }
 
 /** `security.audit_logs` row shape this module is prepared to insert. */

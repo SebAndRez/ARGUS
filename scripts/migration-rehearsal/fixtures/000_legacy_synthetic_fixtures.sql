@@ -103,14 +103,37 @@ CREATE TABLE IF NOT EXISTS "AuditLog" (
   "createdAt"   timestamptz NOT NULL DEFAULT now()
 );
 
--- createdAt values MUST fall inside security.audit_logs_y2026m07, the only
--- partition security.audit_logs has (migration.sql:422-424, FOR VALUES FROM
--- '2026-07-01' TO '2026-08-01') - Wave 010's backfill writes createdAt
--- straight through as occurred_at, the partition key.
+-- createdAt values deliberately SPAN MANY MONTHS, including a year boundary
+-- and a leap day. They used to be pinned inside July 2026 with a comment
+-- explaining that security.audit_logs had exactly one partition covering
+-- that month - which meant the fixtures were shaped to avoid the bug rather
+-- than to expose it, and the rehearsal was green while any real audit write
+-- outside July 2026 failed.
+--
+-- Wave 010's backfill writes createdAt straight through as occurred_at (the
+-- partition key), so these rows are now a real test of the partition
+-- lifecycle: 010_foundation/backfill.sql must discover each distinct UTC
+-- month here and ensure its partition before inserting. The two offset-
+-- bearing values are routed by their UTC INSTANT, not by their wall clock -
+-- '2026-08-01 00:30:00+02:00' is 2026-07-31T22:30Z (July) and
+-- '2026-07-31 23:30:00-03:00' is 2026-08-01T02:30Z (August).
 INSERT INTO "AuditLog" (id, "actorUserId", action, "targetType", "targetId", metadata, "createdAt")
 VALUES
   ('92000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000001', 'CREATE_REPORT', 'Report', '97000000-0000-0000-0000-000000000001', '{"note":"synthetic fixture"}', '2026-07-01 10:00:00+00'),
-  ('92000000-0000-0000-0000-000000000002', NULL, 'LOGIN', 'Session', NULL, NULL, '2026-07-02 11:00:00+00')
+  ('92000000-0000-0000-0000-000000000002', NULL, 'LOGIN', 'Session', NULL, NULL, '2026-07-02 11:00:00+00'),
+  -- April 2026: months BEFORE any operational window around "today".
+  ('92000000-0000-0000-0000-000000000003', '91000000-0000-0000-0000-000000000002', 'UPDATE_PROFILE', 'User', '91000000-0000-0000-0000-000000000002', NULL, '2026-04-15 12:00:00+00'),
+  -- Last microsecond-adjacent instant of July 2026 and first of August 2026.
+  ('92000000-0000-0000-0000-000000000004', NULL, 'LOGOUT', 'Session', NULL, NULL, '2026-07-31 23:59:59+00'),
+  ('92000000-0000-0000-0000-000000000005', '91000000-0000-0000-0000-000000000003', 'CREATE_REPORT', 'Report', '97000000-0000-0000-0000-000000000001', NULL, '2026-08-01 00:00:00+00'),
+  -- Year boundary: December 2026 -> January 2027.
+  ('92000000-0000-0000-0000-000000000006', NULL, 'LOGIN', 'Session', NULL, NULL, '2026-12-31 23:59:59+00'),
+  ('92000000-0000-0000-0000-000000000007', '91000000-0000-0000-0000-000000000004', 'UPDATE_PROFILE', 'User', '91000000-0000-0000-0000-000000000004', NULL, '2027-01-01 00:00:00+00'),
+  -- Leap day, 2028.
+  ('92000000-0000-0000-0000-000000000008', NULL, 'LOGIN', 'Session', NULL, NULL, '2028-02-29 12:00:00+00'),
+  -- Offset-bearing inputs whose UTC instant lands in the PREVIOUS/NEXT month.
+  ('92000000-0000-0000-0000-000000000009', NULL, 'LOGIN', 'Session', NULL, NULL, '2026-08-01 00:30:00+02:00'),
+  ('92000000-0000-0000-0000-000000000010', NULL, 'LOGOUT', 'Session', NULL, NULL, '2026-07-31 23:30:00-03:00')
 ON CONFLICT (id) DO NOTHING;
 
 -- =============================================================================
