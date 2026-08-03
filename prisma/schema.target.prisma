@@ -1169,6 +1169,105 @@ enum OperationalZoneStatus {
   @@schema("geo")
 }
 
+// ---------------------------------------------------------------------------
+// R31 — incident -> operational zone -> jurisdiction -> command scope.
+// See prisma/target-migrations/080_geography/migration.sql §6.
+// ---------------------------------------------------------------------------
+
+/// PRIMARY — the zone that principally DESCRIBES the incident.
+/// AFFECTED — a zone physically or operationally reached by the incident.
+/// COMMAND — a zone that GRANTS command scope over the incident.
+/// MONITORING — a zone that must observe the incident, with no command authority.
+/// ONLY COMMAND is consulted by security.fn_has_command_role. There is no
+/// PRIMARY -> COMMAND fallback: an incident with no COMMAND assignment
+/// authorizes nobody.
+enum IncidentZoneAssignmentKind {
+  PRIMARY
+  AFFECTED
+  COMMAND
+  MONITORING
+
+  @@map("incident_zone_assignment_kind_enum")
+  @@schema("geo")
+}
+
+/// How the assignment came to exist. Load-bearing, not descriptive: the CHECK
+/// constraints read this to decide whether the row may be COMMAND at all.
+/// SPATIAL_INTERSECTION can only ever produce AFFECTED/MONITORING;
+/// INHERITED_FROM_CANDIDATE only PRIMARY/AFFECTED/MONITORING; AUTOMATION_RULE
+/// may produce COMMAND only when the rule is expressly authorized and approved.
+enum IncidentZoneResolutionMethod {
+  MANUAL
+  OFFICIAL_SOURCE
+  SPATIAL_INTERSECTION
+  INHERITED_FROM_CANDIDATE
+  AUTOMATION_RULE
+
+  @@map("incident_zone_resolution_method_enum")
+  @@schema("geo")
+}
+
+enum IncidentZoneAssignmentStatus {
+  ACTIVE
+  REVOKED
+  SUPERSEDED
+
+  @@map("incident_zone_assignment_status_enum")
+  @@schema("geo")
+}
+
+enum ZoneAssignmentReviewStatus {
+  AUTO_APPROVED
+  REQUIRES_REVIEW
+  REVIEWED_APPROVED
+  REVIEWED_REJECTED
+
+  @@map("zone_assignment_review_status_enum")
+  @@schema("geo")
+}
+
+enum ZoneJurisdictionRelationKind {
+  PRIMARY
+  OVERLAPPING
+  DELEGATED
+  SUPPORTING
+
+  @@map("zone_jurisdiction_relation_kind_enum")
+  @@schema("geo")
+}
+
+enum ZoneJurisdictionAssignmentStatus {
+  ACTIVE
+  REVOKED
+  SUPERSEDED
+
+  @@map("zone_jurisdiction_assignment_status_enum")
+  @@schema("geo")
+}
+
+/// The spatial resolver's answer vocabulary. Carried by no table column: the
+/// resolver PROPOSES, so its verdict is a return value, never a persisted
+/// claim of authority.
+enum SpatialResolutionOutcome {
+  RESOLVED
+  MULTIPLE_MATCHES
+  NO_MATCH
+  INVALID_GEOMETRY
+  REQUIRES_REVIEW
+
+  @@map("spatial_resolution_outcome_enum")
+  @@schema("geo")
+}
+
+enum CommandRoleScopeStatus {
+  ACTIVE
+  REVOKED
+  SUPERSEDED
+
+  @@map("command_role_scope_status_enum")
+  @@schema("command")
+}
+
 enum OperationalSectorStatus {
   ACTIVE
   CLOSED
@@ -1769,6 +1868,8 @@ model SourceRecord {
   source          Source           @relation(fields: [sourceId], references: [id], onDelete: Restrict)
   transformations Transformation[]
   Observation     Observation[]
+  /// R31 — provenance of an incident/zone assignment that originated in this source record.
+  incidentZoneAssignments IncidentOperationalZoneAssignment[]
 
   /// SQL_COMPLEMENTARY_REQUIRED: partial unique index uq_source_records_source_external (source_id, external_id) WHERE external_id IS NOT NULL; partition RANGE(received_at) monthly (mandatory), see prisma/target-migrations/030_ingestion_observation_evidence/migration.sql
   @@map("source_records")
@@ -1906,6 +2007,8 @@ model EvidenceRecord {
   reputationEvents         ReputationEvent[]
   IncidentTransition       IncidentTransition[]
   IncidentEvidenceLink     IncidentEvidenceLink[]
+  /// R31 — evidence backing an incident/zone assignment, when one applies.
+  incidentZoneAssignments  IncidentOperationalZoneAssignment[]
 
   /// SQL_COMPLEMENTARY_REQUIRED: REVOKE DELETE from application role; uq_evidence_records_device_local_alias, see prisma/target-migrations/030_ingestion_observation_evidence/migration.sql
   @@map("evidence_records")
@@ -2207,6 +2310,8 @@ model Incident {
   auditLogs                AuditLog[]
   operationalZones         OperationalZone[]
   perimeters               Perimeter[]
+  /// R31 — the persisted path to this incident's jurisdictions. Replaces the scalar `jurisdictionId` that deliberately does NOT exist on this model.
+  zoneAssignments          IncidentOperationalZoneAssignment[]
 
   @@map("incidents")
   @@schema("incident")
@@ -2602,7 +2707,45 @@ model CommandRole {
   incidentCommandStructure IncidentCommandStructure @relation(fields: [incidentCommandStructureId], references: [id], onDelete: Cascade)
   institutionalMembership  InstitutionalMembership? @relation(fields: [institutionalMembershipId], references: [id], onDelete: SetNull)
 
+  jurisdictionScopes CommandRoleJurisdictionScope[]
+
   @@map("command_roles")
+  @@schema("command")
+}
+
+/// CommandRoleJurisdictionScope — R31. The territorial scope of a REAL command role assignment (command_roles.id), never of a role label: a label cannot be revoked, dated or audited. command.command_roles carried actor + role_label + membership and no territorial scope, and governance.jurisdiction_scopes' whitelist covers organizations/resources/rules only — so neither could express "this command role commands jurisdiction J". [NEW — blocker R31]
+model CommandRoleJurisdictionScope {
+  id                   String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // UUIDv7 — see SQL_COMPLEMENTARY_REQUIRED: prisma/target-migrations/080_geography/migration.sql
+  commandRoleId        String                        @map("command_role_id") @db.Uuid
+  jurisdictionId       String                        @map("jurisdiction_id") @db.Uuid
+  status               CommandRoleScopeStatus        @default(ACTIVE)
+  validFrom            DateTime                      @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validUntil           DateTime?                     @map("valid_until") @db.Timestamptz(6)
+  provenance           String                        @default("MANUAL") @db.VarChar(50)
+  assignedBySubjectId  String?                       @map("assigned_by_subject_id") @db.Uuid
+  idempotencyKey       String                        @default(dbgenerated("gen_random_uuid()")) @map("idempotency_key") @db.Uuid
+  correlationId        String?                       @map("correlation_id") @db.Uuid
+  createdAt            DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                      @default(now()) @map("updated_at") @db.Timestamptz(6)
+  supersededByScopeId  String?                       @map("superseded_by_scope_id") @db.Uuid
+  revokedAt            DateTime?                     @map("revoked_at") @db.Timestamptz(6)
+  revokedBySubjectId   String?                       @map("revoked_by_subject_id") @db.Uuid
+  revocationReasonCode String?                       @map("revocation_reason_code") @db.VarChar(50)
+
+  commandRole       CommandRole                    @relation(fields: [commandRoleId], references: [id], onDelete: Cascade)
+  jurisdiction      Jurisdiction                   @relation(fields: [jurisdictionId], references: [id], onDelete: Restrict)
+  assignedBySubject AccessSubject?                 @relation("CommandScopeAssignedBy", fields: [assignedBySubjectId], references: [id], onDelete: Restrict)
+  revokedBySubject  AccessSubject?                 @relation("CommandScopeRevokedBy", fields: [revokedBySubjectId], references: [id], onDelete: Restrict)
+  supersededBy      CommandRoleJurisdictionScope?  @relation("CommandScopeSupersession", fields: [supersededByScopeId], references: [id], onDelete: Restrict)
+  supersedes        CommandRoleJurisdictionScope[] @relation("CommandScopeSupersession")
+
+  /// SQL_COMPLEMENTARY_REQUIRED: ck_crjs_* CHECK constraints, the DEFERRABLE self-FK, and the partial unique index uq_crjs_active_equivalent — see prisma/target-migrations/080_geography/migration.sql
+  @@unique([idempotencyKey], map: "uq_crjs_idempotency")
+  @@index([commandRoleId], map: "ix_crjs_command_role")
+  @@index([jurisdictionId], map: "ix_crjs_jurisdiction")
+  @@index([validFrom, validUntil], map: "ix_crjs_validity")
+  @@map("command_role_jurisdiction_scopes")
   @@schema("command")
 }
 
@@ -4014,6 +4157,13 @@ model AccessSubject {
   grantedAssignments    AccessRoleAssignment[] @relation("AssignmentGrantedBy")
   revokedAssignments    AccessRoleAssignment[] @relation("AssignmentRevokedBy")
 
+  assignedIncidentZones     IncidentOperationalZoneAssignment[]     @relation("IncidentZoneAssignedBy")
+  revokedIncidentZones      IncidentOperationalZoneAssignment[]     @relation("IncidentZoneRevokedBy")
+  assignedZoneJurisdictions OperationalZoneJurisdictionAssignment[] @relation("ZoneJurisdictionAssignedBy")
+  revokedZoneJurisdictions  OperationalZoneJurisdictionAssignment[] @relation("ZoneJurisdictionRevokedBy")
+  assignedCommandScopes     CommandRoleJurisdictionScope[]          @relation("CommandScopeAssignedBy")
+  revokedCommandScopes      CommandRoleJurisdictionScope[]          @relation("CommandScopeRevokedBy")
+
   /// SQL_COMPLEMENTARY_REQUIRED: ck_access_subjects_exactly_one_identity / ck_access_subjects_type_matches_identity / ck_access_subjects_no_anonymous / ck_access_subjects_system_key_shape / ck_access_subjects_disabled_consistency, plus the 4 partial unique indexes enforcing at most ONE ACTIVE subject per identity — see prisma/target-migrations/020_identity/migration.sql
   @@map("access_subjects")
   @@schema("security")
@@ -4412,6 +4562,9 @@ model Jurisdiction {
   criticalInstructionVersions CriticalInstructionVersion[]
   emergencyAccesses           EmergencyAccess[]
   auditLogs                   AuditLog[]
+  /// R31 — the zones this jurisdiction covers, and the command roles scoped to it.
+  operationalZoneAssignments  OperationalZoneJurisdictionAssignment[]
+  commandRoleScopes           CommandRoleJurisdictionScope[]
 
   @@unique([primaryAdministrativeAreaId, declaringOrganizationId, legalBasis, version], map: "uq_jurisdictions_area_org_basis")
   @@map("jurisdictions")
@@ -4463,12 +4616,15 @@ model AutomationRule {
   /// POLYMORPHIC Actor reference — no physical FK
   effectiveFrom              DateTime   @default(now()) @map("effective_from") @db.Timestamptz(6)
   effectiveTo                DateTime?  @map("effective_to") @db.Timestamptz(6)
+  /// R31: whether THIS rule is expressly authorized to create a COMMAND incident/zone assignment. Default false — every rule is non-command-granting until a governance decision flips it. Read together with `status`, so an unapproved rule can never command even if the flag is set.
+  commandScopeAuthorized     Boolean    @default(false) @map("command_scope_authorized")
 
   incidentPromotions          IncidentPromotion[]
   automatedRecommendations    AutomatedRecommendation[]
   automationRuleIncidentTypes AutomationRuleIncidentType[]
 
   accessSubjects              AccessSubject[]
+  incidentZoneAssignments     IncidentOperationalZoneAssignment[]
   @@map("automation_rules")
   @@schema("governance")
 }
@@ -4702,7 +4858,100 @@ model OperationalZone {
   operationalSectors OperationalSector[]
   exposedPopulations ExposedPopulation[]
 
+  incidentAssignments     IncidentOperationalZoneAssignment[]
+  jurisdictionAssignments OperationalZoneJurisdictionAssignment[]
+
   @@map("operational_zones")
+  @@schema("geo")
+}
+
+/// IncidentOperationalZoneAssignment — R31. THE materialized path from an incident to a jurisdiction: incident -> zone -> jurisdiction. Many-to-many, temporal, audited, insert-only as history. [NEW — blocker R31, see prisma/target-migrations/080_geography/migration.sql §6]
+///
+/// Deliberately NOT a scalar `jurisdictionId` on Incident: a column cannot carry kind, validity, provenance, revocation or history, and would become a second source of truth beside the zones.
+///
+/// Only `assignmentKind = COMMAND` is ever consulted by security.fn_has_command_role. PRIMARY, AFFECTED and MONITORING grant no authority and there is no fallback between them.
+model IncidentOperationalZoneAssignment {
+  id                       String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // UUIDv7 — see SQL_COMPLEMENTARY_REQUIRED: prisma/target-migrations/080_geography/migration.sql
+  incidentId               String                        @map("incident_id") @db.Uuid
+  operationalZoneId        String                        @map("operational_zone_id") @db.Uuid
+  assignmentKind           IncidentZoneAssignmentKind    @map("assignment_kind")
+  resolutionMethod         IncidentZoneResolutionMethod  @map("resolution_method")
+  status                   IncidentZoneAssignmentStatus  @default(ACTIVE)
+  validFrom                DateTime                      @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validUntil               DateTime?                     @map("valid_until") @db.Timestamptz(6)
+  confidence               ConfidenceLevel               @default(UNKNOWN)
+  reviewStatus             ZoneAssignmentReviewStatus    @default(REQUIRES_REVIEW) @map("review_status")
+  assignedBySubjectId      String?                       @map("assigned_by_subject_id") @db.Uuid
+  automationRuleId         String?                       @map("automation_rule_id") @db.Uuid
+  sourceRecordId           String?                       @map("source_record_id") @db.Uuid
+  evidenceId               String?                       @map("evidence_id") @db.Uuid
+  /// Idempotency key for the assignment operation: a retried assignment with the same key resolves to the SAME row instead of a second, silently overlapping relation.
+  idempotencyKey           String                        @default(dbgenerated("gen_random_uuid()")) @map("idempotency_key") @db.Uuid
+  correlationId            String?                       @map("correlation_id") @db.Uuid
+  provenance               String                        @default("MANUAL") @db.VarChar(50)
+  createdAt                DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                      @default(now()) @map("updated_at") @db.Timestamptz(6)
+  supersededByAssignmentId String?                       @map("superseded_by_assignment_id") @db.Uuid
+  revokedAt                DateTime?                     @map("revoked_at") @db.Timestamptz(6)
+  revokedBySubjectId       String?                       @map("revoked_by_subject_id") @db.Uuid
+  revocationReasonCode     String?                       @map("revocation_reason_code") @db.VarChar(50)
+
+  incident          Incident                            @relation(fields: [incidentId], references: [id], onDelete: Restrict)
+  operationalZone   OperationalZone                     @relation(fields: [operationalZoneId], references: [id], onDelete: Restrict)
+  assignedBySubject AccessSubject?                      @relation("IncidentZoneAssignedBy", fields: [assignedBySubjectId], references: [id], onDelete: Restrict)
+  revokedBySubject  AccessSubject?                      @relation("IncidentZoneRevokedBy", fields: [revokedBySubjectId], references: [id], onDelete: Restrict)
+  automationRule    AutomationRule?                     @relation(fields: [automationRuleId], references: [id], onDelete: Restrict)
+  sourceRecord      SourceRecord?                       @relation(fields: [sourceRecordId], references: [id], onDelete: SetNull)
+  evidence          EvidenceRecord?                     @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+  supersededBy      IncidentOperationalZoneAssignment?  @relation("IncidentZoneSupersession", fields: [supersededByAssignmentId], references: [id], onDelete: Restrict)
+  supersedes        IncidentOperationalZoneAssignment[] @relation("IncidentZoneSupersession")
+
+  /// SQL_COMPLEMENTARY_REQUIRED: ck_ioza_spatial_never_command / ck_ioza_inherited_never_command / ck_ioza_command_requires_authorizable_method / ck_ioza_command_authority / ck_ioza_command_correlation / ck_ioza_validity_window / ck_ioza_revocation_consistency / ck_ioza_supersession_consistency, the DEFERRABLE self-FK that makes an atomic supersession legal, and the 2 partial unique indexes (uq_ioza_active_primary_per_incident, uq_ioza_active_equivalent) — see prisma/target-migrations/080_geography/migration.sql
+  @@unique([idempotencyKey], map: "uq_ioza_idempotency")
+  @@index([incidentId], map: "ix_ioza_incident")
+  @@index([operationalZoneId], map: "ix_ioza_zone")
+  @@index([incidentId, assignmentKind, status], map: "ix_ioza_incident_kind_status")
+  @@index([operationalZoneId, assignmentKind, status], map: "ix_ioza_zone_kind_status")
+  @@index([validFrom, validUntil], map: "ix_ioza_validity")
+  @@map("incident_operational_zone_assignments")
+  @@schema("geo")
+}
+
+/// OperationalZoneJurisdictionAssignment — R31. The zone -> jurisdiction half of the chain. geo.operational_zones carried NO canonical jurisdiction reference, so the relation is materialized rather than reused. [NEW — blocker R31]
+model OperationalZoneJurisdictionAssignment {
+  id                       String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // UUIDv7 — see SQL_COMPLEMENTARY_REQUIRED: prisma/target-migrations/080_geography/migration.sql
+  operationalZoneId        String                            @map("operational_zone_id") @db.Uuid
+  jurisdictionId           String                            @map("jurisdiction_id") @db.Uuid
+  relationKind             ZoneJurisdictionRelationKind      @default(PRIMARY) @map("relation_kind")
+  status                   ZoneJurisdictionAssignmentStatus  @default(ACTIVE)
+  validFrom                DateTime                          @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validUntil               DateTime?                         @map("valid_until") @db.Timestamptz(6)
+  provenance               String                            @default("MANUAL") @db.VarChar(50)
+  idempotencyKey           String                            @default(dbgenerated("gen_random_uuid()")) @map("idempotency_key") @db.Uuid
+  correlationId            String?                           @map("correlation_id") @db.Uuid
+  assignedBySubjectId      String?                           @map("assigned_by_subject_id") @db.Uuid
+  createdAt                DateTime                          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                          @default(now()) @map("updated_at") @db.Timestamptz(6)
+  supersededByAssignmentId String?                           @map("superseded_by_assignment_id") @db.Uuid
+  revokedAt                DateTime?                         @map("revoked_at") @db.Timestamptz(6)
+  revokedBySubjectId       String?                           @map("revoked_by_subject_id") @db.Uuid
+  revocationReasonCode     String?                           @map("revocation_reason_code") @db.VarChar(50)
+
+  operationalZone   OperationalZone                         @relation(fields: [operationalZoneId], references: [id], onDelete: Restrict)
+  jurisdiction      Jurisdiction                            @relation(fields: [jurisdictionId], references: [id], onDelete: Restrict)
+  assignedBySubject AccessSubject?                          @relation("ZoneJurisdictionAssignedBy", fields: [assignedBySubjectId], references: [id], onDelete: Restrict)
+  revokedBySubject  AccessSubject?                          @relation("ZoneJurisdictionRevokedBy", fields: [revokedBySubjectId], references: [id], onDelete: Restrict)
+  supersededBy      OperationalZoneJurisdictionAssignment?  @relation("ZoneJurisdictionSupersession", fields: [supersededByAssignmentId], references: [id], onDelete: Restrict)
+  supersedes        OperationalZoneJurisdictionAssignment[] @relation("ZoneJurisdictionSupersession")
+
+  /// SQL_COMPLEMENTARY_REQUIRED: ck_ozja_* CHECK constraints, the DEFERRABLE self-FK, and the 2 partial unique indexes (uq_ozja_active_primary_per_zone, uq_ozja_active_equivalent) — see prisma/target-migrations/080_geography/migration.sql
+  @@unique([idempotencyKey], map: "uq_ozja_idempotency")
+  @@index([operationalZoneId], map: "ix_ozja_zone")
+  @@index([jurisdictionId], map: "ix_ozja_jurisdiction")
+  @@index([validFrom, validUntil], map: "ix_ozja_validity")
+  @@map("operational_zone_jurisdiction_assignments")
   @@schema("geo")
 }
 

@@ -83,6 +83,7 @@ import {
   recordHumanPromotionDenied,
   recordPromotionLatencyMs,
 } from "../observability/wave4Metrics";
+import { inheritCandidateZoneAssignments } from "../repositories/incidentOperationalZoneRepository";
 
 export class IncidentPromotionError extends Error {
   constructor(
@@ -194,6 +195,79 @@ export interface PromotionResult {
   incidentId: string;
   incidentPromotionId: string;
   created: boolean;
+  /**
+   * R31 — how many of the candidate's geographic relations were carried onto
+   * the new incident as PRIMARY/AFFECTED/MONITORING. `null` means the calling
+   * principal did not hold EXECUTE on
+   * `geo.fn_inherit_candidate_zone_assignments`, so inheritance was not
+   * attempted; it is never silently reported as 0.
+   */
+  zoneAssignmentsInherited: number | null;
+  /**
+   * R31 — 'RESOLVED' once the incident has at least one jurisdiction reachable
+   * through the chain, 'REQUIRES_REVIEW' otherwise.
+   *
+   * DERIVED, never stored: the absence of a resolvable jurisdiction IS the
+   * review state, and it is exactly what makes `fn_has_command_role` fail
+   * closed. A separate persisted flag would be a second source of truth that
+   * could disagree with the relation it summarises.
+   */
+  jurisdictionReviewState: "RESOLVED" | "REQUIRES_REVIEW";
+}
+
+/** PostgreSQL `insufficient_privilege`. */
+const PG_INSUFFICIENT_PRIVILEGE = "42501";
+
+function isInsufficientPrivilege(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return code === PG_INSUFFICIENT_PRIVILEGE || String((err as Error | null)?.message ?? "").includes("permission denied");
+}
+
+/**
+ * Carries the candidate's geographic relations onto the new incident, inside
+ * the promotion transaction so the incident and its zone relations commit or
+ * fail together.
+ *
+ * Cannot create COMMAND: the SQL function hard-codes
+ * INHERITED_FROM_CANDIDATE, and `ck_ioza_inherited_never_command` rejects
+ * COMMAND for that method regardless of what this caller asks for. Promotion
+ * therefore never manufactures command authority — a human still has to
+ * confirm it afterwards.
+ *
+ * A candidate with no resolvable zone writes nothing and does NOT fail the
+ * promotion: the incident is still created, its jurisdiction stays
+ * unresolved, and `fn_has_command_role` keeps returning false. No zone is
+ * invented to fill the gap.
+ */
+async function inheritCandidateZones(
+  tx: RawSqlClient,
+  incidentCandidateId: string,
+  incidentId: string,
+  correlationId: string
+): Promise<number | null> {
+  try {
+    return await inheritCandidateZoneAssignments(tx, incidentCandidateId, incidentId, undefined, correlationId);
+  } catch (err) {
+    // A principal without EXECUTE on the inheritance function is a deployment
+    // fact, not a promotion failure — reported as `null` so the caller can see
+    // that inheritance did not run, rather than being told "0 zones" and
+    // concluding the candidate had none.
+    if (isInsufficientPrivilege(err)) return null;
+    throw err;
+  }
+}
+
+async function readJurisdictionReviewState(
+  tx: RawSqlClient,
+  incidentId: string
+): Promise<"RESOLVED" | "REQUIRES_REVIEW"> {
+  const rows = await tx.$queryRawUnsafe<{ resolved: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM geo.fn_incident_effective_jurisdictions($1::uuid, NULL)
+     ) AS resolved`,
+    incidentId
+  );
+  return rows[0]?.resolved ? "RESOLVED" : "REQUIRES_REVIEW";
 }
 
 async function validateAutomationRule(
@@ -256,7 +330,18 @@ async function promoteIncidentCandidateCore(
       throw new IdempotencyConflictError(input.idempotencyKey);
     }
     recordPromotionDuplicate({ incidentCandidateId: input.incidentCandidateId, idempotencyKey: input.idempotencyKey });
-    return { incidentId: preExisting.incident_id, incidentPromotionId: preExisting.id, created: false };
+    return {
+      incidentId: preExisting.incident_id,
+      incidentPromotionId: preExisting.id,
+      created: false,
+      // A retry inherits nothing new — the first call already did it, and
+      // re-running would be a second set of assignments for the same relation.
+      zoneAssignmentsInherited: 0,
+      jurisdictionReviewState: await readJurisdictionReviewState(
+        client as unknown as RawSqlClient,
+        preExisting.incident_id
+      ),
+    };
   }
 
   try {
@@ -268,7 +353,13 @@ async function promoteIncidentCandidateCore(
       if (candidate.status === "PROMOTED") {
         const existing = await findIncidentPromotionByCandidateId(tx, input.incidentCandidateId);
         if (existing && existing.idempotency_key === input.idempotencyKey) {
-          return { incidentId: existing.incident_id, incidentPromotionId: existing.id, created: false };
+          return {
+            incidentId: existing.incident_id,
+            incidentPromotionId: existing.id,
+            created: false,
+            zoneAssignmentsInherited: 0,
+            jurisdictionReviewState: await readJurisdictionReviewState(tx, existing.incident_id),
+          };
         }
         throw new CandidateAlreadyPromotedError(input.incidentCandidateId);
       }
@@ -321,6 +412,18 @@ async function promoteIncidentCandidateCore(
 
       await markIncidentCandidatePromoted(tx, input.incidentCandidateId);
 
+      // R31 — the candidate's geographic relations follow it onto the
+      // incident, in the SAME transaction. Provenance, confidence and review
+      // status are preserved by the SQL side; idempotency is deterministic on
+      // (incident, zone, kind, method), so a retried promotion cannot produce
+      // a second set. COMMAND is structurally unreachable from here.
+      const zoneAssignmentsInherited = await inheritCandidateZones(
+        tx,
+        input.incidentCandidateId,
+        incidentId,
+        input.idempotencyKey
+      );
+
       await insertIncidentTransition(tx, {
         id: transitionId,
         incidentId,
@@ -349,7 +452,13 @@ async function promoteIncidentCandidateCore(
         incidentId,
       });
 
-      return { incidentId, incidentPromotionId, created: true };
+      return {
+        incidentId,
+        incidentPromotionId,
+        created: true,
+        zoneAssignmentsInherited,
+        jurisdictionReviewState: await readJurisdictionReviewState(tx, incidentId),
+      };
     });
 
     recordPromotionSuccess({ incidentCandidateId: input.incidentCandidateId, incidentId: result.incidentId, actorType: input.decidedByActorType });

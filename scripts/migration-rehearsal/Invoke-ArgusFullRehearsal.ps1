@@ -214,6 +214,28 @@ try {
     $overallResult.AccessRoleRollbackPass = $true
     Write-ArgusLog "ACCESS_ROLE_ROLLBACK_PASS"
 
+    # ---- R31 substrate rollback: zero tables, functions, enums, indexes,
+    # policies, and the command_scope_authorized column added to
+    # governance.automation_rules. Named explicitly for the same reason as the
+    # partitions and the access-role substrate: the generic classifier reports
+    # a survivor as an anonymous "unexpected object", and a rollback that
+    # forgot one of the SIX object kinds involved (table, function, type,
+    # index, policy, added column) is the realistic failure mode. It also
+    # asserts that security.fn_has_command_role was RESTORED to its Wave 040
+    # body rather than left pointing at dropped geo.* tables.
+    Write-ArgusLog "=== R31 substrate rollback: asserting zero residue ==="
+    $zoneRollback = Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "sql\incident-zone-residue.sql") -AllowFailure
+    $zoneResidue = @($zoneRollback.Output | Select-String -Pattern "INCIDENT_ZONE_RESIDUE\|")
+    $overallResult.IncidentZoneRollbackResidue = $zoneResidue
+    if ($zoneRollback.ExitCode -ne 0) {
+        throw "INCIDENT_ZONE_ROLLBACK_FAIL - the residue query itself failed (exit $($zoneRollback.ExitCode))."
+    }
+    if ($zoneResidue.Count -gt 0) {
+        throw "INCIDENT_ZONE_ROLLBACK_FAIL - R31 objects survived the full 100->000 rollback:`n$($zoneResidue -join "`n")"
+    }
+    $overallResult.IncidentZoneRollbackPass = $true
+    Write-ArgusLog "INCIDENT_ZONE_ROLLBACK_PASS"
+
     # ---- Fase 7 (reproducibility within the SAME volume): reapply 000-100 ----
     Write-ArgusLog "=== Fase 7: reapplying all 11 waves after rollback (same volume) ==="
     $overallResult.ReapplyWaves = Invoke-ArgusWaveCycle
@@ -251,6 +273,21 @@ try {
     if ($firstTests -and $firstTests.AuditWriterPrincipalResult -eq "PASS")                                              { $auditMarkers += "AUDIT_WRITER_PRINCIPAL_PASS" }
     if ($overallResult.AccessRoleRollbackPass)                                                                           { $auditMarkers += "ACCESS_ROLE_ROLLBACK_PASS" }
 
+    # R31 markers. Same rule again: every one is DERIVED from a captured
+    # result, so a marker in the summary always means the assertion ran.
+    $zoneText = if ($firstTests) { $firstTests.IncidentZoneChecksOutput -join "`n" } else { "" }
+    if ($zoneText -match "INCIDENT_ZONE_RELATION_PASS")             { $auditMarkers += "INCIDENT_ZONE_RELATION_PASS" }
+    if ($zoneText -match "INCIDENT_ZONE_PRIMARY_UNIQUE_PASS")       { $auditMarkers += "INCIDENT_ZONE_PRIMARY_UNIQUE_PASS" }
+    if ($zoneText -match "INCIDENT_ZONE_SPATIAL_RESOLUTION_PASS")   { $auditMarkers += "INCIDENT_ZONE_SPATIAL_RESOLUTION_PASS" }
+    if ($zoneText -match "SPATIAL_RESOLUTION_NO_COMMAND_PASS")      { $auditMarkers += "SPATIAL_RESOLUTION_NO_COMMAND_PASS" }
+    if ($zoneText -match "INCIDENT_COMMAND_ZONE_PASS")              { $auditMarkers += "INCIDENT_COMMAND_ZONE_PASS" }
+    if ($zoneText -match "INCIDENT_COMMAND_JURISDICTION_PASS")      { $auditMarkers += "INCIDENT_COMMAND_JURISDICTION_PASS" }
+    if ($zoneText -match "INCIDENT_COMMAND_MISMATCH_DENIED_PASS")   { $auditMarkers += "INCIDENT_COMMAND_MISMATCH_DENIED_PASS" }
+    if ($zoneText -match "INCIDENT_COMMAND_REVOKED_DENIED_PASS")    { $auditMarkers += "INCIDENT_COMMAND_REVOKED_DENIED_PASS" }
+    if ($zoneText -match "INCIDENT_ZONE_RLS_PASS")                  { $auditMarkers += "INCIDENT_ZONE_RLS_PASS" }
+    if ($firstTests -and $firstTests.IncidentZoneTestsResult -eq "PASS")                                                  { $auditMarkers += "INCIDENT_ZONE_TESTS_PASS" }
+    if ($overallResult.IncidentZoneRollbackPass)                                                                         { $auditMarkers += "INCIDENT_ZONE_ROLLBACK_PASS" }
+
     $expectedAuditMarkers = @(
         "AUDIT_PARTITION_WINDOW_PASS",
         "AUDIT_PARTITION_CONCURRENCY_PASS",
@@ -263,7 +300,18 @@ try {
         "CLASSIFICATION_FORGED_GUC_DENIED_PASS",
         "AUDIT_WRITER_PRINCIPAL_PASS",
         "ACCESS_ROLE_RLS_PASS",
-        "ACCESS_ROLE_ROLLBACK_PASS"
+        "ACCESS_ROLE_ROLLBACK_PASS",
+        "INCIDENT_ZONE_RELATION_PASS",
+        "INCIDENT_ZONE_PRIMARY_UNIQUE_PASS",
+        "INCIDENT_ZONE_SPATIAL_RESOLUTION_PASS",
+        "SPATIAL_RESOLUTION_NO_COMMAND_PASS",
+        "INCIDENT_COMMAND_ZONE_PASS",
+        "INCIDENT_COMMAND_JURISDICTION_PASS",
+        "INCIDENT_COMMAND_MISMATCH_DENIED_PASS",
+        "INCIDENT_COMMAND_REVOKED_DENIED_PASS",
+        "INCIDENT_ZONE_RLS_PASS",
+        "INCIDENT_ZONE_TESTS_PASS",
+        "INCIDENT_ZONE_ROLLBACK_PASS"
     )
     $missingAuditMarkers = @($expectedAuditMarkers | Where-Object { $auditMarkers -notcontains $_ })
     $overallResult.AuditPartitionMarkers = $auditMarkers

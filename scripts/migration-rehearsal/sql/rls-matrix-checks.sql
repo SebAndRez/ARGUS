@@ -96,17 +96,22 @@ INSERT INTO institution.organizations (id, name, status) VALUES
   ('d2000000-0000-0000-0000-000000000001', 'RLS Fixture Org A', 'ACTIVE'),
   ('d2000000-0000-0000-0000-000000000002', 'RLS Fixture Org B', 'ACTIVE');
 
-INSERT INTO geo.administrative_areas (id, name, area_kind_id, boundary, version)
-SELECT 'd3000000-0000-0000-0000-000000000001',
-       'RLS Fixture Area A',
-       (SELECT id FROM governance.administrative_area_kinds LIMIT 1),
-       ST_GeogFromText('MULTIPOLYGON(((0 0, 0 0.01, 0.01 0.01, 0.01 0, 0 0)))'), 1
-WHERE EXISTS (SELECT 1 FROM governance.administrative_area_kinds);
+-- governance.administrative_area_kinds is legitimately EMPTY after a clean
+-- install (D-07), so the kind is seeded here. Previously these two INSERTs
+-- were guarded by `WHERE EXISTS (...)` and therefore silently inserted
+-- NOTHING, which left the jurisdiction fixture non-existent — invisible while
+-- nothing consulted it, load-bearing now that R31 does.
+INSERT INTO governance.administrative_area_kinds (id, code, name, hierarchy_level, status) VALUES
+  ('d0000000-0000-0000-0000-000000000001', 'RLS_FIXTURE_KIND', 'RLS Fixture Kind', 1, 'ACTIVE');
 
-INSERT INTO governance.jurisdictions (id, name, primary_administrative_area_id, declaring_organization_id, version)
-SELECT 'd4000000-0000-0000-0000-000000000001', 'RLS Fixture Jurisdiction A',
-       'd3000000-0000-0000-0000-000000000001', 'd2000000-0000-0000-0000-000000000001', 1
-WHERE EXISTS (SELECT 1 FROM geo.administrative_areas WHERE id = 'd3000000-0000-0000-0000-000000000001');
+INSERT INTO geo.administrative_areas (id, name, area_kind_id, boundary, version) VALUES
+  ('d3000000-0000-0000-0000-000000000001', 'RLS Fixture Area A',
+   'd0000000-0000-0000-0000-000000000001',
+   ST_GeogFromText('MULTIPOLYGON(((0 0, 0 0.01, 0.01 0.01, 0.01 0, 0 0)))'), 1);
+
+INSERT INTO governance.jurisdictions (id, name, primary_administrative_area_id, declaring_organization_id, version) VALUES
+  ('d4000000-0000-0000-0000-000000000001', 'RLS Fixture Jurisdiction A',
+   'd3000000-0000-0000-0000-000000000001', 'd2000000-0000-0000-0000-000000000001', 1);
 
 -- One CURRENT membership, one EXPIRED membership (different orgs so the
 -- partial unique index on (person, org) WHERE effective_to IS NULL holds).
@@ -142,15 +147,62 @@ INSERT INTO incident.incident_promotions
    'PERSON', 'd1000000-0000-0000-0000-000000000001', '{}'::jsonb, 'HIGH', 'RLS fixture promotion',
    'd9000000-0000-0000-0000-0000000000ff');
 
+-- R31: a command role is no longer sufficient on its own. The incident must
+-- carry an explicit COMMAND operational-zone assignment, that zone must
+-- resolve to a jurisdiction in force, and the role assignment must be scoped
+-- to that same jurisdiction. The fixture below completes that chain for
+-- Person One so the positive case still passes — now proving the WHOLE path
+-- rather than just "a command_roles row exists".
+INSERT INTO geo.operational_zones (id, incident_id, boundary, status) VALUES
+  ('da000000-0000-0000-0000-000000000001', 'd7000000-0000-0000-0000-000000000002',
+   ST_GeogFromText('POLYGON((0 0, 0 0.01, 0.01 0.01, 0.01 0, 0 0))'), 'ACTIVE');
+
+INSERT INTO geo.operational_zone_jurisdiction_assignments
+  (id, operational_zone_id, jurisdiction_id, relation_kind, status, valid_from, provenance) VALUES
+  ('db000000-0000-0000-0000-000000000001', 'da000000-0000-0000-0000-000000000001',
+   'd4000000-0000-0000-0000-000000000001', 'PRIMARY', 'ACTIVE', now() - interval '1 day', 'OFFICIAL_SOURCE');
+
+-- Both actors' command roles are scoped to the SAME jurisdiction, so the
+-- expired-membership denial below is provably about the MEMBERSHIP and not
+-- about a missing or mismatched territorial scope.
+INSERT INTO command.command_role_jurisdiction_scopes
+  (id, command_role_id, jurisdiction_id, status, valid_from, provenance) VALUES
+  ('dc000000-0000-0000-0000-000000000001', 'd8000000-0000-0000-0000-000000000002',
+   'd4000000-0000-0000-0000-000000000001', 'ACTIVE', now() - interval '1 day', 'MANUAL'),
+  ('dc000000-0000-0000-0000-000000000002', 'd8000000-0000-0000-0000-000000000003',
+   'd4000000-0000-0000-0000-000000000001', 'ACTIVE', now() - interval '1 day', 'MANUAL');
+
+-- Persisted authorization for BOTH actors, before any fn_has_command_role
+-- call: the function resolves the actor to an ACTIVE AccessSubject and checks
+-- the incident's classification against persisted grants, so an actor without
+-- one would be denied for the wrong reason.
+SELECT security.fn_grant_access_role(security.fn_register_access_subject('PERSON', 'd1000000-0000-0000-0000-000000000001'), 'OPERATIONAL');
+SELECT security.fn_grant_access_role(security.fn_register_access_subject('PERSON', 'd1000000-0000-0000-0000-000000000002'), 'OPERATIONAL');
+
+INSERT INTO geo.incident_operational_zone_assignments
+  (id, incident_id, operational_zone_id, assignment_kind, resolution_method, status,
+   valid_from, confidence, review_status, correlation_id, provenance, assigned_by_subject_id)
+SELECT 'dd000000-0000-0000-0000-000000000001', 'd7000000-0000-0000-0000-000000000002',
+       'da000000-0000-0000-0000-000000000001', 'COMMAND', 'MANUAL', 'ACTIVE',
+       now() - interval '1 day', 'CONFIRMED', 'REVIEWED_APPROVED',
+       'dd000000-0000-0000-0000-0000000000f1', 'MANUAL',
+       (SELECT id FROM security.access_subjects
+         WHERE person_id = 'd1000000-0000-0000-0000-000000000001' AND status = 'ACTIVE');
+
 -- ---------- fn_has_command_role: positive + negative (direct) ----------
+-- fn_has_command_role is session-bound: it answers only about the actor the
+-- session itself declares, so argus.actor_id is set per assertion.
+SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';
 SELECT CASE WHEN security.fn_has_command_role('d1000000-0000-0000-0000-000000000001', 'd7000000-0000-0000-0000-000000000002')
             THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
        || ' | positive | fn_has_command_role: valid role + current membership -> true';
 
+SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000002';
 SELECT CASE WHEN NOT security.fn_has_command_role('d1000000-0000-0000-0000-000000000002', 'd7000000-0000-0000-0000-000000000002')
             THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
        || ' | negative | fn_has_command_role: EXPIRED institutional membership -> false';
 
+SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-00000000009f';
 SELECT CASE WHEN NOT security.fn_has_command_role('d1000000-0000-0000-0000-00000000009f', 'd7000000-0000-0000-0000-000000000002')
             THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
        || ' | negative | fn_has_command_role: actor with no command role -> false';
@@ -158,6 +210,30 @@ SELECT CASE WHEN NOT security.fn_has_command_role('d1000000-0000-0000-0000-00000
 SELECT CASE WHEN NOT security.fn_has_command_role(NULL, 'd7000000-0000-0000-0000-000000000002')
             THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
        || ' | negative | fn_has_command_role: NULL actor -> false';
+
+-- R31 negatives, asserted here too so the canonical RLS matrix itself carries
+-- the "geometry never commands" contract.
+SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';
+UPDATE geo.incident_operational_zone_assignments SET assignment_kind = 'PRIMARY'
+ WHERE id = 'dd000000-0000-0000-0000-000000000001';
+SELECT CASE WHEN NOT security.fn_has_command_role('d1000000-0000-0000-0000-000000000001', 'd7000000-0000-0000-0000-000000000002')
+            THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
+       || ' | negative | fn_has_command_role: PRIMARY zone assignment alone -> false';
+
+UPDATE geo.incident_operational_zone_assignments SET assignment_kind = 'AFFECTED'
+ WHERE id = 'dd000000-0000-0000-0000-000000000001';
+SELECT CASE WHEN NOT security.fn_has_command_role('d1000000-0000-0000-0000-000000000001', 'd7000000-0000-0000-0000-000000000002')
+            THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
+       || ' | negative | fn_has_command_role: AFFECTED zone assignment alone -> false';
+
+UPDATE geo.incident_operational_zone_assignments SET assignment_kind = 'MONITORING'
+ WHERE id = 'dd000000-0000-0000-0000-000000000001';
+SELECT CASE WHEN NOT security.fn_has_command_role('d1000000-0000-0000-0000-000000000001', 'd7000000-0000-0000-0000-000000000002')
+            THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
+       || ' | negative | fn_has_command_role: MONITORING zone assignment alone -> false';
+
+UPDATE geo.incident_operational_zone_assignments SET assignment_kind = 'COMMAND'
+ WHERE id = 'dd000000-0000-0000-0000-000000000001';
 
 -- ---------- fn_is_owner: positive + negative (direct) ----------
 SELECT CASE WHEN security.fn_is_owner('d1000000-0000-0000-0000-000000000001', 'identity.people', 'd1000000-0000-0000-0000-000000000001')
@@ -187,22 +263,32 @@ SELECT CASE WHEN NOT security.fn_is_owner('d1000000-0000-0000-0000-000000000001'
 -- ---------- fn_classification_allowed: positive + negative ----------
 -- Direct calls need the session binding satisfied (the function answers only
 -- about the actor the session itself declares).
-SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';
+--
+-- A THIRD person, deliberately: Person One now carries a persisted
+-- OPERATIONAL grant (R31's fn_has_command_role resolves the actor's subject
+-- and checks the incident classification, so the command fixture above has to
+-- grant one). Reusing Person One here would make "no persisted assignment ->
+-- false" assert against an actor that demonstrably HAS one — a false red.
+-- Person Three exists only for this ladder and holds no command role.
+INSERT INTO identity.people (id, legal_name) VALUES
+  ('d1000000-0000-0000-0000-000000000003', 'RLS Fixture Person Three');
 
-SELECT CASE WHEN NOT security.fn_classification_allowed('d1000000-0000-0000-0000-000000000001', 'RESTRICTED')
+SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000003';
+
+SELECT CASE WHEN NOT security.fn_classification_allowed('d1000000-0000-0000-0000-000000000003', 'RESTRICTED')
             THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
        || ' | negative | fn_classification_allowed: no persisted assignment -> false (fails closed)';
 
 -- Same actor, same call, after a REAL assignment exists: now true. This is the
 -- pair that makes the suite meaningful — a deny-everything result proves
 -- nothing on its own.
-SELECT security.fn_grant_access_role(security.fn_register_access_subject('PERSON', 'd1000000-0000-0000-0000-000000000001'), 'RESTRICTED_ANALYST');
+SELECT security.fn_grant_access_role(security.fn_register_access_subject('PERSON', 'd1000000-0000-0000-0000-000000000003'), 'RESTRICTED_ANALYST');
 
-SELECT CASE WHEN security.fn_classification_allowed('d1000000-0000-0000-0000-000000000001', 'RESTRICTED')
+SELECT CASE WHEN security.fn_classification_allowed('d1000000-0000-0000-0000-000000000003', 'RESTRICTED')
             THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
        || ' | positive | fn_classification_allowed: persisted RESTRICTED_ANALYST assignment -> true';
 
-SELECT CASE WHEN NOT security.fn_classification_allowed('d1000000-0000-0000-0000-000000000001', 'CRITICAL')
+SELECT CASE WHEN NOT security.fn_classification_allowed('d1000000-0000-0000-0000-000000000003', 'CRITICAL')
             THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
        || ' | negative | fn_classification_allowed: RESTRICTED ceiling does not reach CRITICAL';
 
@@ -283,6 +369,38 @@ VALUES ('d8000000-0000-0000-0000-000000000002', 'd8000000-0000-0000-0000-0000000
 -- access_role_assignment. This replaces the former `SET LOCAL
 -- argus.actor_role` line — the policies now require a row, not a claim.
 SELECT security.fn_grant_access_role(security.fn_register_access_subject('PERSON', 'd1000000-0000-0000-0000-000000000001'), 'OPERATIONAL');
+
+-- R31 chain: the command role only commands where its jurisdictional scope
+-- meets the incident's COMMAND operational zone. Without these four rows the
+-- policy below denies — which is the whole point of the blocker being fixed.
+INSERT INTO governance.administrative_area_kinds (id, code, name, hierarchy_level, status) VALUES
+  ('d0000000-0000-0000-0000-000000000001', 'RLS_FIXTURE_KIND', 'RLS Fixture Kind', 1, 'ACTIVE');
+INSERT INTO geo.administrative_areas (id, name, area_kind_id, boundary, version) VALUES
+  ('d3000000-0000-0000-0000-000000000001', 'RLS Fixture Area A', 'd0000000-0000-0000-0000-000000000001',
+   ST_GeogFromText('MULTIPOLYGON(((0 0, 0 0.01, 0.01 0.01, 0.01 0, 0 0)))'), 1);
+INSERT INTO governance.jurisdictions (id, name, primary_administrative_area_id, declaring_organization_id, version) VALUES
+  ('d4000000-0000-0000-0000-000000000001', 'RLS Fixture Jurisdiction A',
+   'd3000000-0000-0000-0000-000000000001', 'd2000000-0000-0000-0000-000000000001', 1);
+INSERT INTO geo.operational_zones (id, incident_id, boundary, status) VALUES
+  ('da000000-0000-0000-0000-000000000001', 'd7000000-0000-0000-0000-000000000002',
+   ST_GeogFromText('POLYGON((0 0, 0 0.01, 0.01 0.01, 0.01 0, 0 0))'), 'ACTIVE');
+INSERT INTO geo.operational_zone_jurisdiction_assignments
+  (id, operational_zone_id, jurisdiction_id, relation_kind, status, valid_from, provenance) VALUES
+  ('db000000-0000-0000-0000-000000000001', 'da000000-0000-0000-0000-000000000001',
+   'd4000000-0000-0000-0000-000000000001', 'PRIMARY', 'ACTIVE', now() - interval '1 day', 'OFFICIAL_SOURCE');
+INSERT INTO command.command_role_jurisdiction_scopes
+  (id, command_role_id, jurisdiction_id, status, valid_from, provenance) VALUES
+  ('dc000000-0000-0000-0000-000000000001', 'd8000000-0000-0000-0000-000000000002',
+   'd4000000-0000-0000-0000-000000000001', 'ACTIVE', now() - interval '1 day', 'MANUAL');
+INSERT INTO geo.incident_operational_zone_assignments
+  (id, incident_id, operational_zone_id, assignment_kind, resolution_method, status,
+   valid_from, confidence, review_status, correlation_id, provenance, assigned_by_subject_id)
+SELECT 'dd000000-0000-0000-0000-000000000001', 'd7000000-0000-0000-0000-000000000002',
+       'da000000-0000-0000-0000-000000000001', 'COMMAND', 'MANUAL', 'ACTIVE',
+       now() - interval '1 day', 'CONFIRMED', 'REVIEWED_APPROVED',
+       'dd000000-0000-0000-0000-0000000000f1', 'MANUAL',
+       (SELECT id FROM security.access_subjects
+         WHERE person_id = 'd1000000-0000-0000-0000-000000000001' AND status = 'ACTIVE');
 
 SET LOCAL ROLE app_api;
 SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';

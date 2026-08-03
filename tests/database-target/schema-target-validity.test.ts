@@ -34,12 +34,22 @@ describe("prisma/schema.target.prisma — validity", () => {
     return;
   }
 
-  it("`npx prisma validate --schema prisma/schema.target.prisma` exits 0", () => {
-    expect(() =>
-      execSync(`npx prisma validate --schema "${TARGET_SCHEMA_RELATIVE}"`, {
-        cwd: REPO_ROOT,
-        stdio: "pipe",
-      })
-    ).not.toThrow();
-  });
+  // 60s, not vitest's default 5s: this test SPAWNS `npx prisma validate`, and
+  // the cost is npx/node startup plus schema parsing, not anything this suite
+  // controls. On a loaded machine (the whole database-target suite runs 112
+  // files in parallel) the spawn alone routinely exceeds 5s, which made the
+  // test fail while the very same command exits 0 when run on its own — a
+  // false red that says nothing about the schema.
+  it(
+    "`npx prisma validate --schema prisma/schema.target.prisma` exits 0",
+    () => {
+      expect(() =>
+        execSync(`npx prisma validate --schema "${TARGET_SCHEMA_RELATIVE}"`, {
+          cwd: REPO_ROOT,
+          stdio: "pipe",
+        })
+      ).not.toThrow();
+    },
+    60_000
+  );
 });

@@ -365,6 +365,118 @@ if (($principalTests -join "`n") -match "Test Files\s+\d+ passed \| (\d+) skippe
 $summary.AuditWriterPrincipalResult = "PASS"
 Write-ArgusLog "AUDIT_WRITER_PRINCIPAL_PASS"
 
+# ============================================================
+# R31 — incident -> operational zone -> jurisdiction -> command scope.
+# BLOCKING.
+#
+# Separate from the RLS matrix above because it asserts a different KIND of
+# claim: the matrix proves policy behaviour, this proves that AUTHORIZATION
+# ITSELF now resolves through a persisted relation — that PRIMARY/AFFECTED/
+# MONITORING grant nothing, that no spatial intersection ever reaches COMMAND,
+# and that a jurisdictional mismatch is refused.
+# ============================================================
+Write-ArgusLog "=== R31: incident/zone/jurisdiction relation, command matrix, spatial resolution ==="
+$incidentZone = Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "sql\incident-zone-checks.sql") -AllowFailure
+$summary.IncidentZoneChecksOutput = $incidentZone.Output
+
+$incidentZoneFailures = @($incidentZone.Output | Select-String -Pattern "(INCIDENT_ZONE|INCIDENT_COMMAND|SPATIAL_RESOLUTION)_[A-Z_]*FAIL")
+if ($incidentZoneFailures.Count -gt 0) {
+    throw "INCIDENT_ZONE_FAIL - incident-zone-checks.sql reported failures:`n$($incidentZoneFailures -join "`n")"
+}
+if ($incidentZone.ExitCode -ne 0) {
+    throw "INCIDENT_ZONE_FAIL - incident-zone-checks.sql exited $($incidentZone.ExitCode); an aborted check file is not a passing check file."
+}
+# A missing marker is as much a failure as an explicit FAIL: it means the
+# assertion never ran (aborted file, skipped block, renamed marker).
+$requiredIncidentZoneMarkers = @(
+    "INCIDENT_ZONE_RELATION_PASS",
+    "INCIDENT_ZONE_PRIMARY_UNIQUE_PASS",
+    "INCIDENT_ZONE_SPATIAL_RESOLUTION_PASS",
+    "SPATIAL_RESOLUTION_NO_COMMAND_PASS",
+    "INCIDENT_COMMAND_ZONE_PASS",
+    "INCIDENT_COMMAND_JURISDICTION_PASS",
+    "INCIDENT_COMMAND_MISMATCH_DENIED_PASS",
+    "INCIDENT_COMMAND_REVOKED_DENIED_PASS",
+    "INCIDENT_ZONE_RLS_PASS"
+)
+$incidentZoneText = $incidentZone.Output -join "`n"
+foreach ($marker in $requiredIncidentZoneMarkers) {
+    if ($incidentZoneText -notmatch [regex]::Escape($marker)) {
+        throw "INCIDENT_ZONE_FAIL - required marker $marker is missing from incident-zone-checks.sql output."
+    }
+}
+# Both directions are counted: a deny-everything matrix would satisfy every
+# negative case above while proving that the mechanism grants nothing at all.
+$zonePositive   = @($incidentZone.Output | Select-String -Pattern "INCIDENT_ZONE_OK \| positive").Count
+$zoneNegative   = @($incidentZone.Output | Select-String -Pattern "INCIDENT_ZONE_OK \| negative").Count
+$zoneStructure  = @($incidentZone.Output | Select-String -Pattern "INCIDENT_ZONE_OK \| structure").Count
+$zoneRoleSec    = @($incidentZone.Output | Select-String -Pattern "INCIDENT_ZONE_OK \| role_security").Count
+if ($zonePositive  -lt 8)  { throw "INCIDENT_ZONE_FAIL - only $zonePositive positive case(s) passed; expected at least 8." }
+if ($zoneNegative  -lt 20) { throw "INCIDENT_ZONE_FAIL - only $zoneNegative negative case(s) passed; expected at least 20." }
+if ($zoneStructure -lt 14) { throw "INCIDENT_ZONE_FAIL - only $zoneStructure structural assertion(s) passed; expected at least 14." }
+if ($zoneRoleSec   -lt 2)  { throw "INCIDENT_ZONE_FAIL - role-security preconditions did not pass." }
+$summary.IncidentZonePositivePass  = $zonePositive
+$summary.IncidentZoneNegativePass  = $zoneNegative
+$summary.IncidentZoneStructurePass = $zoneStructure
+$summary.IncidentZoneResult        = "PASS"
+Write-ArgusLog "INCIDENT_ZONE_POSITIVE_PASS=$zonePositive INCIDENT_ZONE_NEGATIVE_PASS=$zoneNegative INCIDENT_ZONE_STRUCTURE_PASS=$zoneStructure"
+foreach ($marker in $requiredIncidentZoneMarkers) { Write-ArgusLog $marker }
+
+Write-ArgusLog "=== R31 suites under the REAL runtime/admin credentials ==="
+# Same Docker-gate discipline as the audit-writer block above: enabled only for
+# this step and restored afterwards, so the Fase 17 whole-suite run is not
+# switched into Docker mode (where the post-rollback residue suites would run
+# against a fully-applied database and fail for the wrong reason).
+$previousZoneFlag = $env:ARGUS_WAVE3_INTEGRATION_TEST
+$previousZoneUrl = $env:TARGET_DATABASE_URL
+Push-Location $Script:ArgusRepoRoot
+try {
+    $env:ARGUS_WAVE3_INTEGRATION_TEST = "true"
+    $env:TARGET_DATABASE_URL = $env:DATABASE_URL
+    $zoneTests = Invoke-ArgusNative {
+        & npx vitest run `
+            tests/database-target/incident-operational-zone-assignment.test.ts `
+            tests/database-target/incident-operational-zone-primary-unique.test.ts `
+            tests/database-target/incident-operational-zone-command.test.ts `
+            tests/database-target/incident-operational-zone-revocation.test.ts `
+            tests/database-target/incident-operational-zone-idempotency.test.ts `
+            tests/database-target/incident-operational-zone-concurrency.test.ts `
+            tests/database-target/incident-zone-spatial-resolution.test.ts `
+            tests/database-target/spatial-resolution-never-grants-command.test.ts `
+            tests/database-target/incident-command-jurisdiction.test.ts `
+            tests/database-target/incident-command-jurisdiction-mismatch.test.ts `
+            tests/database-target/incident-command-without-command-zone.test.ts `
+            tests/database-target/incident-primary-does-not-grant-command.test.ts `
+            tests/database-target/incident-affected-does-not-grant-command.test.ts `
+            tests/database-target/incident-command-membership-expiry.test.ts `
+            tests/database-target/incident-command-role-expiry.test.ts `
+            tests/database-target/incident-command-institution.test.ts `
+            tests/database-target/incident-command-forged-context.test.ts `
+            tests/database-target/incident-candidate-zone-promotion.test.ts `
+            tests/database-target/incident-zone-rls.test.ts 2>&1
+    }
+    $zoneExit = $LASTEXITCODE
+} finally {
+    Pop-Location
+    if ($null -eq $previousZoneFlag) { Remove-Item Env:ARGUS_WAVE3_INTEGRATION_TEST -ErrorAction SilentlyContinue }
+    else { $env:ARGUS_WAVE3_INTEGRATION_TEST = $previousZoneFlag }
+    if ($null -eq $previousZoneUrl) { Remove-Item Env:TARGET_DATABASE_URL -ErrorAction SilentlyContinue }
+    else { $env:TARGET_DATABASE_URL = $previousZoneUrl }
+}
+$summary.IncidentZoneTestsExitCode = $zoneExit
+$summary.IncidentZoneTestsOutput = $zoneTests | Select-Object -Last 25
+if ($zoneExit -ne 0) {
+    throw "INCIDENT_ZONE_TESTS_FAIL - the R31 suites failed:`n$($zoneTests | Select-Object -Last 40 | Out-String)"
+}
+# Nothing may SKIP here: a skipped suite means the runtime credentials were
+# absent, which is exactly the condition that would let the owner stand in for
+# the runtime unnoticed.
+if (($zoneTests -join "`n") -match "Test Files\s+\d+ passed \| (\d+) skipped") {
+    throw "INCIDENT_ZONE_TESTS_FAIL - an R31 suite SKIPPED; the app_api/access_admin credentials were not available."
+}
+$summary.IncidentZoneTestsResult = "PASS"
+Write-ArgusLog "INCIDENT_ZONE_TESTS_PASS"
+
 Write-ArgusLog "=== Fase 16: prisma validate --schema prisma/schema.target.prisma ==="
 Push-Location $Script:ArgusRepoRoot
 try {

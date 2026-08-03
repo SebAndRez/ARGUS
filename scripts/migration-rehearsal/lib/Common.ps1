@@ -261,16 +261,49 @@ SELECT 'BYPASSRLS_ROLES' AS section, coalesce(string_agg(rolname, ','), '(none)'
 }
 
 function Wait-ArgusPostgresHealthy {
+    <#
+    Waits until the container is healthy AND actually answers a query.
+
+    The second half is not redundant. The postgres image runs a TEMPORARY
+    server during initdb, shuts it down, then starts the real one — and
+    `pg_isready` can report healthy against that temporary server, so the very
+    next statement fails with "the database system is shutting down". Observed
+    exactly that way on a Fase 15 reset.
+
+    The probe is `postgis_full_version()` and not `SELECT 1` deliberately: the
+    temporary server ACCEPTS CONNECTIONS too, so `SELECT 1` succeeds against it
+    and proves nothing — that was the second false start, where the probe
+    passed and the very next statement died on "function postgis_full_version()
+    does not exist". PostGIS is created by the image's initdb scripts, so its
+    presence is the first observable moment at which the database is the one
+    this harness actually needs. Probing for the required capability, rather
+    than for liveness, is what makes the wait meaningful.
+    #>
     param([int]$TimeoutSeconds = 120)
     Assert-ArgusLocalOnly
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $healthy = $false
     while ((Get-Date) -lt $deadline) {
         $status = & docker inspect --format='{{.State.Health.Status}}' $Script:ArgusContainerName 2>$null
         if ($status -eq "healthy") {
+            $healthy = $true
             Write-ArgusLog "Postgres healthcheck: healthy."
-            return $true
+            break
         }
         Start-Sleep -Seconds 3
     }
-    throw "Postgres did not become healthy within $TimeoutSeconds s - see 'docker compose -f $Script:ArgusComposeFile logs'."
+    if (-not $healthy) {
+        throw "Postgres did not become healthy within $TimeoutSeconds s - see 'docker compose -f $Script:ArgusComposeFile logs'."
+    }
+
+    while ((Get-Date) -lt $deadline) {
+        $probe = Invoke-ArgusPsql -SqlText "SELECT postgis_full_version();" -AllowFailure
+        if ($probe.ExitCode -eq 0) {
+            Write-ArgusLog "Postgres is serving and PostGIS is available."
+            return $true
+        }
+        Write-ArgusLog "Postgres healthy but PostGIS not available yet (exit $($probe.ExitCode)) - still initializing, retrying." "WARN"
+        Start-Sleep -Seconds 3
+    }
+    throw "Postgres reported healthy but PostGIS never became available within $TimeoutSeconds s - see 'docker compose -f $Script:ArgusComposeFile logs'."
 }

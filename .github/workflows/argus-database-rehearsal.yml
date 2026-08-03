@@ -276,6 +276,74 @@ jobs:
       - name: Access roles — static rollback contract + no session-GUC authority anywhere (no Docker)
         run: npx vitest run tests/database-target/access-role-rollback.test.ts tests/database-target/classification-rejects-forged-guc.test.ts
 
+      # ---------------------------------------------------------------------
+      # R31 — incident -> operational zone -> jurisdiction -> command scope.
+      # BLOCKING. Proves that authorization now resolves through a PERSISTED
+      # relation: PRIMARY/AFFECTED/MONITORING grant nothing, no spatial
+      # intersection ever reaches COMMAND, and a jurisdictional mismatch is
+      # refused. Uses only the disposable local database — no production
+      # secret is referenced anywhere in this job.
+      # ---------------------------------------------------------------------
+      - name: R31 — incident/zone/jurisdiction relation, command matrix, spatial resolution (blocking)
+        shell: pwsh
+        run: |
+          . ./scripts/migration-rehearsal/lib/Common.ps1
+          Get-ArgusLocalEnv | Out-Null
+          $c = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/incident-zone-checks.sql" -AllowFailure
+          $c.Output | ForEach-Object { Write-Host $_ }
+          if ($c.ExitCode -ne 0) { Write-Error "incident-zone-checks.sql aborted (exit $($c.ExitCode))"; exit 1 }
+          $fails = @($c.Output | Select-String -Pattern "(INCIDENT_ZONE|INCIDENT_COMMAND|SPATIAL_RESOLUTION)_[A-Z_]*FAIL")
+          if ($fails.Count -gt 0) { Write-Error "INCIDENT_ZONE_FAIL:`n$($fails -join "`n")"; exit 1 }
+          $text = $c.Output -join "`n"
+          foreach ($m in @(
+            "INCIDENT_ZONE_RELATION_PASS","INCIDENT_ZONE_PRIMARY_UNIQUE_PASS",
+            "INCIDENT_ZONE_SPATIAL_RESOLUTION_PASS","SPATIAL_RESOLUTION_NO_COMMAND_PASS",
+            "INCIDENT_COMMAND_ZONE_PASS","INCIDENT_COMMAND_JURISDICTION_PASS",
+            "INCIDENT_COMMAND_MISMATCH_DENIED_PASS","INCIDENT_COMMAND_REVOKED_DENIED_PASS",
+            "INCIDENT_ZONE_RLS_PASS")) {
+            if ($text -notmatch [regex]::Escape($m)) { Write-Error "Required marker $m missing"; exit 1 }
+          }
+          $pos = @($c.Output | Select-String -Pattern "INCIDENT_ZONE_OK \| positive").Count
+          $neg = @($c.Output | Select-String -Pattern "INCIDENT_ZONE_OK \| negative").Count
+          $str = @($c.Output | Select-String -Pattern "INCIDENT_ZONE_OK \| structure").Count
+          Write-Host "INCIDENT_ZONE_POSITIVE_PASS=$pos INCIDENT_ZONE_NEGATIVE_PASS=$neg INCIDENT_ZONE_STRUCTURE_PASS=$str"
+          if ($pos -lt 8)  { Write-Error "Too few positive R31 cases ($pos) - a deny-everything suite proves nothing"; exit 1 }
+          if ($neg -lt 20) { Write-Error "Too few negative R31 cases ($neg)"; exit 1 }
+          if ($str -lt 14) { Write-Error "Too few structural R31 assertions ($str)"; exit 1 }
+
+      - name: R31 — command matrix under the REAL app_api/access_admin credentials (blocking)
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATABASE_URL=$(grep '^DATABASE_URL=' .env.argus-migration.local | cut -d= -f2-)
+          export ARGUS_WAVE3_INTEGRATION_TEST=true
+          export TARGET_DATABASE_URL="$DATABASE_URL"
+          export TARGET_RUNTIME_DATABASE_URL=$(grep '^TARGET_RUNTIME_DATABASE_URL=' .env.argus-migration.local | cut -d= -f2-)
+          export TARGET_ADMIN_DATABASE_URL=$(grep '^TARGET_ADMIN_DATABASE_URL=' .env.argus-migration.local | cut -d= -f2-)
+          npx vitest run \
+            tests/database-target/incident-operational-zone-assignment.test.ts \
+            tests/database-target/incident-operational-zone-primary-unique.test.ts \
+            tests/database-target/incident-operational-zone-command.test.ts \
+            tests/database-target/incident-operational-zone-revocation.test.ts \
+            tests/database-target/incident-operational-zone-idempotency.test.ts \
+            tests/database-target/incident-operational-zone-concurrency.test.ts \
+            tests/database-target/incident-zone-spatial-resolution.test.ts \
+            tests/database-target/spatial-resolution-never-grants-command.test.ts \
+            tests/database-target/incident-command-jurisdiction.test.ts \
+            tests/database-target/incident-command-jurisdiction-mismatch.test.ts \
+            tests/database-target/incident-command-without-command-zone.test.ts \
+            tests/database-target/incident-primary-does-not-grant-command.test.ts \
+            tests/database-target/incident-affected-does-not-grant-command.test.ts \
+            tests/database-target/incident-command-membership-expiry.test.ts \
+            tests/database-target/incident-command-role-expiry.test.ts \
+            tests/database-target/incident-command-institution.test.ts \
+            tests/database-target/incident-command-forged-context.test.ts \
+            tests/database-target/incident-candidate-zone-promotion.test.ts \
+            tests/database-target/incident-zone-rls.test.ts
+
+      - name: R31 — static rollback contract (no Docker)
+        run: npx vitest run tests/database-target/incident-zone-rollback.test.ts
+
       - name: Audit partitions — maintenance is OFF while every target flag is off, and never reads DATABASE_URL/DIRECT_URL
         # Deliberately runs with NO ARGUS_TARGET_DB_* variable and NO
         # TARGET_DATABASE_URL set: the flags-off path must return NOT_ENABLED
@@ -391,7 +459,19 @@ jobs:
           if ($residue.Count -gt 0) { Write-Error "ACCESS_ROLE_ROLLBACK_FAIL - survived rollback:`n$($residue -join "`n")"; exit 1 }
           Write-Host "ACCESS_ROLE_ROLLBACK_PASS"
 
-      - name: Audit partitions + access roles — post-rollback no-residue assertions (blocking)
+      - name: R31 substrate leaves ZERO residue after rollback (blocking)
+        shell: pwsh
+        run: |
+          . ./scripts/migration-rehearsal/lib/Common.ps1
+          Get-ArgusLocalEnv | Out-Null
+          $r = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/incident-zone-residue.sql" -AllowFailure
+          $r.Output | ForEach-Object { Write-Host $_ }
+          if ($r.ExitCode -ne 0) { Write-Error "INCIDENT_ZONE_ROLLBACK_FAIL - residue query failed"; exit 1 }
+          $residue = @($r.Output | Select-String -Pattern "INCIDENT_ZONE_RESIDUE\|")
+          if ($residue.Count -gt 0) { Write-Error "INCIDENT_ZONE_ROLLBACK_FAIL - survived rollback:`n$($residue -join "`n")"; exit 1 }
+          Write-Host "INCIDENT_ZONE_ROLLBACK_PASS"
+
+      - name: Audit partitions + access roles + R31 — post-rollback no-residue assertions (blocking)
         shell: bash
         run: |
           set -euo pipefail
@@ -400,7 +480,8 @@ jobs:
           export TARGET_DATABASE_URL="$DATABASE_URL"
           npx vitest run \
             tests/database-target/audit-log-partition-no-residue.test.ts \
-            tests/database-target/access-role-zero-residue.test.ts
+            tests/database-target/access-role-zero-residue.test.ts \
+            tests/database-target/incident-zone-zero-residue.test.ts
 
       - name: Wave 3/4 — tear down local Postgres/PostGIS
         if: always()
