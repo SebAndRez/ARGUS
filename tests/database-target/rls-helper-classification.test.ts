@@ -44,24 +44,60 @@ describe("security.fn_classification_allowed — real implementation, fails clos
     expect(realBody()).not.toMatch(/AS \$\$\s*SELECT false;\s*\$\$/);
   });
 
-  it("fails closed on a NULL actor or NULL classification", () => {
-    expect(realBody()).toMatch(/p_actor_id IS NULL OR p_classification IS NULL THEN false/);
+  it("fails closed on a NULL classification", () => {
+    expect(realBody()).toMatch(/p_classification IS NOT NULL/);
   });
 
-  it("resolves clearance from the real argus.actor_role session signal", () => {
-    expect(realBody()).toContain("argus.actor_role");
+  // These four assertions are the INVERSE of what this file required before the
+  // AccessSubject/AccessRoleAssignment session. The old body resolved clearance
+  // from the `argus.actor_role` session GUC, and this test demanded exactly
+  // that — which was correct for a schema with no physical actor->AccessRole
+  // relationship, and is now the regression to prevent: a GUC is set by whoever
+  // holds the connection, so believing it means any principal that can run
+  // `SET argus.actor_role = 'ADMIN'` has CRITICAL clearance.
+  it("does NOT read the session role GUC — a session-settable string is not an authorization decision", () => {
+    expect(realBody()).not.toContain("argus.actor_role");
   });
 
-  it("never grants universal access — has an explicit ELSE false", () => {
-    expect(realBody()).toMatch(/ELSE false/);
+  it("resolves clearance from persisted rows, through fn_active_access_roles", () => {
+    expect(realBody()).toContain("security.fn_active_access_roles(p_actor_id)");
   });
 
-  it("gates any 'true' behind an explicit recognized-role list", () => {
-    expect(realBody()).toMatch(/current_setting\('argus\.actor_role', true\) IN \(/);
+  it("compares the requested classification against the ROLE's persisted ceiling", () => {
+    expect(realBody()).toContain("p_classification <= ar.classification_ceiling");
   });
 
-  it("documents the AccessRole-junction gap instead of silently inventing one", () => {
+  it("never grants universal access — the only true comes from an EXISTS over real assignments", () => {
+    const body = realBody();
+    expect(body).toMatch(/EXISTS \(\s*\n\s*SELECT 1 FROM security\.fn_active_access_roles/);
+    // No unconditional true anywhere in the body.
+    expect(body.replace(/--.*$/gm, "")).not.toMatch(/THEN true|ELSE true|RETURN true/);
+  });
+
+  it("the resolver it delegates to requires an ACTIVE subject, an ACTIVE in-window assignment and an ACTIVE role", () => {
     const content = readFileSync(WAVE_010_RLS, "utf8");
-    expect(content).toMatch(/NO junction table back to an actor/);
+    const resolver = content.slice(
+      content.indexOf("CREATE OR REPLACE FUNCTION security.fn_active_access_roles("),
+      content.indexOf("-- Does this actor currently hold ANY of the named access roles?")
+    );
+    expect(resolver).toContain("security.fn_resolve_access_subject(p_actor_id)");
+    expect(resolver).toContain("AND a.status = 'ACTIVE'");
+    expect(resolver).toContain("AND a.valid_from <= now()");
+    expect(resolver).toContain("AND (a.valid_until IS NULL OR a.valid_until > now())");
+    expect(resolver).toContain("AND r.status = 'ACTIVE'");
+    // And it is session-bound, so it cannot answer about another actor.
+    expect(resolver).toContain("IF p_actor_id IS DISTINCT FROM current_setting('argus.actor_id', true)::uuid THEN");
+  });
+
+  it("the AccessRole-junction gap it used to document is now closed by real tables", () => {
+    const content = readFileSync(WAVE_010_RLS, "utf8");
+    expect(content).not.toMatch(/NO junction table back to an actor/);
+    expect(content).toContain("security.access_role_assignments");
+    const wave020 = readFileSync(
+      join(REPO_ROOT, "prisma", "target-migrations", "020_identity", "migration.sql"),
+      "utf8"
+    );
+    expect(wave020).toContain("CREATE TABLE IF NOT EXISTS security.access_subjects (");
+    expect(wave020).toContain("CREATE TABLE IF NOT EXISTS security.access_role_assignments (");
   });
 });

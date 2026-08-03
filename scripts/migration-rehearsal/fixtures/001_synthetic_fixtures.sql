@@ -361,6 +361,61 @@ INSERT INTO ice.emergency_accesses (
 )
 ON CONFLICT (id) DO NOTHING;
 
+-- =============================================================================
+-- security.access_subjects / security.access_role_assignments
+-- =============================================================================
+-- The authorization substrate. Without these rows the rehearsal database has
+-- schemas and policies but nobody authorized by anything, and every RLS
+-- positive case would be indistinguishable from a deny-everything suite.
+--
+-- Created through the canonical SECURITY DEFINER functions rather than by
+-- direct INSERT, so the fixtures exercise the same validated, audited path the
+-- administration API uses — and so a broken grant function fails the rehearsal
+-- here instead of silently later.
+--
+-- Deliberately spans the cases the classification matrix needs: a
+-- CRITICAL-ceiling operator, a PUBLIC-only one, a machine identity, an
+-- institution-scoped grant, and one already-expired grant.
+DO $$
+DECLARE
+  v_one uuid;
+  v_two uuid;
+  v_sys uuid;
+BEGIN
+  IF to_regclass('security.access_subjects') IS NULL THEN
+    RAISE NOTICE 'ARGUS_FIXTURE_ACCESS_SUBJECTS_SKIPPED (wave 020 not applied)';
+    RETURN;
+  END IF;
+
+  v_one := security.fn_register_access_subject('PERSON', 'b0000000-0000-0000-0000-000000000001');
+  v_two := security.fn_register_access_subject('PERSON', 'b0000000-0000-0000-0000-000000000002');
+  v_sys := security.fn_register_access_subject('SYSTEM', NULL, NULL, NULL, 'ARGUS_REHEARSAL_RUNTIME');
+
+  -- Persona Uno: full operational clearance (ceiling CRITICAL), global, any
+  -- purpose. This is the subject the RLS positives resolve against.
+  PERFORM security.fn_grant_access_role(v_one, 'OPERATIONAL', NULL, 'GENERAL', now() - interval '1 day', NULL,
+                                        NULL, 'REHEARSAL_FIXTURE', 'c0000000-0000-0000-0000-0000000000a1');
+  -- Persona Dos: PUBLIC only, so "insufficient clearance" is a real state and
+  -- not merely "unknown actor".
+  PERFORM security.fn_grant_access_role(v_two, 'PUBLIC_VIEWER', NULL, 'GENERAL', now() - interval '1 day', NULL,
+                                        NULL, 'REHEARSAL_FIXTURE', 'c0000000-0000-0000-0000-0000000000a2');
+  -- The service identity the canonical audit writer runs as. SYSTEM is what
+  -- security.audit_logs' INSERT policy requires.
+  PERFORM security.fn_grant_access_role(v_sys, 'SYSTEM', NULL, 'GENERAL', now() - interval '1 day', NULL,
+                                        NULL, 'REHEARSAL_FIXTURE', 'c0000000-0000-0000-0000-0000000000a3');
+  -- Institution-scoped grant: authorizes only while the session declares this
+  -- institution.
+  PERFORM security.fn_grant_access_role(v_two, 'RESTRICTED_ANALYST', 'c0000000-0000-0000-0000-000000000001', 'GENERAL',
+                                        now() - interval '1 day', NULL, v_one, 'REHEARSAL_FIXTURE',
+                                        'c0000000-0000-0000-0000-0000000000a4');
+  -- Already expired: must never authorize.
+  PERFORM security.fn_grant_access_role(v_two, 'SENSITIVE_HANDLER', NULL, 'GENERAL',
+                                        now() - interval '10 days', now() - interval '1 day', v_one,
+                                        'REHEARSAL_FIXTURE', 'c0000000-0000-0000-0000-0000000000a5');
+
+  RAISE NOTICE 'ARGUS_FIXTURE_ACCESS_SUBJECTS_OK subjects=3 assignments=5';
+END $$;
+
 COMMIT;
 
 -- Post-insert sanity notes (verified by

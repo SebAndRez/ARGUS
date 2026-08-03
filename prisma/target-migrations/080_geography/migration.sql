@@ -208,12 +208,12 @@ CREATE POLICY operational_sectors_inherit ON geo.operational_sectors
 ALTER TABLE geo.extraction_points ENABLE ROW LEVEL SECURITY;
 ALTER TABLE geo.extraction_points FORCE ROW LEVEL SECURITY;
 CREATE POLICY extraction_points_operational ON geo.extraction_points
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE geo.reception_points ENABLE ROW LEVEL SECURITY;
 ALTER TABLE geo.reception_points FORCE ROW LEVEL SECURITY;
 CREATE POLICY reception_points_operational ON geo.reception_points
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE geo.meeting_points ENABLE ROW LEVEL SECURITY;
 ALTER TABLE geo.meeting_points FORCE ROW LEVEL SECURITY;
@@ -221,7 +221,7 @@ CREATE POLICY meeting_points_served_via_assignment ON geo.meeting_points
   FOR ALL USING ( EXISTS (SELECT 1 FROM mission.mission_meeting_point_assignments mmpa
     WHERE mmpa.meeting_point_id = meeting_points.id
       AND security.fn_has_active_assignment(current_setting('argus.actor_id')::uuid, mmpa.mission_id))
-    OR current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+    OR security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE geo.operational_routes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE geo.operational_routes FORCE ROW LEVEL SECURITY;

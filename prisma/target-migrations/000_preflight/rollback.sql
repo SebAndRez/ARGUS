@@ -41,10 +41,14 @@ DROP TABLE IF EXISTS migration_meta.migration_checkpoints;
 DROP SCHEMA IF EXISTS migration_meta;
 
 -- ============================================================
--- 1. Drop the 6 roles (guarded)
+-- 1. Drop the 7 roles (guarded)
 -- ============================================================
 DO $$
 BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'access_admin') THEN
+    DROP ROLE access_admin;
+  END IF;
+
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'readonly_inspector') THEN
     DROP ROLE readonly_inspector;
   END IF;

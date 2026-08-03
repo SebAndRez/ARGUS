@@ -93,8 +93,19 @@ export async function ensureAuditLogPartition(
   recordAuditPartitionEnsureAttempt(labels);
   const startedAt = Date.now();
   try {
+    // fn_ensure_audit_log_partition_for_write, NOT fn_ensure_audit_log_partition.
+    //
+    // The unbounded creator is executable only by nobody-in-particular (PUBLIC
+    // revoked, granted to no application role), which is why the previous
+    // arrangement could not have been running as the runtime principal — and
+    // was not: it connected as the schema owner. The runtime entry point is
+    // granted to app_api/ingest_worker/jobs_worker and bounds the request to a
+    // sane write horizon around now, so a compromised runtime credential cannot
+    // create partitions for arbitrary centuries, alter one, or drop one.
+    // Historical backfills and deliberate future windows use the unbounded
+    // function under an operator/maintenance principal.
     const rows = await tx.$queryRawUnsafe<{ result: EnsureAuditLogPartitionResult }>(
-      `SELECT security.fn_ensure_audit_log_partition($1::timestamptz) AS result`,
+      `SELECT security.fn_ensure_audit_log_partition_for_write($1::timestamptz) AS result`,
       occurredAt
     );
     const result = rows[0]?.result;

@@ -379,69 +379,69 @@ LEFT JOIN public."FamilyPlan" fp ON fp."profileId" = pp.id;
 ALTER TABLE knowledge.after_action_reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge.after_action_reviews FORCE ROW LEVEL SECURITY;
 CREATE POLICY aar_institutional ON knowledge.after_action_reviews
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE knowledge.findings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge.findings FORCE ROW LEVEL SECURITY;
 CREATE POLICY findings_inherit ON knowledge.findings
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN')
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN'])
     OR EXISTS (SELECT 1 FROM knowledge.findings f WHERE f.id = id AND f.status = 'PUBLISHED') );
 
 ALTER TABLE knowledge.improvement_recommendations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge.improvement_recommendations FORCE ROW LEVEL SECURITY;
 CREATE POLICY improvement_recommendations_institutional ON knowledge.improvement_recommendations
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE knowledge.lessons_learned ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge.lessons_learned FORCE ROW LEVEL SECURITY;
 CREATE POLICY lessons_learned_readable ON knowledge.lessons_learned
-  FOR SELECT USING ( status = 'APPROVED' OR current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR SELECT USING ( status = 'APPROVED' OR security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 CREATE POLICY lessons_learned_write_institutional ON knowledge.lessons_learned
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE knowledge.corrective_actions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge.corrective_actions FORCE ROW LEVEL SECURITY;
 CREATE POLICY corrective_actions_institutional ON knowledge.corrective_actions
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE knowledge.lesson_learned_findings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge.lesson_learned_findings FORCE ROW LEVEL SECURITY;
 CREATE POLICY llf_institutional ON knowledge.lesson_learned_findings
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE knowledge.procedures ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge.procedures FORCE ROW LEVEL SECURITY;
 CREATE POLICY procedures_public_active_or_institutional ON knowledge.procedures
-  FOR SELECT USING ( status = 'ACTIVE' OR current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR SELECT USING ( status = 'ACTIVE' OR security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 CREATE POLICY procedures_write_institutional ON knowledge.procedures
-  FOR INSERT WITH CHECK ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR INSERT WITH CHECK ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 CREATE POLICY procedures_update_institutional ON knowledge.procedures
-  FOR UPDATE USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR UPDATE USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE knowledge.knowledge_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge.knowledge_documents FORCE ROW LEVEL SECURITY;
 CREATE POLICY knowledge_documents_published_or_institutional ON knowledge.knowledge_documents
-  FOR SELECT USING ( status = 'PUBLISHED' OR current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR SELECT USING ( status = 'PUBLISHED' OR security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 CREATE POLICY knowledge_documents_write_institutional ON knowledge.knowledge_documents
-  FOR INSERT WITH CHECK ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR INSERT WITH CHECK ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 CREATE POLICY knowledge_documents_update_institutional ON knowledge.knowledge_documents
-  FOR UPDATE USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR UPDATE USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE knowledge.knowledge_facts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge.knowledge_facts FORCE ROW LEVEL SECURITY;
 CREATE POLICY knowledge_facts_inherit ON knowledge.knowledge_facts
   FOR ALL USING ( EXISTS (SELECT 1 FROM knowledge.knowledge_documents kd WHERE kd.id = knowledge_document_id
-    AND (kd.status = 'PUBLISHED' OR current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN'))) );
+    AND (kd.status = 'PUBLISHED' OR security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']))) );
 
 ALTER TABLE knowledge.simulations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge.simulations FORCE ROW LEVEL SECURITY;
 CREATE POLICY simulations_institutional ON knowledge.simulations
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE knowledge.simulation_results ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge.simulation_results FORCE ROW LEVEL SECURITY;
 CREATE POLICY simulation_results_institutional ON knowledge.simulation_results
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 -- SCHEMA-LEVEL USAGE (corrective session): table grants below are
 -- unreachable without USAGE on their schema ("permission denied for

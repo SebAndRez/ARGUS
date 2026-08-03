@@ -14,6 +14,37 @@ ALTER TABLE security.audit_logs DROP CONSTRAINT IF EXISTS fk_audit_logs_device;
 ALTER TABLE governance.resource_reservation_rules DROP CONSTRAINT IF EXISTS fk_rrr_institution;
 ALTER TABLE governance.jurisdictions DROP CONSTRAINT IF EXISTS fk_jurisdictions_declaring_organization;
 
+-- 1b. security.access_subjects / security.access_role_assignments (§8 of this
+--     wave's migration.sql). Must go BEFORE institution.organizations and
+--     identity.people below, which they reference with real FKs, and before
+--     010's rollback, which drops security.access_roles.
+--
+--     Order inside this block: policies -> administration functions ->
+--     assignments (child) -> subjects (parent). Never DROP ... CASCADE: a
+--     cascade here would silently take out whatever else happened to depend on
+--     these, which is exactly what a rollback must not do quietly.
+DROP POLICY IF EXISTS access_role_assignments_self_or_governance ON security.access_role_assignments;
+DROP POLICY IF EXISTS access_subjects_self_or_governance ON security.access_subjects;
+
+REVOKE ALL ON FUNCTION security.fn_revoke_access_role(uuid, varchar, uuid) FROM access_admin;
+REVOKE ALL ON FUNCTION security.fn_grant_access_role(uuid, varchar, uuid, security.access_purpose_enum, timestamptz, timestamptz, uuid, varchar, uuid) FROM access_admin;
+REVOKE ALL ON FUNCTION security.fn_register_access_subject(security.actor_type_enum, uuid, uuid, uuid, varchar) FROM access_admin;
+REVOKE ALL ON security.access_subjects, security.access_role_assignments FROM access_admin;
+REVOKE ALL ON security.access_roles FROM access_admin;
+REVOKE USAGE ON SCHEMA identity, institution FROM access_admin;
+REVOKE USAGE ON SCHEMA security FROM access_admin;
+
+DROP FUNCTION IF EXISTS security.fn_revoke_access_role(uuid, varchar, uuid);
+DROP FUNCTION IF EXISTS security.fn_grant_access_role(uuid, varchar, uuid, security.access_purpose_enum, timestamptz, timestamptz, uuid, varchar, uuid);
+DROP FUNCTION IF EXISTS security.fn_audit_access_role_change(varchar, uuid, uuid, text, varchar, uuid);
+DROP FUNCTION IF EXISTS security.fn_register_access_subject(security.actor_type_enum, uuid, uuid, uuid, varchar);
+
+-- Indexes are owned by their table and disappear with it; listed nowhere here
+-- for that reason, and verified absent by 020_identity/validation.sql's
+-- residue check rather than assumed.
+DROP TABLE IF EXISTS security.access_role_assignments;
+DROP TABLE IF EXISTS security.access_subjects;
+
 -- 2. Revoke grants
 REVOKE SELECT ON ALL TABLES IN SCHEMA capability FROM readonly_inspector;
 REVOKE SELECT ON ALL TABLES IN SCHEMA institution FROM readonly_inspector;

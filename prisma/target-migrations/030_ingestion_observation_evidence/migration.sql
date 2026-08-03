@@ -353,37 +353,37 @@ CREATE TABLE IF NOT EXISTS evidence.corroborations (
 ALTER TABLE ingest.sources ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingest.sources FORCE ROW LEVEL SECURITY;
 CREATE POLICY sources_operational_role ON ingest.sources
-  FOR ALL USING ( current_setting('argus.actor_role', true) = 'OPERATIONAL' OR current_setting('argus.actor_role', true) = 'ADMIN' );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL']) OR security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['ADMIN']) );
 
 ALTER TABLE ingest.source_connectors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingest.source_connectors FORCE ROW LEVEL SECURITY;
 CREATE POLICY source_connectors_inherit ON ingest.source_connectors
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE ingest.providers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingest.providers FORCE ROW LEVEL SECURITY;
 CREATE POLICY providers_operational_role ON ingest.providers
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE ingest.ingestion_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingest.ingestion_runs FORCE ROW LEVEL SECURITY;
 CREATE POLICY ingestion_runs_inherit ON ingest.ingestion_runs
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE ingest.source_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingest.source_records FORCE ROW LEVEL SECURITY;
 CREATE POLICY source_records_classification ON ingest.source_records
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE ingest.transformations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingest.transformations FORCE ROW LEVEL SECURITY;
 CREATE POLICY transformations_inherit ON ingest.transformations
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE ingest.ingestion_errors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingest.ingestion_errors FORCE ROW LEVEL SECURITY;
 CREATE POLICY ingestion_errors_inherit ON ingest.ingestion_errors
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 -- evidence.* — SENSITIVE-CRITICAL, assignment/command/ownership-scoped
 -- (Access Control v1.1 §4.5). Full incident/mission joins are deferred

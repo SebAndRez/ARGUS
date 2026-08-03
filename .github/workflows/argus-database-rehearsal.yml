@@ -204,6 +204,78 @@ jobs:
           if ($routing -lt 8) { Write-Error "Only $routing of 8 boundary instants routing-verified via tableoid"; exit 1 }
           Write-Host "AUDIT_PARTITION_ROUTING_VERIFIED=$routing"
 
+      # ---------------------------------------------------------------------
+      # Persisted authorization: security.access_subjects /
+      # security.access_role_assignments, and the REAL principal of the
+      # canonical audit writer.
+      #
+      # Every case here is BLOCKING. The defect being locked out is not
+      # theoretical: `fn_classification_allowed` used to read the
+      # `argus.actor_role` session GUC and believe it, so any principal able to
+      # run `SET argus.actor_role = 'ADMIN'` had CRITICAL clearance; and the
+      # audit writer connected as the migration owner (superuser, BYPASSRLS,
+      # owner of the schema/table/functions), so no RLS policy or function grant
+      # was ever exercised by the code that claimed to be constrained by them.
+      #
+      # No production secrets: the app_api / access_admin credentials are
+      # generated per-run by the rehearsal harness into
+      # .env.argus-migration.local, for the disposable loopback container only.
+      # ---------------------------------------------------------------------
+      - name: Access roles — give app_api/access_admin their local-only credentials
+        shell: pwsh
+        run: |
+          . ./scripts/migration-rehearsal/lib/Common.ps1
+          Get-ArgusLocalEnv | Out-Null
+          Set-ArgusRuntimeRolePasswords
+
+      - name: Access roles — subjects, assignments, classification matrix, forged-GUC denial, RLS (blocking)
+        shell: pwsh
+        run: |
+          . ./scripts/migration-rehearsal/lib/Common.ps1
+          Get-ArgusLocalEnv | Out-Null
+          $c = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/access-role-checks.sql" -AllowFailure
+          $c.Output | ForEach-Object { Write-Host $_ }
+          if ($c.ExitCode -ne 0) { Write-Error "access-role-checks.sql aborted (exit $($c.ExitCode))"; exit 1 }
+          $fails = @($c.Output | Select-String -Pattern "(ACCESS|CLASSIFICATION)_[A-Z_]*FAIL")
+          if ($fails.Count -gt 0) { Write-Error "ACCESS_ROLE_FAIL:`n$($fails -join "`n")"; exit 1 }
+          $text = $c.Output -join "`n"
+          foreach ($m in @("ACCESS_SUBJECT_INTEGRITY_PASS","ACCESS_ROLE_ASSIGNMENT_PASS","CLASSIFICATION_PERSISTED_ROLE_PASS","CLASSIFICATION_FORGED_GUC_DENIED_PASS","ACCESS_ROLE_RLS_PASS")) {
+            if ($text -notmatch [regex]::Escape($m)) { Write-Error "Required marker $m missing"; exit 1 }
+          }
+          $pos = @($c.Output | Select-String -Pattern "ACCESS_(MATRIX|ROLE_RLS)_OK \| positive").Count
+          $neg = @($c.Output | Select-String -Pattern "ACCESS_(MATRIX|ROLE_RLS)_OK \| negative").Count
+          Write-Host "ACCESS_POSITIVE_PASS=$pos ACCESS_NEGATIVE_PASS=$neg"
+          if ($pos -lt 4) { Write-Error "Too few positive authorization cases ($pos) - a deny-everything suite proves nothing"; exit 1 }
+          if ($neg -lt 8) { Write-Error "Too few negative authorization cases ($neg)"; exit 1 }
+
+      - name: Access roles + audit writer principal — under the REAL app_api/access_admin credentials (blocking)
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATABASE_URL=$(grep '^DATABASE_URL=' .env.argus-migration.local | cut -d= -f2-)
+          export ARGUS_WAVE3_INTEGRATION_TEST=true
+          export TARGET_DATABASE_URL="$DATABASE_URL"
+          export TARGET_RUNTIME_DATABASE_URL=$(grep '^TARGET_RUNTIME_DATABASE_URL=' .env.argus-migration.local | cut -d= -f2-)
+          export TARGET_ADMIN_DATABASE_URL=$(grep '^TARGET_ADMIN_DATABASE_URL=' .env.argus-migration.local | cut -d= -f2-)
+          npx vitest run \
+            tests/database-target/audit-writer-principal.test.ts \
+            tests/database-target/audit-writer-no-owner-runtime.test.ts \
+            tests/database-target/access-subject.test.ts \
+            tests/database-target/access-subject-exclusivity.test.ts \
+            tests/database-target/access-role-assignment.test.ts \
+            tests/database-target/access-role-assignment-idempotency.test.ts \
+            tests/database-target/access-role-assignment-expiry.test.ts \
+            tests/database-target/access-role-assignment-revocation.test.ts \
+            tests/database-target/classification-with-persisted-role.test.ts \
+            tests/database-target/classification-rejects-forged-guc.test.ts \
+            tests/database-target/classification-institution-scope.test.ts \
+            tests/database-target/classification-purpose.test.ts \
+            tests/database-target/classification-emergency-basis.test.ts \
+            tests/database-target/access-role-rls.test.ts
+
+      - name: Access roles — static rollback contract + no session-GUC authority anywhere (no Docker)
+        run: npx vitest run tests/database-target/access-role-rollback.test.ts tests/database-target/classification-rejects-forged-guc.test.ts
+
       - name: Audit partitions — maintenance is OFF while every target flag is off, and never reads DATABASE_URL/DIRECT_URL
         # Deliberately runs with NO ARGUS_TARGET_DB_* variable and NO
         # TARGET_DATABASE_URL set: the flags-off path must return NOT_ENABLED
@@ -307,14 +379,28 @@ jobs:
           if ($residue.Count -gt 0) { Write-Error "AUDIT_PARTITION_ROLLBACK_FAIL - survived rollback:`n$($residue -join "`n")"; exit 1 }
           Write-Host "AUDIT_PARTITION_ROLLBACK_PASS"
 
-      - name: Audit partitions — post-rollback no-residue assertions (blocking)
+      - name: Access role substrate leaves ZERO residue after rollback (blocking)
+        shell: pwsh
+        run: |
+          . ./scripts/migration-rehearsal/lib/Common.ps1
+          Get-ArgusLocalEnv | Out-Null
+          $r = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/access-role-residue.sql" -AllowFailure
+          $r.Output | ForEach-Object { Write-Host $_ }
+          if ($r.ExitCode -ne 0) { Write-Error "ACCESS_ROLE_ROLLBACK_FAIL - residue query failed"; exit 1 }
+          $residue = @($r.Output | Select-String -Pattern "ACCESS_ROLE_RESIDUE\|")
+          if ($residue.Count -gt 0) { Write-Error "ACCESS_ROLE_ROLLBACK_FAIL - survived rollback:`n$($residue -join "`n")"; exit 1 }
+          Write-Host "ACCESS_ROLE_ROLLBACK_PASS"
+
+      - name: Audit partitions + access roles — post-rollback no-residue assertions (blocking)
         shell: bash
         run: |
           set -euo pipefail
           DATABASE_URL=$(grep '^DATABASE_URL=' .env.argus-migration.local | cut -d= -f2-)
           export ARGUS_WAVE3_INTEGRATION_TEST=true
           export TARGET_DATABASE_URL="$DATABASE_URL"
-          npx vitest run tests/database-target/audit-log-partition-no-residue.test.ts
+          npx vitest run \
+            tests/database-target/audit-log-partition-no-residue.test.ts \
+            tests/database-target/access-role-zero-residue.test.ts
 
       - name: Wave 3/4 — tear down local Postgres/PostGIS
         if: always()

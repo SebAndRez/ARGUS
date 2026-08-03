@@ -631,19 +631,19 @@ ALTER TABLE incident.incident_candidates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE incident.incident_candidates FORCE ROW LEVEL SECURITY;
 CREATE POLICY incident_candidates_operational ON incident.incident_candidates
   FOR ALL USING (
-    current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN')
+    security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN'])
     AND security.fn_classification_allowed(current_setting('argus.actor_id')::uuid, classification)
   );
 
 ALTER TABLE incident.incident_candidate_observations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE incident.incident_candidate_observations FORCE ROW LEVEL SECURITY;
 CREATE POLICY ico_inherit ON incident.incident_candidate_observations
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE incident.hypotheses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE incident.hypotheses FORCE ROW LEVEL SECURITY;
 CREATE POLICY hypotheses_inherit ON incident.hypotheses
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 -- IncidentPromotion is the promotion decision record — visible to the
 -- deciding actor, anyone with a command role on the resulting incident, or
@@ -662,7 +662,7 @@ ALTER TABLE incident.discard_decisions FORCE ROW LEVEL SECURITY;
 CREATE POLICY discard_decisions_scoped ON incident.discard_decisions
   FOR ALL USING (
     decided_by_actor_id = current_setting('argus.actor_id')::uuid
-    OR current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN','AUDIT_READER')
+    OR security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN','AUDIT_READER'])
   );
 
 ALTER TABLE incident.sub_incidents ENABLE ROW LEVEL SECURITY;
@@ -721,26 +721,26 @@ CREATE POLICY affected_area_versions_inherit ON incident.affected_area_versions
 ALTER TABLE incident.incident_aliases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE incident.incident_aliases FORCE ROW LEVEL SECURITY;
 CREATE POLICY incident_aliases_operational ON incident.incident_aliases
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 -- risk.* — RESTRICTED, actor_role='OPERATIONAL' AND classification_allowed
 ALTER TABLE risk.risk_assessments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE risk.risk_assessments FORCE ROW LEVEL SECURITY;
 CREATE POLICY risk_assessments_operational ON risk.risk_assessments
   FOR ALL USING (
-    current_setting('argus.actor_role', true) = 'OPERATIONAL'
+    security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL'])
     AND security.fn_classification_allowed(current_setting('argus.actor_id')::uuid, classification)
   );
 
 ALTER TABLE risk.forecasts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE risk.forecasts FORCE ROW LEVEL SECURITY;
 CREATE POLICY forecasts_inherit ON risk.forecasts
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE risk.risk_scenarios ENABLE ROW LEVEL SECURITY;
 ALTER TABLE risk.risk_scenarios FORCE ROW LEVEL SECURITY;
 CREATE POLICY risk_scenarios_inherit ON risk.risk_scenarios
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE risk.exposed_populations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE risk.exposed_populations FORCE ROW LEVEL SECURITY;
@@ -754,12 +754,12 @@ CREATE POLICY exposed_populations_restricted ON risk.exposed_populations
 ALTER TABLE risk.risk_assessment_revisions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE risk.risk_assessment_revisions FORCE ROW LEVEL SECURITY;
 CREATE POLICY rar_inherit ON risk.risk_assessment_revisions
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE risk.risk_area_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE risk.risk_area_versions FORCE ROW LEVEL SECURITY;
 CREATE POLICY rav_inherit ON risk.risk_area_versions
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 -- command.* — RESTRICTED, fn_has_command_role
 ALTER TABLE command.incident_command_structures ENABLE ROW LEVEL SECURITY;

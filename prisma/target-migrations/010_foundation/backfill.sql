@@ -63,6 +63,39 @@ VALUES
   ('NEXT_PUBLIC_ARGUS_ENABLE_DEMO_ROLES')
 ON CONFLICT (code) DO NOTHING;
 
+-- 1.5 security.access_roles — the authorization catalog every RLS policy in
+-- this package now resolves against, replacing the `argus.actor_role` session
+-- GUC. Codes are NOT invented here: they are exactly the role vocabulary the
+-- already-committed policies were already written in
+-- ('OPERATIONAL','ADMIN','AUDIT','SECURITY','SYSTEM','AUDIT_READER'), so the
+-- migration from "session asserts a string" to "a persisted assignment proves
+-- it" is a 1:1 substitution rather than a re-design of the access matrix.
+--
+-- classification_ceiling preserves the semantics the previous GUC-based body
+-- documented: OPERATIONAL reaches CRITICAL because Access Control v1.1 §4.6
+-- gates `incident.incidents` (CRITICAL) on exactly those OPERATIONAL
+-- command-role actors, so a lower ceiling would silently break the command
+-- dimension. AUDIT_READER is capped at RESTRICTED (it appears only in
+-- read-side policies), and PUBLIC_VIEWER carries no clearance beyond PUBLIC.
+--
+-- Seeding a CATALOG is not the same as granting authorization: a role with no
+-- security.access_role_assignments row authorizes nobody. The three
+-- clearance-tier codes below exist so an operator can grant an intermediate
+-- ceiling without minting a new role first.
+INSERT INTO security.access_roles (code, version, status, classification_ceiling)
+VALUES
+  ('PUBLIC_VIEWER',        1, 'ACTIVE', 'PUBLIC'),
+  ('OPERATIONAL_RESPONDER',1, 'ACTIVE', 'OPERATIONAL'),
+  ('SENSITIVE_HANDLER',    1, 'ACTIVE', 'SENSITIVE'),
+  ('RESTRICTED_ANALYST',   1, 'ACTIVE', 'RESTRICTED'),
+  ('AUDIT_READER',         1, 'ACTIVE', 'RESTRICTED'),
+  ('OPERATIONAL',          1, 'ACTIVE', 'CRITICAL'),
+  ('ADMIN',                1, 'ACTIVE', 'CRITICAL'),
+  ('AUDIT',                1, 'ACTIVE', 'CRITICAL'),
+  ('SECURITY',             1, 'ACTIVE', 'CRITICAL'),
+  ('SYSTEM',               1, 'ACTIVE', 'CRITICAL')
+ON CONFLICT (code, version) DO NOTHING;
+
 -- ============================================================
 -- 2. security.audit_logs <- AuditLog (52 rows, real backfill, D-01/D-02)
 -- ============================================================

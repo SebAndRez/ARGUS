@@ -59,12 +59,18 @@ describe("jurisdiction-scoped access is modeled through jurisdiction_scopes, nev
     const start = rls.indexOf("CREATE POLICY jurisdiction_scopes_read_open");
     const policy = rls.slice(start, rls.indexOf(";", start));
     expect(policy).not.toMatch(/USING\s*\(\s*true\s*\)/);
-    expect(policy).toMatch(/current_setting\('argus\.actor_role', true\) IS NOT NULL/);
+    // Previously this required the read to be gated on `argus.actor_role IS NOT
+    // NULL`, which only asserted that the session had SET a string. It is now
+    // gated on the actor actually holding a persisted access role.
+    expect(policy).toContain("security.fn_has_any_access_role(");
+    expect(policy).not.toContain("argus.actor_role");
   });
 
-  it("writing a jurisdiction scope is restricted to ADMIN/SYSTEM (bridge-table bypass prevention)", () => {
+  it("writing a jurisdiction scope is restricted to ADMIN/SYSTEM via persisted roles (bridge-table bypass prevention)", () => {
     const rls = readFileSync(WAVE_010_RLS, "utf8");
-    expect(rls).toMatch(/jurisdiction_scopes_write_owning_service[\s\S]{0,200}IN \('ADMIN','SYSTEM'\)/);
+    expect(rls).toMatch(
+      /jurisdiction_scopes_write_owning_service[\s\S]{0,300}fn_has_access_role\([\s\S]{0,120}ARRAY\['ADMIN','SYSTEM'\]\)/
+    );
   });
 
   it("the jurisdiction-scoped policy template resolves via jurisdiction_scopes + membership, not a direct column", () => {

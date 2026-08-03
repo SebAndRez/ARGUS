@@ -103,6 +103,33 @@ DO $$ BEGIN
     ('DETECTED','INVESTIGATING','CONFIRMED','DISCARDED');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- Access-role ASSIGNMENT vocabulary. Declared here, with the rest of the
+-- security enums, because security.fn_classification_allowed (defined in
+-- this wave's rls_policies.sql) resolves clearance against them; the two
+-- tables that store them, security.access_subjects and
+-- security.access_role_assignments, live in Wave 020 because they carry real
+-- FKs to identity.people / institution.organizations.
+DO $$ BEGIN
+  CREATE TYPE security.access_subject_status_enum AS ENUM ('ACTIVE','DISABLED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  -- EXPIRED is deliberately NOT a status: expiry is a FUNCTION of
+  -- valid_until vs. now(), so storing it as a status would create a second,
+  -- drifting source of truth that a missed sweep job could leave stale (an
+  -- "ACTIVE" row past its valid_until still authorizing). Only decisions a
+  -- human/system actually took are stored.
+  CREATE TYPE security.access_role_assignment_status_enum AS ENUM ('ACTIVE','SUSPENDED','REVOKED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  -- Closed purpose vocabulary. GENERAL means "no purpose restriction on this
+  -- grant"; every other value authorizes ONLY when the session declares that
+  -- exact purpose. A free-text purpose would be unverifiable, which is why
+  -- this is an enum and not the `text` column audit_logs.purpose uses for
+  -- narrative.
+  CREATE TYPE security.access_purpose_enum AS ENUM
+    ('GENERAL','OPERATIONAL_RESPONSE','AUDIT_REVIEW','SECURITY_REVIEW','ADMINISTRATION','EMERGENCY_ASSISTANCE');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 -- ============================================================
 -- 3. governance schema — 15 tables
 -- ============================================================
@@ -324,14 +351,32 @@ CREATE TABLE IF NOT EXISTS security.permissions (
   CONSTRAINT uq_permissions_code UNIQUE (code)
 );
 
+-- access_roles is the DEFINITION of an authorization (code, version, status,
+-- validity, and the permissions it carries). It is NOT an identity and NOT a
+-- grant: who holds it is security.access_role_assignments (Wave 020), and the
+-- identity that can hold it is security.access_subjects (Wave 020).
+--
+-- classification_ceiling is the one property this corrective session adds to
+-- an existing entity, and it belongs here rather than on the assignment: the
+-- maximum information classification a role may ever reach is a property of
+-- the role's DEFINITION, so two grants of the same role can never disagree
+-- about it, and raising a ceiling is a single reviewed change to one row
+-- instead of an unbounded number of assignment rows. Without it there is no
+-- persisted clearance anywhere in the schema, which is precisely why
+-- fn_classification_allowed previously had to fall back to a session GUC.
 CREATE TABLE IF NOT EXISTS security.access_roles (
-  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  code            varchar(100) NOT NULL,
-  version         integer NOT NULL DEFAULT 1,
-  status          security.access_role_status_enum NOT NULL DEFAULT 'ACTIVE',
-  effective_from  timestamptz NOT NULL DEFAULT now(),
+  id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code                   varchar(100) NOT NULL,
+  version                integer NOT NULL DEFAULT 1,
+  status                 security.access_role_status_enum NOT NULL DEFAULT 'ACTIVE',
+  classification_ceiling security.information_classification_enum NOT NULL DEFAULT 'PUBLIC',
+  effective_from         timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT uq_access_roles_code_version UNIQUE (code, version)
 );
+-- Idempotent for an already-applied wave 010 (the reapply cycle re-runs this
+-- file against a database where access_roles already exists without it).
+ALTER TABLE security.access_roles
+  ADD COLUMN IF NOT EXISTS classification_ceiling security.information_classification_enum NOT NULL DEFAULT 'PUBLIC';
 
 CREATE TABLE IF NOT EXISTS security.access_role_permissions (
   access_role_id  uuid NOT NULL,
@@ -729,6 +774,63 @@ BEGIN
 END
 $fn$;
 
+-- The RUNTIME entry point, and the only one any application role may call.
+--
+-- This exists because of a real contradiction in the previous session's
+-- deliverable: `insertAuditLog()` was documented as calling
+-- `fn_ensure_audit_log_partition` before its INSERT, while app_api was
+-- documented as holding EXECUTE on nothing in the lifecycle. Both statements
+-- were true, which means the writer could not have been running as app_api —
+-- and it was not: it connected as the rehearsal owner, a superuser with
+-- BYPASSRLS that owns the schema, the table and the function. Every "app_api
+-- can do X" claim was proven with `SET LOCAL ROLE` inside that superuser
+-- session, never through the real writer.
+--
+-- Rather than widen app_api's rights to the unbounded creator, this narrows
+-- what a runtime role can ask for:
+--   * it can only ensure a month inside a bounded WRITE HORIZON around now
+--     (24 months back for late/backfilled events, 3 months forward), so a
+--     compromised runtime credential cannot spray partitions across
+--     centuries;
+--   * it takes a timestamp, never an identifier, so it cannot name an object;
+--   * it has no code path that ALTERs, DETACHes or DROPs anything;
+--   * it cannot reach the window maintenance function, and gains no
+--     CREATE ON SCHEMA.
+-- Anything outside the horizon (a historical backfill, a deliberate future
+-- window) is an operator/maintenance action and must use the unbounded
+-- function, which no application role can execute.
+CREATE OR REPLACE FUNCTION security.fn_ensure_audit_log_partition_for_write(p_occurred_at timestamptz)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, security
+SET TimeZone = 'UTC'
+SET DateStyle = 'ISO, MDY'
+AS $fn$
+DECLARE
+  v_month_start timestamptz;
+  v_floor       timestamptz;
+  v_ceiling     timestamptz;
+BEGIN
+  IF p_occurred_at IS NULL THEN
+    RAISE EXCEPTION 'AUDIT_PARTITION_NULL_TIMESTAMP: p_occurred_at must not be NULL'
+      USING ERRCODE = 'null_value_not_allowed';
+  END IF;
+
+  v_month_start := security.fn_audit_log_month_start(p_occurred_at);
+  v_floor       := security.fn_audit_log_month_start(now() - interval '24 months');
+  v_ceiling     := security.fn_audit_log_month_start(now() + interval '3 months');
+
+  IF v_month_start < v_floor OR v_month_start > v_ceiling THEN
+    RAISE EXCEPTION 'AUDIT_PARTITION_WRITE_HORIZON_EXCEEDED: % is outside the runtime write horizon [%, %]',
+      to_char(v_month_start, 'YYYY-MM'), to_char(v_floor, 'YYYY-MM'), to_char(v_ceiling, 'YYYY-MM')
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  RETURN security.fn_ensure_audit_log_partition(p_occurred_at);
+END
+$fn$;
+
 -- Privilege boundary (mandate Fase 4/9). PUBLIC loses EXECUTE on all five;
 -- the ONLY runtime role that gains anything is jobs_worker, and only on the
 -- window maintenance function — not on the single-month DDL entry point, not
@@ -741,7 +843,12 @@ REVOKE ALL ON FUNCTION security.fn_audit_log_partition_name(timestamptz) FROM PU
 REVOKE ALL ON FUNCTION security.fn_assert_audit_log_partition(regclass, timestamptz, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION security.fn_ensure_audit_log_partition(timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION security.fn_ensure_audit_log_partition_window(timestamptz, integer, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION security.fn_ensure_audit_log_partition_for_write(timestamptz) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION security.fn_ensure_audit_log_partition_window(timestamptz, integer, integer) TO jobs_worker;
+-- The runtime roles get exactly this one, horizon-bounded entry point — the
+-- minimum needed for the canonical audit writer's ensure-before-insert step
+-- to work as the runtime principal instead of as a privileged owner.
+GRANT EXECUTE ON FUNCTION security.fn_ensure_audit_log_partition_for_write(timestamptz) TO app_api, ingest_worker, jobs_worker;
 
 -- The historical partition this wave has always declared, now created
 -- through the same single code path as every other partition (so its bounds

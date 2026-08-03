@@ -110,39 +110,251 @@ AS $$
   SELECT false;
 $$;
 
--- REAL implementation (corrective session — was a `SELECT false` stub).
--- `security.access_roles`/`access_role_permissions` (this same wave) have
--- NO junction table back to an actor — there is no physical
--- actor->AccessRole relationship anywhere in the target schema, a real,
--- pre-existing gap the original stub's own comment already flagged
--- SQL_COMPLEMENTARY_REQUIRED. Inventing a new junction table to close it is
--- exactly what the corrective mandate forbids ("no inventar roles,
--- memberships o jurisdicciones") — so this resolves clearance instead via
--- `argus.actor_role`, the SAME session GUC every OTHER already-committed
--- policy in this package already relies on (governance.emergency_bases,
--- security.access_policies/legal_holds/retention_policies/security_events,
--- etc.) — a real, existing mechanism, not a new invention.
--- ARGUS_PHYSICAL_ACCESS_CONTROL_v1.1_FROZEN.md §4.6/§4.7 explicitly gates
--- `incident.incident_candidates`/`risk.risk_assessments` (RESTRICTED) on
--- `actor_role='OPERATIONAL' AND fn_classification_allowed`, and
--- `incident.incidents` (CRITICAL, §4.6) is commanded by those same
--- OPERATIONAL command-role actors — so OPERATIONAL's ceiling must reach
--- CRITICAL for the command dimension to ever grant anything on incidents.
--- Fails closed: NULL actor, NULL classification, or any unrecognized/absent
--- actor_role never passes above PUBLIC. A full AccessRole-table-based
--- implementation remains a separate, larger, explicitly out-of-scope gap
--- for this session (flagged here, not hidden).
+-- ------------------------------------------------------------
+-- Persisted-clearance resolution (this session)
+-- ------------------------------------------------------------
+-- The previous body resolved clearance from the `argus.actor_role` session
+-- GUC. That was a real authorization defect, not a stylistic one: a GUC is
+-- set by whoever holds the connection, so any principal able to run
+-- `SET argus.actor_role = 'ADMIN'` granted itself CRITICAL clearance. There
+-- was no physical actor->AccessRole relationship to consult, which is the
+-- gap now closed by security.access_subjects and
+-- security.access_role_assignments (Wave 020).
+--
+-- `argus.*` GUCs keep their job — TRANSPORTING request context (which subject,
+-- which institution, which purpose, which emergency basis). They are no
+-- longer an authority: every one of them is now a LOOKUP KEY whose claim must
+-- be matched by a persisted row, and `argus.actor_role` is not read by this
+-- function at all.
+--
+-- Resolution order, all of it fail-closed:
+--   session context -> access_subjects -> access_role_assignments
+--   -> access_roles -> classification_ceiling
+--
+-- Deliberately LANGUAGE plpgsql, not sql: a `LANGUAGE sql` body is validated
+-- against the catalog at CREATE time (empirically confirmed in this Postgres
+-- version — see the stub comments above), so it could not reference the Wave
+-- 020 tables from Wave 010. plpgsql defers that resolution to call time,
+-- which lets the single real definition live here, next to every policy that
+-- calls it, instead of being a stub here plus a silent CREATE OR REPLACE
+-- somewhere later. The `to_regclass IS NULL` guard below is what makes that
+-- safe: between Wave 010 and Wave 020 the function exists and returns false
+-- for everything above PUBLIC rather than raising.
+
+-- Resolves the canonical authorization identity for an actor id. The same
+-- uuid space the existing policies already pass (`argus.actor_id`) is
+-- matched against whichever identity column the subject actually points at,
+-- so no policy signature changes. `argus.access_subject_id`, when present,
+-- takes precedence and is validated the same way — it is a shortcut, never a
+-- bypass.
+CREATE OR REPLACE FUNCTION security.fn_resolve_access_subject(p_actor_id uuid)
+RETURNS uuid
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, security
+AS $$
+DECLARE
+  v_declared text;
+  v_subject_id uuid;
+BEGIN
+  IF to_regclass('security.access_subjects') IS NULL THEN
+    RETURN NULL;   -- Wave 020 not applied yet: nothing can be authorized
+  END IF;
+
+  v_declared := current_setting('argus.access_subject_id', true);
+  IF v_declared IS NOT NULL AND v_declared <> '' THEN
+    BEGIN
+      v_subject_id := v_declared::uuid;
+    EXCEPTION WHEN invalid_text_representation THEN
+      RETURN NULL;   -- malformed context is never "close enough"
+    END;
+    -- The declared subject must exist, be ACTIVE, and — when an actor id is
+    -- also supplied — actually BE that actor. A session cannot name someone
+    -- else's subject.
+    SELECT s.id INTO v_subject_id
+    FROM security.access_subjects s
+    WHERE s.id = v_subject_id
+      AND s.status = 'ACTIVE'
+      AND s.subject_type <> 'ANONYMOUS'
+      AND (
+        p_actor_id IS NULL
+        OR s.person_id = p_actor_id
+        OR s.organization_id = p_actor_id
+        OR s.automation_rule_id = p_actor_id
+        -- A SYSTEM subject has no person/organization/automation_rule id to
+        -- match on (its identity is a controlled system_key), so for machine
+        -- identities the subject's OWN id is its actor id. Matching on s.id is
+        -- not a bypass: it still has to be an ACTIVE, non-ANONYMOUS row.
+        OR s.id = p_actor_id
+      );
+    RETURN v_subject_id;
+  END IF;
+
+  IF p_actor_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT s.id INTO v_subject_id
+  FROM security.access_subjects s
+  WHERE s.status = 'ACTIVE'
+    AND s.subject_type <> 'ANONYMOUS'
+    AND (s.person_id = p_actor_id OR s.organization_id = p_actor_id
+         OR s.automation_rule_id = p_actor_id OR s.id = p_actor_id);
+  RETURN v_subject_id;
+END
+$$;
+
+-- THE single place where "is this actor currently authorized, and how far"
+-- is decided. Every other authorization helper below is a thin projection of
+-- this one, so there is exactly one implementation of validity, institution
+-- scope, purpose matching and emergency justification to review or get wrong.
+--
+-- Returns one row per access role that is authorizing RIGHT NOW for this
+-- actor in this session context. An empty result means "no authorization",
+-- which is the outcome for every failure mode: no subject, disabled subject,
+-- ANONYMOUS, no assignment, future assignment, expired assignment, revoked or
+-- suspended assignment, disabled/not-yet-effective role, wrong institution,
+-- incompatible purpose, missing or inactive emergency basis, malformed
+-- context.
+CREATE OR REPLACE FUNCTION security.fn_active_access_roles(p_actor_id uuid)
+RETURNS TABLE (access_role_id uuid, code text, classification_ceiling security.information_classification_enum)
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, security
+AS $$
+DECLARE
+  v_subject_id   uuid;
+  v_institution  uuid;
+  v_purpose      security.access_purpose_enum;
+  v_purpose_text text;
+  v_basis_text   text;
+  v_basis_id     uuid;
+  v_basis_active boolean := false;
+BEGIN
+  IF to_regclass('security.access_role_assignments') IS NULL THEN
+    RETURN;   -- Wave 020 not applied: no persisted authorization exists yet
+  END IF;
+
+  -- SESSION BINDING. This function is SECURITY DEFINER and readable by
+  -- PUBLIC (RLS policy expressions are evaluated as the querying role, so
+  -- the policies below could not call it otherwise), which without this check
+  -- would let any role enumerate ANOTHER subject's access roles by passing
+  -- their actor id. It answers only about the actor the session itself
+  -- declares — which is exactly what every policy in this package passes.
+  IF coalesce(current_setting('argus.actor_id', true), '') = '' THEN
+    RETURN;
+  END IF;
+  BEGIN
+    IF p_actor_id IS DISTINCT FROM current_setting('argus.actor_id', true)::uuid THEN
+      RETURN;
+    END IF;
+  EXCEPTION WHEN invalid_text_representation THEN
+    RETURN;
+  END;
+
+  v_subject_id := security.fn_resolve_access_subject(p_actor_id);
+  IF v_subject_id IS NULL THEN
+    RETURN;   -- unknown / disabled / ANONYMOUS subject authorizes nothing
+  END IF;
+
+  -- Institution scope. A NULL institution_id on the assignment is a global
+  -- grant; a non-NULL one authorizes only inside that institution, and the
+  -- session must declare which institution it is acting in.
+  BEGIN
+    IF coalesce(current_setting('argus.institution_id', true), '') <> '' THEN
+      v_institution := current_setting('argus.institution_id', true)::uuid;
+    END IF;
+  EXCEPTION WHEN invalid_text_representation THEN
+    RETURN;   -- malformed context is a denial, never a wildcard
+  END;
+
+  -- Purpose. GENERAL grants carry no purpose restriction; any other value
+  -- must be declared by the session, exactly.
+  v_purpose_text := coalesce(current_setting('argus.purpose', true), '');
+  IF v_purpose_text <> '' THEN
+    BEGIN
+      v_purpose := v_purpose_text::security.access_purpose_enum;
+    EXCEPTION WHEN invalid_text_representation THEN
+      RETURN;
+    END;
+  END IF;
+
+  -- EmergencyBasis. Only relevant to assignments granted FOR
+  -- EMERGENCY_ASSISTANCE: those authorize nothing unless the session names a
+  -- real, ACTIVE governance.emergency_bases row. It never RAISES a ceiling —
+  -- an emergency justifies USING a grant, it does not manufacture clearance,
+  -- so the worst an attacker gains by forging a basis id is nothing.
+  v_basis_text := coalesce(current_setting('argus.emergency_basis_id', true), '');
+  IF v_basis_text <> '' THEN
+    BEGIN
+      v_basis_id := v_basis_text::uuid;
+    EXCEPTION WHEN invalid_text_representation THEN
+      v_basis_id := NULL;
+    END;
+    IF v_basis_id IS NOT NULL THEN
+      SELECT EXISTS (
+        SELECT 1 FROM governance.emergency_bases eb
+        WHERE eb.id = v_basis_id AND eb.status = 'ACTIVE'
+      ) INTO v_basis_active;
+    END IF;
+  END IF;
+
+  RETURN QUERY
+  SELECT r.id, r.code::text, r.classification_ceiling
+  FROM security.access_role_assignments a
+  JOIN security.access_roles r ON r.id = a.access_role_id
+  WHERE a.access_subject_id = v_subject_id
+    AND a.status = 'ACTIVE'
+    AND a.valid_from <= now()
+    AND (a.valid_until IS NULL OR a.valid_until > now())
+    AND r.status = 'ACTIVE'
+    AND r.effective_from <= now()
+    AND (a.institution_id IS NULL OR a.institution_id = v_institution)
+    AND (a.purpose = 'GENERAL' OR a.purpose = v_purpose)
+    AND (a.purpose <> 'EMERGENCY_ASSISTANCE' OR v_basis_active);
+END
+$$;
+
+-- Does this actor currently hold ANY of the named access roles? Replaces every
+-- role-name-equality clause this package used to write against the session
+-- GUC (`... IN ('OPERATIONAL','ADMIN')`).
+-- The role CODE is still the vocabulary the policies speak — what changed is
+-- that the claim is now matched against security.access_role_assignments
+-- instead of being asserted by the session itself.
+CREATE OR REPLACE FUNCTION security.fn_has_access_role(p_actor_id uuid, p_role_codes text[])
+RETURNS boolean
+LANGUAGE sql STABLE
+SET search_path = pg_catalog, security
+AS $$
+  SELECT p_role_codes IS NOT NULL
+     AND EXISTS (
+       SELECT 1 FROM security.fn_active_access_roles(p_actor_id) ar
+       WHERE ar.code = ANY (p_role_codes)
+     );
+$$;
+
+-- Does this actor hold any authorizing access role at all? Replaces the
+-- former `<session role GUC> IS NOT NULL` clause, which asserted nothing more
+-- than "the session set a string".
+CREATE OR REPLACE FUNCTION security.fn_has_any_access_role(p_actor_id uuid)
+RETURNS boolean
+LANGUAGE sql STABLE
+SET search_path = pg_catalog, security
+AS $$
+  SELECT EXISTS (SELECT 1 FROM security.fn_active_access_roles(p_actor_id));
+$$;
+
 CREATE OR REPLACE FUNCTION security.fn_classification_allowed(p_actor_id uuid, p_classification security.information_classification_enum)
 RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = pg_catalog, public
+LANGUAGE sql STABLE
+SET search_path = pg_catalog, security
 AS $$
-  SELECT CASE
-    WHEN p_actor_id IS NULL OR p_classification IS NULL THEN false
-    WHEN p_classification = 'PUBLIC' THEN current_setting('argus.actor_role', true) IS NOT NULL
-    WHEN current_setting('argus.actor_role', true) IN ('ADMIN', 'AUDIT', 'SECURITY', 'SYSTEM', 'OPERATIONAL') THEN true
-    ELSE false
-  END;
+  -- Enum comparison follows declaration order
+  -- (PUBLIC < OPERATIONAL < SENSITIVE < RESTRICTED < CRITICAL), so `<=` IS
+  -- the ceiling check — no separate rank table to keep in sync.
+  SELECT p_classification IS NOT NULL
+     AND EXISTS (
+       SELECT 1 FROM security.fn_active_access_roles(p_actor_id) ar
+       WHERE p_classification <= ar.classification_ceiling
+     );
 $$;
 
 CREATE OR REPLACE FUNCTION security.fn_has_emergency_access(p_actor_id uuid, p_emergency_profile_id uuid)
@@ -279,18 +491,18 @@ ALTER TABLE governance.emergency_bases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE governance.emergency_bases FORCE ROW LEVEL SECURITY;
 CREATE POLICY emergency_bases_admin_audit ON governance.emergency_bases
   FOR ALL
-  USING ( current_setting('argus.actor_role', true) IN ('ADMIN','AUDIT') );
+  USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['ADMIN','AUDIT']) );
 
 -- governance.resource_reservation_rules: OPERATIONAL, read open, write ADMIN.
 ALTER TABLE governance.resource_reservation_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE governance.resource_reservation_rules FORCE ROW LEVEL SECURITY;
 CREATE POLICY rrr_read_authenticated ON governance.resource_reservation_rules
   FOR SELECT
-  USING ( current_setting('argus.actor_role', true) IS NOT NULL );
+  USING ( security.fn_has_any_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid) );
 CREATE POLICY rrr_write_admin ON governance.resource_reservation_rules
-  FOR INSERT WITH CHECK ( current_setting('argus.actor_role', true) = 'ADMIN' );
+  FOR INSERT WITH CHECK ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['ADMIN']) );
 CREATE POLICY rrr_update_admin ON governance.resource_reservation_rules
-  FOR UPDATE USING ( current_setting('argus.actor_role', true) = 'ADMIN' );
+  FOR UPDATE USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['ADMIN']) );
 
 -- governance.jurisdiction_scopes: OPERATIONAL, open read, write restricted to
 -- the service that owns the referenced entity (Access Control v1.1 §5 —
@@ -301,31 +513,31 @@ CREATE POLICY rrr_update_admin ON governance.resource_reservation_rules
 ALTER TABLE governance.jurisdiction_scopes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE governance.jurisdiction_scopes FORCE ROW LEVEL SECURITY;
 CREATE POLICY jurisdiction_scopes_read_open ON governance.jurisdiction_scopes
-  FOR SELECT USING ( current_setting('argus.actor_role', true) IS NOT NULL );
+  FOR SELECT USING ( security.fn_has_any_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid) );
 CREATE POLICY jurisdiction_scopes_write_owning_service ON governance.jurisdiction_scopes
-  FOR INSERT WITH CHECK ( current_setting('argus.actor_role', true) IN ('ADMIN','SYSTEM') );
+  FOR INSERT WITH CHECK ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['ADMIN','SYSTEM']) );
 
 -- security.access_policies / permissions / access_roles / access_role_permissions:
 -- RESTRICTED, actor_role IN ('AUDIT','ADMIN').
 ALTER TABLE security.access_policies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE security.access_policies FORCE ROW LEVEL SECURITY;
 CREATE POLICY access_policies_audit ON security.access_policies
-  FOR ALL USING ( current_setting('argus.actor_role', true) = 'AUDIT' );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['AUDIT']) );
 
 ALTER TABLE security.permissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE security.permissions FORCE ROW LEVEL SECURITY;
 CREATE POLICY permissions_audit_admin ON security.permissions
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('AUDIT','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['AUDIT','ADMIN']) );
 
 ALTER TABLE security.access_roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE security.access_roles FORCE ROW LEVEL SECURITY;
 CREATE POLICY access_roles_audit_admin ON security.access_roles
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('AUDIT','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['AUDIT','ADMIN']) );
 
 ALTER TABLE security.access_role_permissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE security.access_role_permissions FORCE ROW LEVEL SECURITY;
 CREATE POLICY access_role_permissions_audit_admin ON security.access_role_permissions
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('AUDIT','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['AUDIT','ADMIN']) );
 
 -- security.contextual_accesses: bridge table (Access Control v1.1 §5) — actor
 -- sees own grants; AUDIT sees all.
@@ -334,42 +546,42 @@ ALTER TABLE security.contextual_accesses FORCE ROW LEVEL SECURITY;
 CREATE POLICY contextual_accesses_own_or_audit ON security.contextual_accesses
   FOR SELECT
   USING ( actor_id = current_setting('argus.actor_id')::uuid
-          OR current_setting('argus.actor_role', true) = 'AUDIT' );
+          OR security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['AUDIT']) );
 
 -- security.access_decisions: same as audit_logs, AUDIT exclusive.
 ALTER TABLE security.access_decisions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE security.access_decisions FORCE ROW LEVEL SECURITY;
 CREATE POLICY access_decisions_audit_only ON security.access_decisions
-  FOR ALL USING ( current_setting('argus.actor_role', true) = 'AUDIT' );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['AUDIT']) );
 
 -- security.audit_logs: CRITICAL, actor_role='AUDIT' exclusively, not delegable.
 ALTER TABLE security.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE security.audit_logs FORCE ROW LEVEL SECURITY;
 CREATE POLICY audit_logs_audit_only ON security.audit_logs
-  FOR SELECT USING ( current_setting('argus.actor_role', true) = 'AUDIT' );
+  FOR SELECT USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['AUDIT']) );
 -- No UPDATE/DELETE policy at all (append-only, D-03) — combined with the
 -- explicit REVOKE UPDATE, DELETE already issued in migration.sql, this is
 -- defense-in-depth: even if a future GRANT mistakenly restored UPDATE/DELETE
 -- privilege, no policy authorizes those operations for any role.
 CREATE POLICY audit_logs_insert_service_roles ON security.audit_logs
-  FOR INSERT WITH CHECK ( current_setting('argus.actor_role', true) IN ('SYSTEM','ADMIN') );
+  FOR INSERT WITH CHECK ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['SYSTEM','ADMIN']) );
 
 -- security.security_events: RESTRICTED-CRITICAL, actor_role IN ('AUDIT','SECURITY').
 ALTER TABLE security.security_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE security.security_events FORCE ROW LEVEL SECURITY;
 CREATE POLICY security_events_audit_security ON security.security_events
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('AUDIT','SECURITY') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['AUDIT','SECURITY']) );
 
 -- security.retention_policies / legal_holds: RESTRICTED, actor_role IN ('AUDIT','ADMIN').
 ALTER TABLE security.retention_policies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE security.retention_policies FORCE ROW LEVEL SECURITY;
 CREATE POLICY retention_policies_audit_admin ON security.retention_policies
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('AUDIT','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['AUDIT','ADMIN']) );
 
 ALTER TABLE security.legal_holds ENABLE ROW LEVEL SECURITY;
 ALTER TABLE security.legal_holds FORCE ROW LEVEL SECURITY;
 CREATE POLICY legal_holds_audit_admin ON security.legal_holds
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('AUDIT','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['AUDIT','ADMIN']) );
 
 -- ============================================================
 -- 10. Explicit non-exemption note

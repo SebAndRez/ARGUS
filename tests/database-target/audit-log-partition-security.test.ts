@@ -49,11 +49,22 @@ describe("audit_logs partition lifecycle security — SQL source", () => {
     }
   });
 
-  it("only jobs_worker is granted EXECUTE, and only on the window maintenance function", () => {
+  it("the only EXECUTE grants are the window function to jobs_worker and the horizon-bounded write entry point to the runtime roles", () => {
     const grants = migration.match(/GRANT EXECUTE ON FUNCTION security\.fn_[^;]+;/g) ?? [];
+    // fn_ensure_audit_log_partition_for_write was added so the canonical audit
+    // writer can ensure its month AS THE RUNTIME PRINCIPAL. The unbounded
+    // creator and the window maintenance stay out of the runtime's reach.
     expect(grants).toEqual([
       "GRANT EXECUTE ON FUNCTION security.fn_ensure_audit_log_partition_window(timestamptz, integer, integer) TO jobs_worker;",
+      "GRANT EXECUTE ON FUNCTION security.fn_ensure_audit_log_partition_for_write(timestamptz) TO app_api, ingest_worker, jobs_worker;",
     ]);
+    expect(migration).not.toMatch(/GRANT EXECUTE ON FUNCTION security\.fn_ensure_audit_log_partition\(timestamptz\) TO/);
+  });
+
+  it("the runtime write entry point is horizon-bounded, so a runtime credential cannot spray partitions", () => {
+    expect(migration).toContain("AUDIT_PARTITION_WRITE_HORIZON_EXCEEDED");
+    expect(migration).toContain("interval '24 months'");
+    expect(migration).toContain("interval '3 months'");
   });
 
   it("no migration ever grants CREATE ON SCHEMA security to an application role", () => {

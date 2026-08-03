@@ -966,6 +966,38 @@ enum AccessRoleStatus {
   @@schema("security")
 }
 
+/// AccessSubject lifecycle. A DISABLED subject authorizes nothing, regardless of its assignments.
+enum AccessSubjectStatus {
+  ACTIVE
+  DISABLED
+
+  @@map("access_subject_status_enum")
+  @@schema("security")
+}
+
+/// AccessRoleAssignment lifecycle. EXPIRED is deliberately absent: expiry is a function of validUntil vs. now(), so storing it would create a second, drifting source of truth that a missed sweep could leave stale.
+enum AccessRoleAssignmentStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+
+  @@map("access_role_assignment_status_enum")
+  @@schema("security")
+}
+
+/// Closed purpose vocabulary for an access-role grant. GENERAL means "no purpose restriction"; every other value authorizes only when the session declares that exact purpose. An enum rather than free text, because an unverifiable purpose cannot gate anything.
+enum AccessPurpose {
+  GENERAL
+  OPERATIONAL_RESPONSE
+  AUDIT_REVIEW
+  SECURITY_REVIEW
+  ADMINISTRATION
+  EMERGENCY_ASSISTANCE
+
+  @@map("access_purpose_enum")
+  @@schema("security")
+}
+
 enum ContextualAccessBasis {
   OWNERSHIP
   MEMBERSHIP
@@ -1275,6 +1307,7 @@ model Person {
   EmergencyProfile        EmergencyProfile?
   Volunteer               Volunteer[]
 
+  accessSubjects          AccessSubject[]
   @@map("people")
   @@schema("identity")
 }
@@ -1469,6 +1502,8 @@ model Organization {
 
   /// SQL_COMPLEMENTARY_REQUIRED: trigger enforcing "at least one jurisdiction if has_formal_authority", see prisma/target-migrations/020_identity/migration.sql
   @@unique([registrationIdentifier], map: "uq_organizations_registration_identifier")
+  accessSubjects              AccessSubject[]
+  scopedAccessRoleAssignments AccessRoleAssignment[] @relation("AssignmentInstitution")
   @@map("organizations")
   @@schema("institution")
 }
@@ -3934,19 +3969,94 @@ model Permission {
   @@schema("security")
 }
 
-/// AccessRole — named, versioned set of Permissions (corrects P1-02, single ownership).
+/// AccessRole — named, versioned set of Permissions (corrects P1-02, single ownership). The DEFINITION of an authorization: it holds no identity and grants nothing until an AccessRoleAssignment exists.
 model AccessRole {
   id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   // UUIDv7 — see SQL_COMPLEMENTARY_REQUIRED: prisma/target-migrations/000_preflight/migration.sql
   code          String           @db.VarChar(100)
   version       Int              @default(1)
   status        AccessRoleStatus @default(ACTIVE)
+  /// The maximum information classification this role may ever reach. A property of the role DEFINITION, not of a grant, so two grants of the same role can never disagree about it. This is the persisted clearance `security.fn_classification_allowed` resolves against — before it existed there was no clearance anywhere in the schema, which is why that function had to fall back to a session GUC.
+  classificationCeiling InformationClassification @default(PUBLIC) @map("classification_ceiling")
   effectiveFrom DateTime         @default(now()) @map("effective_from") @db.Timestamptz(6)
 
   accessRolePermissions AccessRolePermission[]
+  accessRoleAssignments AccessRoleAssignment[]
 
   @@unique([code, version], map: "uq_access_roles_code_version")
   @@map("access_roles")
+  @@schema("security")
+}
+
+/// AccessSubject — the canonical IDENTITY that authorization is granted to. Holds no privilege of its own and no personal data: exactly one of personId/organizationId/automationRuleId/systemKey is populated, three of them as real FKs. ANONYMOUS can never be persisted here (there is no identity to bind, so there is nothing to authorize).
+model AccessSubject {
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // UUIDv7 — see SQL_COMPLEMENTARY_REQUIRED: prisma/target-migrations/020_identity/migration.sql
+  subjectType        ActorType           @map("subject_type")
+  personId           String?             @map("person_id") @db.Uuid
+  organizationId     String?             @map("organization_id") @db.Uuid
+  automationRuleId   String?             @map("automation_rule_id") @db.Uuid
+  /// Controlled machine-identity key. NOT an FK because the target schema has no table for machine identities and inventing one is out of scope; constrained to `^[A-Z][A-Z0-9_]{2,99}$` so it cannot decay into a free-text actor field.
+  systemKey          String?             @map("system_key") @db.VarChar(100)
+  status             AccessSubjectStatus @default(ACTIVE)
+  disabledAt         DateTime?           @map("disabled_at") @db.Timestamptz(6)
+  disabledReasonCode String?             @map("disabled_reason_code") @db.VarChar(50)
+  legacySource       String?             @map("legacy_source") @db.VarChar(100)
+  legacyRecordId     String?             @map("legacy_record_id") @db.Text
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime            @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  person         Person?         @relation(fields: [personId], references: [id], onDelete: Restrict)
+  organization   Organization?   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  automationRule AutomationRule? @relation(fields: [automationRuleId], references: [id], onDelete: Restrict)
+
+  accessRoleAssignments AccessRoleAssignment[] @relation("AssignmentSubject")
+  grantedAssignments    AccessRoleAssignment[] @relation("AssignmentGrantedBy")
+  revokedAssignments    AccessRoleAssignment[] @relation("AssignmentRevokedBy")
+
+  /// SQL_COMPLEMENTARY_REQUIRED: ck_access_subjects_exactly_one_identity / ck_access_subjects_type_matches_identity / ck_access_subjects_no_anonymous / ck_access_subjects_system_key_shape / ck_access_subjects_disabled_consistency, plus the 4 partial unique indexes enforcing at most ONE ACTIVE subject per identity — see prisma/target-migrations/020_identity/migration.sql
+  @@map("access_subjects")
+  @@schema("security")
+}
+
+/// AccessRoleAssignment — a concrete GRANT of one AccessRole to one AccessSubject, with validity window, institution scope, purpose, and revocation history. This is the physical actor→AccessRole relationship whose absence forced `fn_classification_allowed` to trust a session GUC.
+model AccessRoleAssignment {
+  id                   String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // UUIDv7 — see SQL_COMPLEMENTARY_REQUIRED: prisma/target-migrations/020_identity/migration.sql
+  accessSubjectId      String                     @map("access_subject_id") @db.Uuid
+  accessRoleId         String                     @map("access_role_id") @db.Uuid
+  /// NULL = a global grant. Non-NULL = authorizes only while the session declares it is acting inside that institution.
+  institutionId        String?                    @map("institution_id") @db.Uuid
+  purpose              AccessPurpose              @default(GENERAL)
+  status               AccessRoleAssignmentStatus @default(ACTIVE)
+  validFrom            DateTime                   @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validUntil           DateTime?                  @map("valid_until") @db.Timestamptz(6)
+  grantedBySubjectId   String?                    @map("granted_by_subject_id") @db.Uuid
+  grantedAt            DateTime                   @default(now()) @map("granted_at") @db.Timestamptz(6)
+  revokedBySubjectId   String?                    @map("revoked_by_subject_id") @db.Uuid
+  revokedAt            DateTime?                  @map("revoked_at") @db.Timestamptz(6)
+  revocationReasonCode String?                    @map("revocation_reason_code") @db.VarChar(50)
+  source               String                     @default("MANUAL_GRANT") @db.VarChar(50)
+  legacySource         String?                    @map("legacy_source") @db.VarChar(100)
+  legacyRecordId       String?                    @map("legacy_record_id") @db.Text
+  /// Retrying a grant with the same key returns the SAME row instead of a second, silently overlapping authorization.
+  idempotencyKey       String                     @default(dbgenerated("gen_random_uuid()")) @map("idempotency_key") @db.Uuid
+  createdAt            DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                   @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  accessSubject    AccessSubject  @relation("AssignmentSubject", fields: [accessSubjectId], references: [id], onDelete: Restrict)
+  accessRole       AccessRole     @relation(fields: [accessRoleId], references: [id], onDelete: Restrict)
+  institution      Organization?  @relation("AssignmentInstitution", fields: [institutionId], references: [id], onDelete: Restrict)
+  grantedBySubject AccessSubject? @relation("AssignmentGrantedBy", fields: [grantedBySubjectId], references: [id], onDelete: Restrict)
+  revokedBySubject AccessSubject? @relation("AssignmentRevokedBy", fields: [revokedBySubjectId], references: [id], onDelete: Restrict)
+
+  /// NO jurisdiction column: the jurisdictional dimension (R31) is not physically modelled in any wave, and inventing it here is out of scope.
+  /// SQL_COMPLEMENTARY_REQUIRED: ck_access_role_assignments_validity_window / _revocation_consistency / _no_self_grant / _source_shape, plus the 2 partial unique indexes that make two ACTIVE overlapping grants impossible — see prisma/target-migrations/020_identity/migration.sql
+  @@unique([idempotencyKey], map: "uq_access_role_assignments_idempotency")
+  @@index([accessSubjectId, status], map: "ix_access_role_assignments_subject_status")
+  @@index([accessRoleId], map: "ix_access_role_assignments_role")
+  @@index([validFrom, validUntil], map: "ix_access_role_assignments_validity")
+  @@map("access_role_assignments")
   @@schema("security")
 }
 
@@ -4358,6 +4468,7 @@ model AutomationRule {
   automatedRecommendations    AutomatedRecommendation[]
   automationRuleIncidentTypes AutomationRuleIncidentType[]
 
+  accessSubjects              AccessSubject[]
   @@map("automation_rules")
   @@schema("governance")
 }

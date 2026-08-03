@@ -329,7 +329,7 @@ CREATE POLICY special_needs_inherit ON ice.special_needs
 ALTER TABLE ice.emergency_accesses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ice.emergency_accesses FORCE ROW LEVEL SECURITY;
 CREATE POLICY emergency_accesses_audit_only ON ice.emergency_accesses
-  FOR SELECT USING ( current_setting('argus.actor_role', true) = 'AUDIT'
+  FOR SELECT USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['AUDIT'])
     OR actor_id = current_setting('argus.actor_id')::uuid );
 CREATE POLICY emergency_accesses_insert_service ON ice.emergency_accesses
   FOR INSERT WITH CHECK ( true );  -- INSERT always allowed (recording an access is never blocked); no UPDATE/DELETE policy at all (append-only)
@@ -355,55 +355,55 @@ CREATE POLICY dependents_guardian ON community.dependents
 ALTER TABLE community.community_groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE community.community_groups FORCE ROW LEVEL SECURITY;
 CREATE POLICY community_groups_institutional_or_open ON community.community_groups
-  FOR ALL USING ( current_setting('argus.actor_role', true) IS NOT NULL );
+  FOR ALL USING ( security.fn_has_any_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid) );
 
 ALTER TABLE community.volunteers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE community.volunteers FORCE ROW LEVEL SECURITY;
 CREATE POLICY volunteers_owner_or_institutional ON community.volunteers
   FOR ALL USING ( security.fn_is_owner(current_setting('argus.actor_id')::uuid, 'people', person_id)
-    OR current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+    OR security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 -- media.* — variable until PUBLIC
 ALTER TABLE media.publications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE media.publications FORCE ROW LEVEL SECURITY;
 CREATE POLICY publications_public_or_membership ON media.publications
-  FOR SELECT USING ( status = 'PUBLIC' OR current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR SELECT USING ( status = 'PUBLIC' OR security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE media.live_streams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE media.live_streams FORCE ROW LEVEL SECURITY;
 CREATE POLICY live_streams_inherit ON media.live_streams
   FOR ALL USING ( EXISTS (SELECT 1 FROM media.publications p WHERE p.id = publication_id
-    AND (p.status = 'PUBLIC' OR current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN'))) );
+    AND (p.status = 'PUBLIC' OR security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']))) );
 
 ALTER TABLE media.content_moderations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE media.content_moderations FORCE ROW LEVEL SECURITY;
 CREATE POLICY content_moderations_inherit ON media.content_moderations
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE media.anonymizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE media.anonymizations FORCE ROW LEVEL SECURITY;
 CREATE POLICY anonymizations_inherit ON media.anonymizations
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE media.redactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE media.redactions FORCE ROW LEVEL SECURITY;
 CREATE POLICY redactions_inherit ON media.redactions
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE media.visual_maskings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE media.visual_maskings FORCE ROW LEVEL SECURITY;
 CREATE POLICY visual_maskings_inherit ON media.visual_maskings
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE media.usage_licenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE media.usage_licenses FORCE ROW LEVEL SECURITY;
 CREATE POLICY usage_licenses_inherit ON media.usage_licenses
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE media.publication_authorizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE media.publication_authorizations FORCE ROW LEVEL SECURITY;
 CREATE POLICY publication_authorizations_inherit ON media.publication_authorizations
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 -- ============================================================
 -- 6. Grants

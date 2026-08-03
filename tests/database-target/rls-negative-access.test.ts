@@ -23,11 +23,15 @@ const REQUIRED_NEGATIVES = [
   "fn_is_owner: other person''s identity.people row -> false",
   "fn_is_owner: unsupported target_table -> false",
   "fn_is_owner: nonexistent target row -> false",
-  "fn_classification_allowed: no actor_role set -> false",
+  // Relabelled with the AccessRoleAssignment substrate: what fails closed is
+  // now the ABSENCE OF A PERSISTED ASSIGNMENT, not the absence of a session
+  // string. The old labels named a mechanism that no longer decides anything.
+  "fn_classification_allowed: no persisted assignment -> false",
   "fn_classification_allowed: NULL actor -> false",
+  "fn_classification_allowed: RESTRICTED ceiling does not reach CRITICAL",
   "app_api does NOT see another actor''s incident_promotion",
   "app_api WITHOUT command role does NOT see the incident",
-  "app_api with NO actor_role sees NO incident_candidate",
+  "app_api with NO persisted assignment sees NO incident_candidate",
   "audit_reader cannot UPDATE security.audit_logs",
   "readonly_inspector cannot INSERT",
   "ingest_worker cannot INSERT into incident.incident_candidates",

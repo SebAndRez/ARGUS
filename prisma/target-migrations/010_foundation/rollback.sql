@@ -79,6 +79,7 @@ DROP TABLE IF EXISTS security.audit_logs;
 -- in catalog-object-inventory.sql. Dropped in dependency order (window ->
 -- single -> assert -> helpers) even though no hard dependency links them,
 -- so the intent stays readable.
+DROP FUNCTION IF EXISTS security.fn_ensure_audit_log_partition_for_write(timestamptz);
 DROP FUNCTION IF EXISTS security.fn_ensure_audit_log_partition_window(timestamptz, integer, integer);
 DROP FUNCTION IF EXISTS security.fn_ensure_audit_log_partition(timestamptz);
 DROP FUNCTION IF EXISTS security.fn_assert_audit_log_partition(regclass, timestamptz, timestamptz);
@@ -125,12 +126,22 @@ DROP FUNCTION IF EXISTS security.fn_has_active_assignment(uuid, uuid);
 DROP FUNCTION IF EXISTS security.fn_has_command_role(uuid, uuid);
 DROP FUNCTION IF EXISTS security.fn_has_accepted_collaboration(uuid, uuid);
 DROP FUNCTION IF EXISTS security.fn_classification_allowed(uuid, security.information_classification_enum);
+-- Persisted-authorization helpers (this session). Dropped in dependency order:
+-- the three thin projections first, then the single core resolver they call,
+-- then the subject resolver it calls.
+DROP FUNCTION IF EXISTS security.fn_has_access_role(uuid, text[]);
+DROP FUNCTION IF EXISTS security.fn_has_any_access_role(uuid);
+DROP FUNCTION IF EXISTS security.fn_active_access_roles(uuid);
+DROP FUNCTION IF EXISTS security.fn_resolve_access_subject(uuid);
 DROP FUNCTION IF EXISTS security.fn_has_emergency_access(uuid, uuid);
 
 -- ============================================================
 -- 5. Drop enums (guarded — only if no other schema's table still uses them;
 --    safe here because this rollback assumes 020-100 already rolled back)
 -- ============================================================
+DO $$ BEGIN DROP TYPE IF EXISTS security.access_purpose_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP TYPE IF EXISTS security.access_role_assignment_status_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP TYPE IF EXISTS security.access_subject_status_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN DROP TYPE IF EXISTS security.security_event_status_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN DROP TYPE IF EXISTS security.security_severity_kind_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN DROP TYPE IF EXISTS security.access_decision_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;

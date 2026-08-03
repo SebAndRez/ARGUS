@@ -73,7 +73,10 @@ describe("wave 010 rollback — audit_logs partition lifecycle", () => {
         (match) => match[1]!
       )
     );
-    expect(created.size).toBe(6);
+    // 7 since the horizon-bounded runtime entry point
+    // (fn_ensure_audit_log_partition_for_write) was added so the canonical audit
+    // writer can ensure its month as app_api instead of as the schema owner.
+    expect(created.size).toBe(7);
     for (const fn of created) {
       expect(rollback, `${fn} is created by migration.sql but never dropped by rollback.sql`).toContain(
         `DROP FUNCTION IF EXISTS ${fn}(`

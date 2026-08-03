@@ -85,6 +85,14 @@ function Invoke-ArgusWaveCycle {
     foreach ($waveDir in $waves) {
         $r = & (Join-Path $PSScriptRoot "Invoke-Wave.ps1") -WaveDir $waveDir
         $cycleResults += $r
+        # Wave 000 creates app_api / access_admin; give them their local-only
+        # passwords as soon as they exist so every later step (and the fixtures)
+        # can connect AS THOSE ROLES instead of as the migration owner.
+        # Passwords are environment, never schema, so they are never in a
+        # migration file.
+        if ((Split-Path $waveDir -Leaf) -eq "000_preflight") {
+            Set-ArgusRuntimeRolePasswords
+        }
     }
     return $cycleResults
 }
@@ -187,6 +195,25 @@ try {
     $overallResult.AuditPartitionRollbackPass = $true
     Write-ArgusLog "AUDIT_PARTITION_ROLLBACK_PASS"
 
+    # ---- Access-role substrate rollback: zero tables, functions, enums,
+    # indexes, policies, the access_admin role, and the classification_ceiling
+    # column. Named explicitly for the same reason as the partitions: the
+    # generic classifier would report them as anonymous "unexpected objects",
+    # and a rollback that forgot one of the FIVE object kinds involved (table,
+    # function, type, role, added column) is the realistic failure mode.
+    Write-ArgusLog "=== Access role substrate rollback: asserting zero residue ==="
+    $accessRollback = Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "sql\access-role-residue.sql") -AllowFailure
+    $accessResidue = @($accessRollback.Output | Select-String -Pattern "ACCESS_ROLE_RESIDUE\|")
+    $overallResult.AccessRoleRollbackResidue = $accessResidue
+    if ($accessRollback.ExitCode -ne 0) {
+        throw "ACCESS_ROLE_ROLLBACK_FAIL - the residue query itself failed (exit $($accessRollback.ExitCode))."
+    }
+    if ($accessResidue.Count -gt 0) {
+        throw "ACCESS_ROLE_ROLLBACK_FAIL - authorization-substrate objects survived the full 100->000 rollback:`n$($accessResidue -join "`n")"
+    }
+    $overallResult.AccessRoleRollbackPass = $true
+    Write-ArgusLog "ACCESS_ROLE_ROLLBACK_PASS"
+
     # ---- Fase 7 (reproducibility within the SAME volume): reapply 000-100 ----
     Write-ArgusLog "=== Fase 7: reapplying all 11 waves after rollback (same volume) ==="
     $overallResult.ReapplyWaves = Invoke-ArgusWaveCycle
@@ -214,12 +241,29 @@ try {
     if ($firstTests -and ($firstTests.AuditPartitionChecksOutput -join "`n") -match "AUDIT_PARTITION_BACKFILL_PASS") { $auditMarkers += "AUDIT_PARTITION_BACKFILL_PASS" }
     if ($overallResult.AuditPartitionRollbackPass)                                                                   { $auditMarkers += "AUDIT_PARTITION_ROLLBACK_PASS" }
 
+    # Persisted-authorization markers. Same rule as the audit-partition ones:
+    # each is DERIVED from a captured result, never printed unconditionally.
+    if ($firstTests -and ($firstTests.AccessRoleChecksOutput -join "`n") -match "ACCESS_SUBJECT_INTEGRITY_PASS")         { $auditMarkers += "ACCESS_SUBJECT_INTEGRITY_PASS" }
+    if ($firstTests -and ($firstTests.AccessRoleChecksOutput -join "`n") -match "ACCESS_ROLE_ASSIGNMENT_PASS")           { $auditMarkers += "ACCESS_ROLE_ASSIGNMENT_PASS" }
+    if ($firstTests -and ($firstTests.AccessRoleChecksOutput -join "`n") -match "CLASSIFICATION_PERSISTED_ROLE_PASS")    { $auditMarkers += "CLASSIFICATION_PERSISTED_ROLE_PASS" }
+    if ($firstTests -and ($firstTests.AccessRoleChecksOutput -join "`n") -match "CLASSIFICATION_FORGED_GUC_DENIED_PASS") { $auditMarkers += "CLASSIFICATION_FORGED_GUC_DENIED_PASS" }
+    if ($firstTests -and ($firstTests.AccessRoleChecksOutput -join "`n") -match "ACCESS_ROLE_RLS_PASS")                  { $auditMarkers += "ACCESS_ROLE_RLS_PASS" }
+    if ($firstTests -and $firstTests.AuditWriterPrincipalResult -eq "PASS")                                              { $auditMarkers += "AUDIT_WRITER_PRINCIPAL_PASS" }
+    if ($overallResult.AccessRoleRollbackPass)                                                                           { $auditMarkers += "ACCESS_ROLE_ROLLBACK_PASS" }
+
     $expectedAuditMarkers = @(
         "AUDIT_PARTITION_WINDOW_PASS",
         "AUDIT_PARTITION_CONCURRENCY_PASS",
         "AUDIT_PARTITION_RLS_PASS",
         "AUDIT_PARTITION_BACKFILL_PASS",
-        "AUDIT_PARTITION_ROLLBACK_PASS"
+        "AUDIT_PARTITION_ROLLBACK_PASS",
+        "ACCESS_SUBJECT_INTEGRITY_PASS",
+        "ACCESS_ROLE_ASSIGNMENT_PASS",
+        "CLASSIFICATION_PERSISTED_ROLE_PASS",
+        "CLASSIFICATION_FORGED_GUC_DENIED_PASS",
+        "AUDIT_WRITER_PRINCIPAL_PASS",
+        "ACCESS_ROLE_RLS_PASS",
+        "ACCESS_ROLE_ROLLBACK_PASS"
     )
     $missingAuditMarkers = @($expectedAuditMarkers | Where-Object { $auditMarkers -notcontains $_ })
     $overallResult.AuditPartitionMarkers = $auditMarkers

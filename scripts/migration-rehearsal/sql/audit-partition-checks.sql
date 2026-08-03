@@ -277,13 +277,29 @@ ROLLBACK;
 
 BEGIN;
 
--- app_api: the AUTHORIZED server-side audit write, through the parent, with
--- argus.actor_role='SYSTEM'. This is the case that used to be impossible:
--- the sequence behind audit_logs.sequence_number had no USAGE grant, so the
--- append-only audit path this wave declares was unreachable by any runtime
--- role.
+-- PERSISTED authorization for this block's actors. The audit-write policy now
+-- requires a real security.access_role_assignments row: the session role GUC no
+-- longer authorizes anything, so `SET LOCAL argus.actor_role = 'SYSTEM'` (what
+-- this block used to do) is denied. The service identity is a SYSTEM subject —
+-- for a machine identity the subject's own id IS its actor id.
+CREATE TEMP TABLE audit_partition_actors (k text PRIMARY KEY, v uuid);
+GRANT SELECT ON audit_partition_actors TO app_api, audit_reader, readonly_inspector;
+INSERT INTO identity.people (id, legal_name)
+VALUES ('d1000000-0000-0000-0000-0000000000a7', 'Audit Partition Fixture Reader')
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO audit_partition_actors (k, v)
+VALUES ('service', security.fn_register_access_subject('SYSTEM', NULL, NULL, NULL, 'ARGUS_AUDIT_PARTITION_PROBE')),
+       ('reader',  security.fn_register_access_subject('PERSON', 'd1000000-0000-0000-0000-0000000000a7'));
+SELECT security.fn_grant_access_role((SELECT v FROM audit_partition_actors WHERE k = 'service'), 'SYSTEM');
+SELECT security.fn_grant_access_role((SELECT v FROM audit_partition_actors WHERE k = 'reader'), 'AUDIT');
+
+-- app_api: the AUTHORIZED server-side audit write, through the parent, as a
+-- persisted SYSTEM subject. Two defects had to be fixed for this to be
+-- reachable at all: the sequence behind audit_logs.sequence_number had no USAGE
+-- grant, and the writer used to connect as the schema owner rather than as
+-- app_api.
 SET LOCAL ROLE app_api;
-SET LOCAL argus.actor_role = 'SYSTEM';
+SELECT set_config('argus.actor_id', (SELECT v::text FROM audit_partition_actors WHERE k = 'service'), true);
 DO $$
 BEGIN
   INSERT INTO security.audit_logs
@@ -378,7 +394,7 @@ RESET ROLE;
 
 -- audit_reader: reads across partitions through the parent, never writes.
 SET LOCAL ROLE audit_reader;
-SET LOCAL argus.actor_role = 'AUDIT';
+SELECT set_config('argus.actor_id', (SELECT v::text FROM audit_partition_actors WHERE k = 'reader'), true);
 DO $$
 DECLARE v_n bigint;
 BEGIN
@@ -397,8 +413,10 @@ END $$;
 RESET ROLE;
 
 -- readonly_inspector cannot write.
+-- readonly_inspector deliberately gets NO persisted assignment: an inspection
+-- role has none, and the write below must be denied for that reason as much as
+-- for its missing grant.
 SET LOCAL ROLE readonly_inspector;
-SET LOCAL argus.actor_role = 'OPERATIONAL';
 DO $$
 BEGIN
   BEGIN

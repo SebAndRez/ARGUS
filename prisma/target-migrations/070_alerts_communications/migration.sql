@@ -350,27 +350,27 @@ CREATE POLICY messages_inherit ON comms.messages
 ALTER TABLE comms.delivery_attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE comms.delivery_attempts FORCE ROW LEVEL SECURITY;
 CREATE POLICY delivery_attempts_inherit ON comms.delivery_attempts
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE comms.acknowledgements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE comms.acknowledgements FORCE ROW LEVEL SECURITY;
 CREATE POLICY acknowledgements_inherit ON comms.acknowledgements
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE comms.comprehension_confirmations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE comms.comprehension_confirmations FORCE ROW LEVEL SECURITY;
 CREATE POLICY comprehension_confirmations_inherit ON comms.comprehension_confirmations
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE comms.offline_communication_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE comms.offline_communication_plans FORCE ROW LEVEL SECURITY;
 CREATE POLICY offline_communication_plans_assigned_unit ON comms.offline_communication_plans
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE comms.communication_losses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE comms.communication_losses FORCE ROW LEVEL SECURITY;
 CREATE POLICY communication_losses_inherit ON comms.communication_losses
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE alert.alerts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE alert.alerts FORCE ROW LEVEL SECURITY;
@@ -383,17 +383,17 @@ CREATE POLICY alerts_public_or_assigned ON alert.alerts
 ALTER TABLE alert.alert_authorizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE alert.alert_authorizations FORCE ROW LEVEL SECURITY;
 CREATE POLICY alert_authorizations_inherit ON alert.alert_authorizations
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE alert.alert_cancellations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE alert.alert_cancellations FORCE ROW LEVEL SECURITY;
 CREATE POLICY alert_cancellations_inherit ON alert.alert_cancellations
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE alert.alert_supersessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE alert.alert_supersessions FORCE ROW LEVEL SECURITY;
 CREATE POLICY alert_supersessions_inherit ON alert.alert_supersessions
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE alert.critical_instructions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE alert.critical_instructions FORCE ROW LEVEL SECURITY;
@@ -409,12 +409,12 @@ CREATE POLICY civ_inherit ON alert.critical_instruction_versions
 ALTER TABLE alert.instruction_authorizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE alert.instruction_authorizations FORCE ROW LEVEL SECURITY;
 CREATE POLICY instruction_authorizations_inherit ON alert.instruction_authorizations
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 ALTER TABLE alert.instruction_compliance_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE alert.instruction_compliance_records FORCE ROW LEVEL SECURITY;
 CREATE POLICY instruction_compliance_records_inherit ON alert.instruction_compliance_records
-  FOR ALL USING ( current_setting('argus.actor_role', true) IN ('OPERATIONAL','ADMIN') );
+  FOR ALL USING ( security.fn_has_access_role(NULLIF(current_setting('argus.actor_id', true), '')::uuid, ARRAY['OPERATIONAL','ADMIN']) );
 
 -- ============================================================
 -- 5. Grants

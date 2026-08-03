@@ -78,6 +78,16 @@ function New-ArgusEnvLocalFile {
     $user = "argus_rehearsal_user"
     $databaseUrl = "postgresql://$user`:$password@127.0.0.1:$port/$dbName"
 
+    # Separate, least-privilege credentials for the RUNTIME and ADMIN
+    # principals. Before this, every target-client test connected with the
+    # container owner (a superuser with BYPASSRLS that owns the schema, the
+    # tables and the SECURITY DEFINER functions) — which meant no RLS policy and
+    # no function grant was ever actually exercised by the code under test, and
+    # made "app_api can do X" claims unfalsifiable. These two URLs are what the
+    # audit writer and the assignment administrator use.
+    $appPassword = New-ArgusLocalPassword
+    $adminPassword = New-ArgusLocalPassword
+
     $lines = @(
         "ARGUS_MIGRATION_LOCAL_ONLY=true",
         "POSTGRES_HOST=127.0.0.1",
@@ -85,7 +95,11 @@ function New-ArgusEnvLocalFile {
         "POSTGRES_DB=$dbName",
         "POSTGRES_USER=$user",
         "POSTGRES_PASSWORD=$password",
-        "DATABASE_URL=$databaseUrl"
+        "DATABASE_URL=$databaseUrl",
+        "ARGUS_APP_API_PASSWORD=$appPassword",
+        "ARGUS_ACCESS_ADMIN_PASSWORD=$adminPassword",
+        "TARGET_RUNTIME_DATABASE_URL=postgresql://app_api`:$appPassword@127.0.0.1:$port/$dbName",
+        "TARGET_ADMIN_DATABASE_URL=postgresql://access_admin`:$adminPassword@127.0.0.1:$port/$dbName"
     )
     Set-Content -Path $Script:ArgusEnvLocalFile -Value $lines -Encoding utf8 -NoNewline:$false
     Write-ArgusLog "Generated fresh .env.argus-migration.local (password not logged)."
@@ -174,6 +188,42 @@ function Invoke-ArgusPsql {
         DurationMs = $sw.Elapsed.TotalMilliseconds
         Output     = $output
     }
+}
+
+function Set-ArgusRuntimeRolePasswords {
+    <#
+    Assigns the generated local-only passwords to app_api and access_admin so
+    the target Prisma client can connect AS THOSE ROLES instead of as the
+    container owner. Passwords are environment, not schema, so they are set
+    here and never in prisma/target-migrations/* — a migration that hardcoded
+    a credential would be a credential in version control.
+
+    Idempotent, and a no-op with a clear log line when the roles do not exist
+    yet (i.e. before wave 000 has applied).
+    #>
+    Assert-ArgusLocalOnly
+    $appPassword = $env:ARGUS_APP_API_PASSWORD
+    $adminPassword = $env:ARGUS_ACCESS_ADMIN_PASSWORD
+    if (-not $appPassword -or -not $adminPassword) {
+        throw "ARGUS_APP_API_PASSWORD/ARGUS_ACCESS_ADMIN_PASSWORD missing from .env.argus-migration.local - regenerate it with Reset-ArgusRehearsal.ps1."
+    }
+    # Passwords are interpolated into a DO block as dollar-quoted literals, so
+    # they never reach the log and never need shell escaping. The generator only
+    # produces [A-Za-z0-9], so no quoting edge case exists.
+    $sql = @"
+DO `$outer`$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_api') THEN
+    EXECUTE format('ALTER ROLE app_api LOGIN PASSWORD %L', `$pw`$$appPassword`$pw`$);
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'access_admin') THEN
+    EXECUTE format('ALTER ROLE access_admin LOGIN PASSWORD %L', `$pw`$$adminPassword`$pw`$);
+  END IF;
+END
+`$outer`$;
+"@
+    Invoke-ArgusPsql -SqlText $sql | Out-Null
+    Write-ArgusLog "Runtime role passwords set for app_api / access_admin (values not logged)."
 }
 
 function Get-ArgusWaveList {

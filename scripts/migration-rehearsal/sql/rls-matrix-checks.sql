@@ -55,11 +55,32 @@ SELECT CASE WHEN prosrc ~ 'identity.people' AND prosrc ~ 'help.help_requests'
 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE n.nspname = 'security' AND p.proname = 'fn_is_owner';
 
-SELECT CASE WHEN prosrc ~ 'argus.actor_role' AND prosrc !~ '^\s*SELECT false;\s*$'
+-- fn_classification_allowed must resolve clearance from PERSISTED rows, and
+-- must NOT read the session role GUC at all. An earlier revision of this
+-- assertion required the opposite (`prosrc ~ 'argus.actor_role'`), which was
+-- correct for the GUC-based body it was written against and is now exactly the
+-- regression to guard against: a body that reads a session-settable string is
+-- not an authorization decision.
+SELECT CASE WHEN prosrc ~ 'fn_active_access_roles' AND prosrc !~ 'argus\.actor_role'
+                 AND prosrc !~ '^\s*SELECT false;\s*$'
             THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
-       || ' | helper_not_stub | fn_classification_allowed resolves a real clearance signal'
+       || ' | helper_not_stub | fn_classification_allowed resolves clearance from persisted assignments, not from a session GUC'
 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE n.nspname = 'security' AND p.proname = 'fn_classification_allowed';
+
+SELECT CASE WHEN prosrc ~ 'access_role_assignments' AND prosrc ~ 'access_subjects|fn_resolve_access_subject'
+                 AND prosrc !~ 'argus\.actor_role'
+            THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
+       || ' | helper_not_stub | fn_active_access_roles joins access_role_assignments + access_subjects'
+FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'security' AND p.proname = 'fn_active_access_roles';
+
+-- No RLS policy anywhere in the database may still read the session role GUC.
+SELECT CASE WHEN COUNT(*) = 0 THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
+       || ' | role_security | zero RLS policies read argus.actor_role as an authority'
+FROM pg_policies
+WHERE coalesce(qual, '') LIKE '%argus.actor_role%'
+   OR coalesce(with_check, '') LIKE '%argus.actor_role%';
 
 -- ============================================================
 -- 1. Seed fixtures + run the matrix (single transaction, rolled back)
@@ -164,9 +185,26 @@ SELECT CASE WHEN NOT security.fn_is_owner('d1000000-0000-0000-0000-000000000001'
        || ' | negative | fn_is_owner: nonexistent target row -> false';
 
 -- ---------- fn_classification_allowed: positive + negative ----------
+-- Direct calls need the session binding satisfied (the function answers only
+-- about the actor the session itself declares).
+SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';
+
 SELECT CASE WHEN NOT security.fn_classification_allowed('d1000000-0000-0000-0000-000000000001', 'RESTRICTED')
             THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
-       || ' | negative | fn_classification_allowed: no actor_role set -> false (fails closed)';
+       || ' | negative | fn_classification_allowed: no persisted assignment -> false (fails closed)';
+
+-- Same actor, same call, after a REAL assignment exists: now true. This is the
+-- pair that makes the suite meaningful — a deny-everything result proves
+-- nothing on its own.
+SELECT security.fn_grant_access_role(security.fn_register_access_subject('PERSON', 'd1000000-0000-0000-0000-000000000001'), 'RESTRICTED_ANALYST');
+
+SELECT CASE WHEN security.fn_classification_allowed('d1000000-0000-0000-0000-000000000001', 'RESTRICTED')
+            THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
+       || ' | positive | fn_classification_allowed: persisted RESTRICTED_ANALYST assignment -> true';
+
+SELECT CASE WHEN NOT security.fn_classification_allowed('d1000000-0000-0000-0000-000000000001', 'CRITICAL')
+            THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
+       || ' | negative | fn_classification_allowed: RESTRICTED ceiling does not reach CRITICAL';
 
 SELECT CASE WHEN NOT security.fn_classification_allowed(NULL, 'PUBLIC')
             THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
@@ -190,9 +228,13 @@ INSERT INTO incident.incidents (id, origin_candidate_id, incident_type_id, class
 INSERT INTO incident.incident_promotions (id, incident_candidate_id, incident_id, decided_by_actor_type, decided_by_actor_id, input_data_snapshot, confidence, explanation, idempotency_key)
 VALUES ('d9000000-0000-0000-0000-000000000001', 'd7000000-0000-0000-0000-000000000001', 'd7000000-0000-0000-0000-000000000002', 'PERSON', 'd1000000-0000-0000-0000-000000000001', '{}'::jsonb, 'HIGH', 'RLS fixture promotion', 'd9000000-0000-0000-0000-0000000000ff');
 
+-- Persisted authorization for Person One: a real access_subject + a real ACTIVE
+-- access_role_assignment. This replaces the former `SET LOCAL
+-- argus.actor_role` line — the policies now require a row, not a claim.
+SELECT security.fn_grant_access_role(security.fn_register_access_subject('PERSON', 'd1000000-0000-0000-0000-000000000001'), 'OPERATIONAL');
+
 SET LOCAL ROLE app_api;
 SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';
-SET LOCAL argus.actor_role = 'OPERATIONAL';
 SELECT CASE WHEN COUNT(*) = 1 THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
        || ' | positive | app_api sees its OWN incident_promotion (decided_by_actor_id match)'
 FROM incident.incident_promotions WHERE id = 'd9000000-0000-0000-0000-000000000001';
@@ -208,10 +250,15 @@ INSERT INTO incident.incidents (id, origin_candidate_id, incident_type_id, class
 INSERT INTO incident.incident_promotions (id, incident_candidate_id, incident_id, decided_by_actor_type, decided_by_actor_id, input_data_snapshot, confidence, explanation, idempotency_key)
 VALUES ('d9000000-0000-0000-0000-000000000001', 'd7000000-0000-0000-0000-000000000001', 'd7000000-0000-0000-0000-000000000002', 'PERSON', 'd1000000-0000-0000-0000-000000000001', '{}'::jsonb, 'HIGH', 'RLS fixture promotion', 'd9000000-0000-0000-0000-0000000000ff');
 
+INSERT INTO identity.people (id, legal_name) VALUES ('d1000000-0000-0000-0000-000000000002', 'RLS Fixture Person Two') ON CONFLICT (id) DO NOTHING;
+-- Persisted authorization for Person Two — authorized, but NOT the owner, so the denial below is provably about OWNERSHIP and not about missing clearance: a real access_subject + a real ACTIVE
+-- access_role_assignment. This replaces the former `SET LOCAL
+-- argus.actor_role` line — the policies now require a row, not a claim.
+SELECT security.fn_grant_access_role(security.fn_register_access_subject('PERSON', 'd1000000-0000-0000-0000-000000000002'), 'OPERATIONAL');
+
 SET LOCAL ROLE app_api;
 -- A DIFFERENT actor, with no command role on that incident.
 SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000002';
-SET LOCAL argus.actor_role = 'OPERATIONAL';
 SELECT CASE WHEN COUNT(*) = 0 THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
        || ' | negative | app_api does NOT see another actor''s incident_promotion'
 FROM incident.incident_promotions WHERE id = 'd9000000-0000-0000-0000-000000000001';
@@ -232,9 +279,13 @@ INSERT INTO command.incident_command_structures (id, incident_id, status) VALUES
 INSERT INTO command.command_roles (id, incident_command_structure_id, actor_type, actor_id, institutional_membership_id, role_label)
 VALUES ('d8000000-0000-0000-0000-000000000002', 'd8000000-0000-0000-0000-000000000001', 'PERSON', 'd1000000-0000-0000-0000-000000000001', 'd5000000-0000-0000-0000-000000000001', 'Incident Commander');
 
+-- Persisted authorization for Person One: a real access_subject + a real ACTIVE
+-- access_role_assignment. This replaces the former `SET LOCAL
+-- argus.actor_role` line — the policies now require a row, not a claim.
+SELECT security.fn_grant_access_role(security.fn_register_access_subject('PERSON', 'd1000000-0000-0000-0000-000000000001'), 'OPERATIONAL');
+
 SET LOCAL ROLE app_api;
 SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';
-SET LOCAL argus.actor_role = 'OPERATIONAL';
 SELECT CASE WHEN COUNT(*) = 1 THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
        || ' | positive | app_api WITH command role sees the CRITICAL incident'
 FROM incident.incidents WHERE id = 'd7000000-0000-0000-0000-000000000002';
@@ -246,9 +297,13 @@ INSERT INTO governance.incident_categories (id, code, name) VALUES ('d6000000-00
 INSERT INTO governance.incident_types (id, code, incident_category_id) VALUES ('d6000000-0000-0000-0000-000000000002', 'RLS_FIXTURE_TYPE', 'd6000000-0000-0000-0000-000000000001');
 INSERT INTO incident.incidents (id, incident_type_id, classification, title) VALUES ('d7000000-0000-0000-0000-000000000002', 'd6000000-0000-0000-0000-000000000002', 'CRITICAL', 'RLS Fixture Incident');
 
+-- Persisted authorization for Person Two — cleared, but with no command role on that incident: a real access_subject + a real ACTIVE
+-- access_role_assignment. This replaces the former `SET LOCAL
+-- argus.actor_role` line — the policies now require a row, not a claim.
+SELECT security.fn_grant_access_role(security.fn_register_access_subject('PERSON', 'd1000000-0000-0000-0000-000000000002'), 'OPERATIONAL');
+
 SET LOCAL ROLE app_api;
 SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000002';
-SET LOCAL argus.actor_role = 'OPERATIONAL';
 SELECT CASE WHEN COUNT(*) = 0 THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
        || ' | negative | app_api WITHOUT command role does NOT see the incident'
 FROM incident.incidents WHERE id = 'd7000000-0000-0000-0000-000000000002';
@@ -258,9 +313,14 @@ ROLLBACK;
 BEGIN;
 INSERT INTO incident.incident_candidates (id, status, classification) VALUES ('d7000000-0000-0000-0000-000000000003', 'UNDER_ASSESSMENT', 'OPERATIONAL');
 
+INSERT INTO identity.people (id, legal_name) VALUES ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One') ON CONFLICT (id) DO NOTHING;
+-- Persisted authorization for Person One: a real access_subject + a real ACTIVE
+-- access_role_assignment. This replaces the former `SET LOCAL
+-- argus.actor_role` line — the policies now require a row, not a claim.
+SELECT security.fn_grant_access_role(security.fn_register_access_subject('PERSON', 'd1000000-0000-0000-0000-000000000001'), 'OPERATIONAL');
+
 SET LOCAL ROLE app_api;
 SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';
-SET LOCAL argus.actor_role = 'OPERATIONAL';
 SELECT CASE WHEN COUNT(*) = 1 THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
        || ' | positive | app_api with OPERATIONAL role sees an OPERATIONAL incident_candidate'
 FROM incident.incident_candidates WHERE id = 'd7000000-0000-0000-0000-000000000003';
@@ -271,9 +331,12 @@ INSERT INTO incident.incident_candidates (id, status, classification) VALUES ('d
 
 SET LOCAL ROLE app_api;
 SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';
--- No argus.actor_role at all -> classification check must fail closed.
+-- NO access_subject and NO assignment for this actor -> the classification
+-- check must fail closed. Previously this block proved only that an unset
+-- session string denied; it now proves that an actor with no persisted
+-- authorization is denied.
 SELECT CASE WHEN COUNT(*) = 0 THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
-       || ' | negative | app_api with NO actor_role sees NO incident_candidate (fails closed)'
+       || ' | negative | app_api with NO persisted assignment sees NO incident_candidate (fails closed)'
 FROM incident.incident_candidates WHERE id = 'd7000000-0000-0000-0000-000000000003';
 ROLLBACK;
 
@@ -283,9 +346,14 @@ INSERT INTO security.audit_logs (id, actor_type, actor_id, action, target_table,
 VALUES (gen_random_uuid(), 'PERSON', 'd1000000-0000-0000-0000-000000000001', 'RLS_FIXTURE_ACTION', 'identity.people',
         'd1000000-0000-0000-0000-000000000001', 'CRITICAL', 'SUCCESS', 'fixture-integrity-value', TIMESTAMPTZ '2026-07-15 12:00:00+00');
 
+INSERT INTO identity.people (id, legal_name) VALUES ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One') ON CONFLICT (id) DO NOTHING;
+-- Persisted authorization for Person One: a real access_subject + a real ACTIVE
+-- access_role_assignment. This replaces the former `SET LOCAL
+-- argus.actor_role` line — the policies now require a row, not a claim.
+SELECT security.fn_grant_access_role(security.fn_register_access_subject('PERSON', 'd1000000-0000-0000-0000-000000000001'), 'AUDIT');
+
 SET LOCAL ROLE audit_reader;
 SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';
-SET LOCAL argus.actor_role = 'AUDIT';
 SELECT CASE WHEN COUNT(*) >= 1 THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
        || ' | positive | audit_reader with AUDIT role reads security.audit_logs'
 FROM security.audit_logs WHERE action = 'RLS_FIXTURE_ACTION';
@@ -298,7 +366,6 @@ VALUES (gen_random_uuid(), 'PERSON', 'd1000000-0000-0000-0000-000000000001', 'RL
 
 SET LOCAL ROLE app_api;
 SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';
-SET LOCAL argus.actor_role = 'OPERATIONAL';
 -- app_api has NO grant on security.audit_logs at all; the read must fail.
 -- Wrapped so the expected permission error becomes a PASS line, not an abort.
 DO $$
@@ -320,7 +387,6 @@ ROLLBACK;
 BEGIN;
 SET LOCAL ROLE audit_reader;
 SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';
-SET LOCAL argus.actor_role = 'AUDIT';
 DO $$
 BEGIN
   BEGIN
@@ -336,7 +402,6 @@ ROLLBACK;
 BEGIN;
 SET LOCAL ROLE readonly_inspector;
 SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';
-SET LOCAL argus.actor_role = 'OPERATIONAL';
 DO $$
 DECLARE v_count integer;
 BEGIN
@@ -350,7 +415,6 @@ ROLLBACK;
 BEGIN;
 SET LOCAL ROLE readonly_inspector;
 SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';
-SET LOCAL argus.actor_role = 'OPERATIONAL';
 DO $$
 BEGIN
   BEGIN
@@ -380,9 +444,16 @@ INSERT INTO ingest.sources (id, provider_id, endpoint_signature, name, status) V
 INSERT INTO ingest.ingestion_runs (id, source_id, idempotency_key, origin_kind, status) VALUES
   ('e1000000-0000-0000-0000-000000000003', 'e1000000-0000-0000-0000-000000000002', 'e1000000-0000-0000-0000-0000000000aa', 'EXTERNAL_EVENT_PIPELINE', 'COMPLETED');
 
+-- Persisted authorization for Person One. Without it the WITH CHECK on
+-- ingest.source_records denies the insert with 42501 ("new row violates
+-- row-level security policy") — which is exactly the point: the write is
+-- authorized by an assignment now, not by a session string. Found by running
+-- this suite after the substitution, not assumed.
+INSERT INTO identity.people (id, legal_name) VALUES ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One') ON CONFLICT (id) DO NOTHING;
+SELECT security.fn_grant_access_role(security.fn_register_access_subject('PERSON', 'd1000000-0000-0000-0000-000000000001'), 'OPERATIONAL');
+
 SET LOCAL ROLE ingest_worker;
 SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';
-SET LOCAL argus.actor_role = 'OPERATIONAL';
 DO $$
 BEGIN
   INSERT INTO ingest.source_records (id, ingestion_run_id, source_id, origin_kind, external_id, provenance, raw_content, content_hash)
@@ -397,7 +468,6 @@ ROLLBACK;
 BEGIN;
 SET LOCAL ROLE ingest_worker;
 SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';
-SET LOCAL argus.actor_role = 'OPERATIONAL';
 DO $$
 BEGIN
   BEGIN
@@ -413,10 +483,15 @@ ROLLBACK;
 
 BEGIN;
 INSERT INTO incident.incident_candidates (id, status, classification) VALUES ('d7000000-0000-0000-0000-00000000000a', 'UNDER_ASSESSMENT', 'OPERATIONAL');
+INSERT INTO identity.people (id, legal_name) VALUES ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One') ON CONFLICT (id) DO NOTHING;
+-- Persisted authorization for Person One — holds SYSTEM, which is NOT one of the OPERATIONAL/ADMIN roles incident_candidates requires: a real access_subject + a real ACTIVE
+-- access_role_assignment. This replaces the former `SET LOCAL
+-- argus.actor_role` line — the policies now require a row, not a claim.
+SELECT security.fn_grant_access_role(security.fn_register_access_subject('PERSON', 'd1000000-0000-0000-0000-000000000001'), 'SYSTEM');
+
 SET LOCAL ROLE ingest_worker;
 SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000001';
 -- SYSTEM is not one of the OPERATIONAL/ADMIN roles incident_candidates requires.
-SET LOCAL argus.actor_role = 'SYSTEM';
 SELECT CASE WHEN COUNT(*) = 0 THEN 'RLS_TEST_PASS' ELSE 'RLS_TEST_FAIL' END
        || ' | negative | ingest_worker with SYSTEM role reads NO restricted incident_candidate (RLS, not just grants)'
 FROM incident.incident_candidates WHERE id = 'd7000000-0000-0000-0000-00000000000a';

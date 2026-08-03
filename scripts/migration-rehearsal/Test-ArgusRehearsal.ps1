@@ -258,6 +258,113 @@ if ($concurrencyVerify.ExitCode -ne 0 -or ($concurrencyVerify.Output -join "`n")
 $summary.AuditPartitionConcurrencyResult = "PASS"
 Write-ArgusLog "AUDIT_PARTITION_CONCURRENCY_PASS (10 same-month + $($distinctResults.Count) distinct-month simultaneous connections, 1 CREATED per month, zero duplicate_table, zero deadlocks)"
 
+# ============================================================
+# Persisted authorization: security.access_subjects /
+# security.access_role_assignments, and the REAL principal of the canonical
+# audit writer. BLOCKING.
+#
+# Why this is a separate step from the RLS matrix above: the matrix proves
+# policy BEHAVIOUR under `SET LOCAL ROLE` inside the owner session. That is
+# still useful, but it cannot prove which principal the APPLICATION CODE
+# connects as — and the application code was connecting as the owner
+# (superuser, BYPASSRLS, owner of the schema/table/functions), which is why
+# every previous "app_api can/cannot do X" claim about the audit writer was
+# unfalsifiable. The vitest suites below connect as app_api and access_admin
+# over their own credentials.
+# ============================================================
+Write-ArgusLog "=== Persisted authorization: access subjects, assignments, classification matrix ==="
+Set-ArgusRuntimeRolePasswords
+
+$accessRole = Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "sql\access-role-checks.sql") -AllowFailure
+$summary.AccessRoleChecksOutput = $accessRole.Output
+
+$accessRoleFailures = @($accessRole.Output | Select-String -Pattern "(ACCESS|CLASSIFICATION)_[A-Z_]*FAIL")
+if ($accessRoleFailures.Count -gt 0) {
+    throw "ACCESS_ROLE_FAIL - access-role-checks.sql reported failures:`n$($accessRoleFailures -join "`n")"
+}
+if ($accessRole.ExitCode -ne 0) {
+    throw "ACCESS_ROLE_FAIL - access-role-checks.sql exited $($accessRole.ExitCode); an aborted check file is not a passing check file."
+}
+$requiredAccessMarkers = @(
+    "ACCESS_SUBJECT_INTEGRITY_PASS",
+    "ACCESS_ROLE_ASSIGNMENT_PASS",
+    "CLASSIFICATION_PERSISTED_ROLE_PASS",
+    "CLASSIFICATION_FORGED_GUC_DENIED_PASS",
+    "ACCESS_ROLE_RLS_PASS"
+)
+$accessRoleText = $accessRole.Output -join "`n"
+foreach ($marker in $requiredAccessMarkers) {
+    if ($accessRoleText -notmatch [regex]::Escape($marker)) {
+        throw "ACCESS_ROLE_FAIL - required marker $marker is missing from access-role-checks.sql output."
+    }
+}
+# A deny-everything matrix proves nothing, so both directions are counted.
+$accessPositive = @($accessRole.Output | Select-String -Pattern "ACCESS_(MATRIX|ROLE_RLS)_OK \| positive").Count
+$accessNegative = @($accessRole.Output | Select-String -Pattern "ACCESS_(MATRIX|ROLE_RLS)_OK \| negative").Count
+$accessScoped   = @($accessRole.Output | Select-String -Pattern "ACCESS_MATRIX_OK \| (institution|purpose|emergency)").Count
+if ($accessPositive -lt 4) { throw "ACCESS_ROLE_FAIL - only $accessPositive positive authorization case(s) passed; expected at least 4." }
+if ($accessNegative -lt 8) { throw "ACCESS_ROLE_FAIL - only $accessNegative negative authorization case(s) passed; expected at least 8." }
+if ($accessScoped   -lt 3) { throw "ACCESS_ROLE_FAIL - institution/purpose/emergency scoping was not all exercised (got $accessScoped of 3)." }
+$summary.AccessRolePositivePass = $accessPositive
+$summary.AccessRoleNegativePass = $accessNegative
+$summary.AccessRoleResult = "PASS"
+Write-ArgusLog "ACCESS_POSITIVE_PASS=$accessPositive ACCESS_NEGATIVE_PASS=$accessNegative ACCESS_SCOPED_PASS=$accessScoped"
+foreach ($marker in $requiredAccessMarkers) { Write-ArgusLog $marker }
+
+Write-ArgusLog "=== Audit writer principal + access-role suites under the REAL runtime/admin credentials ==="
+# The Docker gate is enabled ONLY for this step and restored afterwards.
+# Leaving ARGUS_WAVE3_INTEGRATION_TEST/TARGET_DATABASE_URL set would switch the
+# Fase 17 whole-suite run into Docker mode, where the post-rollback residue
+# suites (which REQUIRE a rolled-back database) run against a fully-applied one
+# and fail for the wrong reason. Found exactly that way on the first full run.
+$previousIntegrationFlag = $env:ARGUS_WAVE3_INTEGRATION_TEST
+$previousTargetUrl = $env:TARGET_DATABASE_URL
+Push-Location $Script:ArgusRepoRoot
+try {
+    $env:ARGUS_WAVE3_INTEGRATION_TEST = "true"
+    $env:TARGET_DATABASE_URL = $env:DATABASE_URL
+    # TARGET_RUNTIME_DATABASE_URL / TARGET_ADMIN_DATABASE_URL come from
+    # .env.argus-migration.local via Get-ArgusLocalEnv - app_api and
+    # access_admin, never the owner.
+    $principalTests = Invoke-ArgusNative {
+        & npx vitest run `
+            tests/database-target/audit-writer-principal.test.ts `
+            tests/database-target/audit-writer-no-owner-runtime.test.ts `
+            tests/database-target/access-subject.test.ts `
+            tests/database-target/access-subject-exclusivity.test.ts `
+            tests/database-target/access-role-assignment.test.ts `
+            tests/database-target/access-role-assignment-idempotency.test.ts `
+            tests/database-target/access-role-assignment-expiry.test.ts `
+            tests/database-target/access-role-assignment-revocation.test.ts `
+            tests/database-target/classification-with-persisted-role.test.ts `
+            tests/database-target/classification-rejects-forged-guc.test.ts `
+            tests/database-target/classification-institution-scope.test.ts `
+            tests/database-target/classification-purpose.test.ts `
+            tests/database-target/classification-emergency-basis.test.ts `
+            tests/database-target/access-role-rls.test.ts 2>&1
+    }
+    $principalExit = $LASTEXITCODE
+} finally {
+    Pop-Location
+    if ($null -eq $previousIntegrationFlag) { Remove-Item Env:ARGUS_WAVE3_INTEGRATION_TEST -ErrorAction SilentlyContinue }
+    else { $env:ARGUS_WAVE3_INTEGRATION_TEST = $previousIntegrationFlag }
+    if ($null -eq $previousTargetUrl) { Remove-Item Env:TARGET_DATABASE_URL -ErrorAction SilentlyContinue }
+    else { $env:TARGET_DATABASE_URL = $previousTargetUrl }
+}
+$summary.AuditWriterPrincipalTestsExitCode = $principalExit
+$summary.AuditWriterPrincipalTestsOutput = $principalTests | Select-Object -Last 25
+if ($principalExit -ne 0) {
+    throw "AUDIT_WRITER_PRINCIPAL_FAIL - the runtime-principal/access-role suites failed:`n$($principalTests | Select-Object -Last 40 | Out-String)"
+}
+# Nothing may SKIP here: a skipped suite would mean the runtime credentials were
+# absent, which is exactly the condition that previously let the owner stand in
+# for the runtime unnoticed.
+if (($principalTests -join "`n") -match "Test Files\s+\d+ passed \| (\d+) skipped") {
+    throw "AUDIT_WRITER_PRINCIPAL_FAIL - a runtime-principal suite SKIPPED; the app_api/access_admin credentials were not available."
+}
+$summary.AuditWriterPrincipalResult = "PASS"
+Write-ArgusLog "AUDIT_WRITER_PRINCIPAL_PASS"
+
 Write-ArgusLog "=== Fase 16: prisma validate --schema prisma/schema.target.prisma ==="
 Push-Location $Script:ArgusRepoRoot
 try {

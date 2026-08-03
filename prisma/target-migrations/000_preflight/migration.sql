@@ -85,6 +85,23 @@ BEGIN
     CREATE ROLE audit_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
   END IF;
 
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'access_admin') THEN
+    -- Explicit administrative role for AccessRole ASSIGNMENT lifecycle
+    -- (security.access_subjects / security.access_role_assignments, Wave
+    -- 020). Deliberately a 7th role rather than reusing app_api or
+    -- migration_owner:
+    --   * app_api is the runtime request role and must never be able to
+    --     grant itself (or anyone) an access role — that is privilege
+    --     escalation by design;
+    --   * migration_owner is a DDL-time identity with no LOGIN, and using a
+    --     migration credential to perform runtime authorization changes is
+    --     exactly the silent-owner reuse this package forbids.
+    -- Holds NO direct DML on the two tables: its only path is the narrow
+    -- SECURITY DEFINER grant/revoke functions defined in Wave 020, so every
+    -- assignment change is validated and audited by construction.
+    CREATE ROLE access_admin LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  END IF;
+
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'readonly_inspector') THEN
     -- General read-only inspection role for humans/tooling doing schema
     -- review (analogous in spirit to

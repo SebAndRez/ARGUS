@@ -200,3 +200,222 @@ export async function closeTargetPrismaClient(): Promise<void> {
   writeGlobalCache(undefined);
   await cached.client.$disconnect();
 }
+
+// ---------------------------------------------------------------------------
+// Least-privilege principals
+// ---------------------------------------------------------------------------
+/**
+ * `TARGET_DATABASE_URL` is the MIGRATION/OWNER connection: in the local
+ * rehearsal it is the container's bootstrap superuser, which owns the schemas,
+ * owns `security.audit_logs`, owns every SECURITY DEFINER function, has
+ * BYPASSRLS, and holds CREATE ON SCHEMA security.
+ *
+ * That is fine for applying DDL. It is NOT fine for anything that claims to be
+ * the runtime, and it silently was: the canonical audit writer resolved its
+ * client from `TARGET_DATABASE_URL`, so `insertAuditLog()` ran as that
+ * superuser. Every "app_api can/cannot do X" statement about the writer was
+ * therefore unfalsifiable — RLS never applied, and the function grants were
+ * never consulted, because the owner needs neither.
+ *
+ * These two variables are the fix, and they are deliberately separate
+ * variables rather than a mode flag on the existing one, so a runtime path
+ * cannot fall back to the owner by accident:
+ *   * TARGET_RUNTIME_DATABASE_URL — connects as `app_api`. What the audit
+ *     writer and any request-path code uses.
+ *   * TARGET_ADMIN_DATABASE_URL   — connects as `access_admin`. Only the
+ *     access-role grant/revoke administration uses this.
+ * Neither ever falls back to the other, nor to TARGET_DATABASE_URL, nor to
+ * DATABASE_URL/DIRECT_URL. All three go through the same loopback/managed-host
+ * validation as above.
+ */
+export type TargetPrincipalKind = "owner" | "runtime" | "admin";
+
+const ENV_VAR_BY_PRINCIPAL: Record<TargetPrincipalKind, string> = {
+  owner: "TARGET_DATABASE_URL",
+  runtime: "TARGET_RUNTIME_DATABASE_URL",
+  admin: "TARGET_ADMIN_DATABASE_URL",
+};
+
+function resolvePrincipalUrl(kind: TargetPrincipalKind, env: TargetClientEnv): string {
+  const varName = ENV_VAR_BY_PRINCIPAL[kind];
+  const url = env[varName];
+  if (!url) {
+    throw new TargetDatabaseClientConfigError(
+      `${varName} is required for the "${kind}" target principal. It never falls back to ` +
+        `another principal's URL — a runtime path that silently used the migration/owner ` +
+        `credential is exactly the defect this separation exists to prevent.`
+    );
+  }
+  // Reuse the single validation implementation by handing it a synthetic env
+  // with only TARGET_DATABASE_URL set, so the loopback/managed-host/parse rules
+  // cannot drift between principals.
+  return resolveTargetDatabaseUrl({ TARGET_DATABASE_URL: url, NODE_ENV: env.NODE_ENV });
+}
+
+interface PrincipalCacheEntry {
+  url: string;
+  client: TargetPrismaClientLike;
+}
+
+const PRINCIPAL_CACHE_KEY = "__argusTargetPrincipalClientCache__" as const;
+
+function principalCache(): Map<TargetPrincipalKind, PrincipalCacheEntry> {
+  const existing = (globalThis as Record<string, unknown>)[PRINCIPAL_CACHE_KEY] as
+    | Map<TargetPrincipalKind, PrincipalCacheEntry>
+    | undefined;
+  if (existing) return existing;
+  const created = new Map<TargetPrincipalKind, PrincipalCacheEntry>();
+  (globalThis as Record<string, unknown>)[PRINCIPAL_CACHE_KEY] = created;
+  return created;
+}
+
+export interface GetTargetPrincipalClientOptions extends CreateTargetPrismaClientOptions {
+  /** Skips the non-privileged assertion. Only the "owner" principal may do this. */
+  skipPrincipalAssertion?: boolean;
+}
+
+/** What a connection actually turned out to be, read back from the server rather than assumed from the URL. */
+export interface TargetPrincipalIdentity {
+  sessionUser: string;
+  currentUser: string;
+  isSuperuser: boolean;
+  isBypassRls: boolean;
+  ownsSecuritySchema: boolean;
+  hasCreateOnSecuritySchema: boolean;
+  ownsAuditLogs: boolean;
+}
+
+export class TargetPrincipalPrivilegeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TargetPrincipalPrivilegeError";
+  }
+}
+
+interface PrincipalProbeClient {
+  $queryRawUnsafe: <T = unknown>(query: string, ...values: unknown[]) => Promise<T[]>;
+}
+
+/**
+ * Reads back WHO the connection actually is. Deliberately queries the server
+ * instead of parsing the URL: a URL says what was requested, `session_user`
+ * says what was granted, and `pg_roles` says what that role can actually do.
+ */
+export async function describeTargetPrincipal(client: TargetPrismaClientLike): Promise<TargetPrincipalIdentity> {
+  const rows = await (client as unknown as PrincipalProbeClient).$queryRawUnsafe<{
+    session_user: string;
+    current_user: string;
+    is_superuser: boolean;
+    is_bypassrls: boolean;
+    security_schema_owner: string | null;
+    has_create_on_security: boolean;
+    audit_logs_owner: string | null;
+  }>(
+    `SELECT session_user::text AS session_user,
+            current_user::text AS current_user,
+            (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS is_superuser,
+            (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS is_bypassrls,
+            (SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = 'security') AS security_schema_owner,
+            coalesce(has_schema_privilege(current_user, 'security', 'CREATE'), false) AS has_create_on_security,
+            (SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = to_regclass('security.audit_logs')) AS audit_logs_owner`
+  );
+  const row = rows[0]!;
+  return {
+    sessionUser: row.session_user,
+    currentUser: row.current_user,
+    isSuperuser: Boolean(row.is_superuser),
+    isBypassRls: Boolean(row.is_bypassrls),
+    ownsSecuritySchema: row.security_schema_owner === row.current_user,
+    hasCreateOnSecuritySchema: Boolean(row.has_create_on_security),
+    ownsAuditLogs: row.audit_logs_owner === row.current_user,
+  };
+}
+
+/**
+ * Throws unless the connection is a genuinely non-privileged principal. Every
+ * clause corresponds to a way the previous arrangement made RLS and grants
+ * unobservable, so none of them is decorative.
+ */
+export function assertNonPrivilegedPrincipal(
+  identity: TargetPrincipalIdentity,
+  expectedRole?: string
+): void {
+  const violations: string[] = [];
+  if (identity.isSuperuser) violations.push(`${identity.currentUser} is SUPERUSER`);
+  if (identity.isBypassRls) violations.push(`${identity.currentUser} has BYPASSRLS`);
+  if (identity.ownsSecuritySchema) violations.push(`${identity.currentUser} owns schema security`);
+  if (identity.hasCreateOnSecuritySchema) violations.push(`${identity.currentUser} holds CREATE ON SCHEMA security`);
+  if (identity.ownsAuditLogs) violations.push(`${identity.currentUser} owns security.audit_logs`);
+  if (expectedRole && identity.currentUser !== expectedRole) {
+    violations.push(`connected as ${identity.currentUser}, expected ${expectedRole}`);
+  }
+  if (violations.length > 0) {
+    throw new TargetPrincipalPrivilegeError(
+      `AUDIT_WRITER_PRINCIPAL_VIOLATION: a non-privileged target principal was required but ` +
+        `${violations.join("; ")}. The runtime must never use the migration/owner credential.`
+    );
+  }
+}
+
+const EXPECTED_ROLE_BY_PRINCIPAL: Partial<Record<TargetPrincipalKind, string>> = {
+  runtime: "app_api",
+  admin: "access_admin",
+};
+
+/**
+ * Returns a cached client for the named principal, asserting on first
+ * construction that a "runtime"/"admin" connection really is non-privileged.
+ * The assertion runs once per cached client, not per query, and a failure is
+ * fatal — there is no "warn and continue" path, because continuing is what
+ * previously hid the problem.
+ */
+export async function getTargetPrincipalClient(
+  kind: TargetPrincipalKind,
+  options: GetTargetPrincipalClientOptions = {}
+): Promise<TargetPrismaClientLike> {
+  const env = options.env ?? process.env;
+  assertNotProduction(env);
+  const url = resolvePrincipalUrl(kind, env);
+
+  const cache = principalCache();
+  const cached = cache.get(kind);
+  if (cached && cached.url === url) return cached.client;
+
+  const loadClientCtor = options.loadClientCtor ?? defaultLoadClientCtor;
+  const PrismaClient = await loadClientCtor();
+  const client = new PrismaClient({ datasources: { db: { url } } });
+
+  if (kind !== "owner" && !options.skipPrincipalAssertion) {
+    try {
+      assertNonPrivilegedPrincipal(await describeTargetPrincipal(client), EXPECTED_ROLE_BY_PRINCIPAL[kind]);
+    } catch (err) {
+      await client.$disconnect().catch(() => undefined);
+      throw err;
+    }
+  }
+
+  cache.set(kind, { url, client });
+  return client;
+}
+
+/** The runtime (app_api) client. What the canonical audit writer and any request-path code must use. */
+export function getTargetRuntimePrismaClient(
+  options: GetTargetPrincipalClientOptions = {}
+): Promise<TargetPrismaClientLike> {
+  return getTargetPrincipalClient("runtime", options);
+}
+
+/** The access-role administration (access_admin) client. Nothing else may use it. */
+export function getTargetAdminPrismaClient(
+  options: GetTargetPrincipalClientOptions = {}
+): Promise<TargetPrismaClientLike> {
+  return getTargetPrincipalClient("admin", options);
+}
+
+/** Disconnects and clears every per-principal cached client. */
+export async function closeTargetPrincipalClients(): Promise<void> {
+  const cache = principalCache();
+  const entries = [...cache.values()];
+  cache.clear();
+  await Promise.all(entries.map((entry) => entry.client.$disconnect().catch(() => undefined)));
+}
