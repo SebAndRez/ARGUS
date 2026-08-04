@@ -63,18 +63,27 @@ function Assert-CleanTargetFiles {
 }
 
 function Assert-DockerReady {
-    $info = Invoke-ArgusNative { & docker info 2>&1 }
-    if ($LASTEXITCODE -ne 0) {
-        throw "docker info failed - Docker Desktop is not installed/running. Install it first (see scripts/migration-rehearsal/README.md), then re-run this script."
+    # Every docker call here is asserted. `docker info` returning non-zero used
+    # to be caught, but `docker version` / `docker compose version` were called
+    # for their output with no exit-code check at all - the exact pattern this
+    # change exists to remove.
+    Invoke-ArgusBlockingCommand -Phase "DockerReady" -Command "docker" -Arguments @("info") `
+        -FailureCode "DOCKER_NOT_READY" -TimeoutSeconds 120 | Out-Null
+    $osType = Invoke-ArgusBlockingCommand -Phase "DockerReady" -Command "docker" -Arguments @("info", "--format", "{{.OSType}}") `
+        -FailureCode "DOCKER_NOT_READY" -TimeoutSeconds 120
+    if (($osType.Output -join "").Trim() -ne "linux") {
+        throw "DOCKER_NOT_READY - Docker is running '$(($osType.Output -join '').Trim())' containers, not linux - switch Docker Desktop to Linux containers."
     }
-    $osType = Invoke-ArgusNative { & docker info --format '{{.OSType}}' 2>&1 }
-    if ($osType -ne "linux") {
-        throw "Docker is running $osType containers, not linux - switch Docker Desktop to Linux containers."
-    }
+    $version = Invoke-ArgusBlockingCommand -Phase "DockerReady" -Command "docker" -Arguments @("version", "--format", "{{.Server.Version}}") `
+        -FailureCode "DOCKER_NOT_READY" -TimeoutSeconds 120
+    $compose = Invoke-ArgusBlockingCommand -Phase "DockerReady" -Command "docker" -Arguments @("compose", "version") `
+        -FailureCode "DOCKER_NOT_READY" -TimeoutSeconds 120
     Write-ArgusLog "Docker ready: linux containers confirmed."
+    Add-ArgusPhaseResult -Name "DockerReady" -ExitCode 0 -Passed $true `
+        -Evidence "docker info + version + compose version all exited 0; OSType=linux" | Out-Null
     return @{
-        DockerVersion = (Invoke-ArgusNative { & docker version --format '{{.Server.Version}}' 2>&1 })
-        ComposeVersion = (Invoke-ArgusNative { & docker compose version 2>&1 })
+        DockerVersion  = ($version.Output -join "").Trim()
+        ComposeVersion = ($compose.Output -join " ").Trim()
     }
 }
 
@@ -113,7 +122,23 @@ try {
     Write-ArgusLog "ARGUS full local migration rehearsal - START"
     Write-ArgusLog "=========================================="
 
+    Initialize-ArgusPhaseLedger | Out-Null
+
+    # ---- Harness self-test, before anything expensive ----
+    # A green rehearsal only means something if a red one is reachable. This
+    # proves, every single run and against a fixture rather than a productive
+    # test file, that a command exiting non-zero stops the harness, that a
+    # command printing a green summary while exiting 1 still fails, that a
+    # zero-test suite is rejected, that an all-skipped suite is rejected where
+    # Docker coverage is mandatory, and that a missing command is rejected.
+    Write-ArgusLog "=== Harness self-test: failure propagation ==="
+    Test-ArgusFailurePropagation | Out-Null
+    Add-ArgusPhaseResult -Name "FailurePropagationSelfTest" -ExitCode 0 -Passed $true `
+        -Evidence "success continues; exit 1 blocks; empty suite blocks; all-skipped blocks; missing command blocks" | Out-Null
+
     Assert-CleanTargetFiles
+    Add-ArgusPhaseResult -Name "CleanTargetFiles" -ExitCode 0 -Passed $true `
+        -Evidence "prisma/schema.prisma and prisma/migrations/ have zero diff" | Out-Null
     $overallResult.Docker = Assert-DockerReady
 
     # ---- Fase 5-7: fresh environment, waves 000-100 (1st install) ----
@@ -138,13 +163,17 @@ try {
 
     Write-ArgusLog "=== Fase 9: applying all 11 waves, 1st install ==="
     $overallResult.FirstInstallWaves = Invoke-ArgusWaveCycle
+    Add-ArgusPhaseResult -Name "FirstInstallWaves" -ExitCode 0 -Passed $true `
+        -Evidence "$(@($overallResult.FirstInstallWaves).Count) waves applied 000->100" | Out-Null
 
     # ---- Fase 10-12,16,17: fixtures, RLS, physical validations, prisma, repo tests ----
-    $overallResult.FirstInstallTests = & (Join-Path $PSScriptRoot "Test-ArgusRehearsal.ps1")
+    $overallResult.FirstInstallTests = & (Join-Path $PSScriptRoot "Test-ArgusRehearsal.ps1") -PhaseScope "FirstInstall"
 
     # ---- Fase 14: rollback 100 -> 000 ----
     Write-ArgusLog "=== Fase 14: rollback, waves 100 -> 000 ==="
     $overallResult.RollbackWaves = Invoke-ArgusRollbackCycle
+    Add-ArgusPhaseResult -Name "RollbackWaves" -ExitCode 0 -Passed $true `
+        -Evidence "$(@($overallResult.RollbackWaves).Count) waves rolled back 100->000" | Out-Null
     $postRollbackCatalog = Get-ArgusCatalogSnapshot
     $overallResult.PostRollbackCatalogSnapshot = $postRollbackCatalog.Output
 
@@ -173,6 +202,8 @@ try {
         throw "ROLLBACK_ZERO_RESIDUE_FAIL - ARGUS target objects survived the full 100->000 rollback:`n$($residueReport -join "`n")"
     }
     $overallResult.RollbackZeroResiduePass = $true
+    Add-ArgusPhaseResult -Name "RollbackZeroResidue" -ExitCode $residueExit -Passed $true `
+        -Evidence "$residueCountLine" | Out-Null
     Write-ArgusLog "ROLLBACK_ZERO_RESIDUE_PASS"
 
     # ---- Audit partition rollback: zero partitions, zero functions ----
@@ -193,6 +224,8 @@ try {
         throw "AUDIT_PARTITION_ROLLBACK_FAIL - audit partition objects survived the full 100->000 rollback:`n$($auditResidue -join "`n")"
     }
     $overallResult.AuditPartitionRollbackPass = $true
+    Add-ArgusPhaseResult -Name "AuditPartitionRollback" -ExitCode $auditRollback.ExitCode -Passed $true `
+        -Evidence "zero AUDIT_PARTITION_RESIDUE rows after the full 100->000 rollback" | Out-Null
     Write-ArgusLog "AUDIT_PARTITION_ROLLBACK_PASS"
 
     # ---- Access-role substrate rollback: zero tables, functions, enums,
@@ -212,6 +245,8 @@ try {
         throw "ACCESS_ROLE_ROLLBACK_FAIL - authorization-substrate objects survived the full 100->000 rollback:`n$($accessResidue -join "`n")"
     }
     $overallResult.AccessRoleRollbackPass = $true
+    Add-ArgusPhaseResult -Name "AccessRoleRollback" -ExitCode $accessRollback.ExitCode -Passed $true `
+        -Evidence "zero ACCESS_ROLE_RESIDUE rows after the full 100->000 rollback" | Out-Null
     Write-ArgusLog "ACCESS_ROLE_ROLLBACK_PASS"
 
     # ---- R31 substrate rollback: zero tables, functions, enums, indexes,
@@ -234,12 +269,16 @@ try {
         throw "INCIDENT_ZONE_ROLLBACK_FAIL - R31 objects survived the full 100->000 rollback:`n$($zoneResidue -join "`n")"
     }
     $overallResult.IncidentZoneRollbackPass = $true
+    Add-ArgusPhaseResult -Name "IncidentZoneRollback" -ExitCode $zoneRollback.ExitCode -Passed $true `
+        -Evidence "zero INCIDENT_ZONE_RESIDUE rows after the full 100->000 rollback" | Out-Null
     Write-ArgusLog "INCIDENT_ZONE_ROLLBACK_PASS"
 
     # ---- Fase 7 (reproducibility within the SAME volume): reapply 000-100 ----
     Write-ArgusLog "=== Fase 7: reapplying all 11 waves after rollback (same volume) ==="
     $overallResult.ReapplyWaves = Invoke-ArgusWaveCycle
-    $overallResult.ReapplyTests = & (Join-Path $PSScriptRoot "Test-ArgusRehearsal.ps1") -SkipRepoTests
+    Add-ArgusPhaseResult -Name "ReapplyWaves" -ExitCode 0 -Passed $true `
+        -Evidence "$(@($overallResult.ReapplyWaves).Count) waves reapplied 000->100 on the same volume" | Out-Null
+    $overallResult.ReapplyTests = & (Join-Path $PSScriptRoot "Test-ArgusRehearsal.ps1") -SkipRepoTests -PhaseScope "Reapply"
 
     if (-not $SkipSecondInstall) {
         # ---- Fase 15: destroy volume completely, fresh install from scratch ----
@@ -247,7 +286,9 @@ try {
         & (Join-Path $PSScriptRoot "Reset-ArgusRehearsal.ps1")
         Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "fixtures\000_legacy_synthetic_fixtures.sql") | Out-Null
         $overallResult.SecondInstallWaves = Invoke-ArgusWaveCycle
-        $overallResult.SecondInstallTests = & (Join-Path $PSScriptRoot "Test-ArgusRehearsal.ps1")
+        Add-ArgusPhaseResult -Name "SecondInstallWaves" -ExitCode 0 -Passed $true `
+            -Evidence "$(@($overallResult.SecondInstallWaves).Count) waves applied 000->100 on a genuinely empty volume" | Out-Null
+        $overallResult.SecondInstallTests = & (Join-Path $PSScriptRoot "Test-ArgusRehearsal.ps1") -PhaseScope "SecondInstall"
     }
 
     # ---- Audit partition summary (mandate: the rehearsal summary must carry
@@ -321,65 +362,104 @@ try {
     Write-ArgusLog "=== Audit partition summary ==="
     foreach ($marker in $auditMarkers) { Write-ArgusLog $marker }
 
+    # ================================================================
+    # DERIVED SUCCESS.
+    #
+    # Success used to be `$overallResult.Success = $true` - assigned because
+    # control reached the end of the try block. That is precisely how a red
+    # target suite coexisted with Success=True: nothing between the failing
+    # suite and this line ever looked at its exit code.
+    #
+    # Success is now derived from the required-phase ledger. Every phase below
+    # must have registered a result, executed, not been skipped, exited zero
+    # AND passed. A phase that silently never ran is
+    # REHEARSAL_REQUIRED_PHASE_MISSING, which is as fatal as one that failed.
+    # ================================================================
+    $requiredPhases = @(
+        "FailurePropagationSelfTest",
+        "CleanTargetFiles",
+        "DockerReady",
+        "FirstInstallWaves",
+        "FirstInstall/PhysicalValidations",
+        "FirstInstall/RlsRuntimeChecks",
+        "FirstInstall/RlsMatrix",
+        "FirstInstall/AuditPartitionChecks",
+        "FirstInstall/AuditPartitionConcurrency",
+        "FirstInstall/AccessRoleChecks",
+        "FirstInstall/AuditWriterPrincipal",
+        "FirstInstall/IncidentZoneChecks",
+        "FirstInstall/IncidentZoneTests",
+        "FirstInstall/PrismaValidate",
+        "FirstInstall/TargetTests",
+        "FirstInstall/P0Tests",
+        "RollbackWaves",
+        "RollbackZeroResidue",
+        "AuditPartitionRollback",
+        "AccessRoleRollback",
+        "IncidentZoneRollback",
+        "ReapplyWaves",
+        "Reapply/RlsMatrix",
+        "Reapply/AuditPartitionChecks",
+        "Reapply/AccessRoleChecks",
+        "Reapply/IncidentZoneChecks"
+    )
+    if (-not $SkipSecondInstall) {
+        $requiredPhases += @(
+            "SecondInstallWaves",
+            "SecondInstall/RlsMatrix",
+            "SecondInstall/AuditPartitionChecks",
+            "SecondInstall/AccessRoleChecks",
+            "SecondInstall/IncidentZoneChecks",
+            "SecondInstall/PrismaValidate",
+            "SecondInstall/TargetTests",
+            "SecondInstall/P0Tests"
+        )
+    }
+    $overallResult.SkipSecondInstall = [bool]$SkipSecondInstall
+    $overallResult.RequiredPhaseNames = $requiredPhases
+    Assert-ArgusRequiredPhases -RequiredPhases $requiredPhases | Out-Null
+
+    # The blocking-test markers, each DERIVED from a ledger entry that passed -
+    # never printed unconditionally, so a marker in the summary always means the
+    # corresponding assertion actually ran.
+    $ledger = Get-ArgusPhaseLedger
+    $blockingMarkers = @()
+    if ($ledger["FirstInstall/TargetTests"].Passed) { $blockingMarkers += "TARGET_TESTS_BLOCKING_PASS" }
+    if ($ledger["FirstInstall/P0Tests"].Passed)     { $blockingMarkers += "P0_CANONICAL_SUITE_PASS" }
+    $blockingMarkers += "REHEARSAL_REQUIRED_PHASES_PASS"
+    if ($ledger["FailurePropagationSelfTest"].Passed) { $blockingMarkers += "REHEARSAL_FAILURE_PROPAGATION_PASS" }
+
+    $expectedBlockingMarkers = @(
+        "TARGET_TESTS_BLOCKING_PASS",
+        "P0_CANONICAL_SUITE_PASS",
+        "REHEARSAL_REQUIRED_PHASES_PASS",
+        "REHEARSAL_FAILURE_PROPAGATION_PASS"
+    )
+    $missingBlockingMarkers = @($expectedBlockingMarkers | Where-Object { $blockingMarkers -notcontains $_ })
+    if ($missingBlockingMarkers.Count -gt 0) {
+        throw "REHEARSAL_BLOCKING_SUMMARY_FAIL - the rehearsal completed without proving: $($missingBlockingMarkers -join ', ')"
+    }
+    $overallResult.BlockingMarkers = $blockingMarkers
+    $overallResult.P0_FILES    = $overallResult.FirstInstallTests.P0_FILES
+    $overallResult.P0_TESTS    = $overallResult.FirstInstallTests.P0_TESTS
+    $overallResult.P0_SKIPPED  = $overallResult.FirstInstallTests.P0_SKIPPED
+    $overallResult.P0_EXIT_CODE = $overallResult.FirstInstallTests.P0_EXIT_CODE
+    Write-ArgusLog "=== Blocking-test summary ==="
+    foreach ($marker in $blockingMarkers) { Write-ArgusLog $marker }
+    Write-ArgusLog "P0_FILES=$($overallResult.P0_FILES) P0_TESTS=$($overallResult.P0_TESTS) P0_SKIPPED=$($overallResult.P0_SKIPPED) P0_EXIT_CODE=$($overallResult.P0_EXIT_CODE)"
+
     $overallResult.Success = $true
 } catch {
     $overallResult.Success = $false
     $overallResult.Error = $_.Exception.Message
     Write-ArgusLog "REHEARSAL FAILED: $($_.Exception.Message)" -Level "ERROR"
-    Write-ArgusLog "Fix the specific file named above under prisma/target-migrations/, then re-run this script from the top." -Level "ERROR"
+    Write-ArgusLog "The failure code above names what to fix: a *_TESTS_FAILED code means a real test suite is red (fix the test or the code, never the harness); a REHEARSAL_REQUIRED_PHASE_* code means a required phase did not run or did not pass; anything else names the specific file under prisma/target-migrations/. Then re-run this script from the top." -Level "ERROR"
 } finally {
-    $overallResult.FinishedAt = (Get-Date).ToString("o")
-
-    if (-not (Test-Path $Script:ArgusArtifactDir)) {
-        New-Item -ItemType Directory -Force -Path $Script:ArgusArtifactDir | Out-Null
-    }
-    $overallResult | ConvertTo-Json -Depth 8 | Set-Content -Path (Join-Path $Script:ArgusArtifactDir "full-rehearsal-result.json") -Encoding utf8
-
-    # ---- Fase 18: write result docs (private, never git-added) ----
-    if (Test-Path $Script:ArgusPrivateDocsDir) {
-        $reportPath = Join-Path $Script:ArgusPrivateDocsDir "ARGUS_FULL_LOCAL_MIGRATION_REHEARSAL_v1.0.md"
-        $status = if ($overallResult.Success) { "SUCCESS" } else { "FAILED: $($overallResult.Error)" }
-        @"
-# ARGUS Full Local Migration Rehearsal v1.0
-
-Generated: $(Get-Date -Format o)
-Status: $status
-
-Audit partition lifecycle markers proven this run:
-$(if ($overallResult.AuditPartitionMarkers) { ($overallResult.AuditPartitionMarkers | ForEach-Object { "- $_" }) -join "`n" } else { "- (none - the run did not reach the audit partition summary)" })
-
-Full machine-readable detail: migration-rehearsal-artifacts/full-rehearsal-result.json
-(git-excluded, see .git/info/exclude)
-
-See also (same directory, git-excluded):
-- migration-rehearsal-artifacts/*.apply.json / *.rollback.json - per-wave detail
-- migration-rehearsal-artifacts/test-summary.json - RLS/physical/prisma/repo test detail
-- migration-rehearsal-logs/rehearsal.log - full chronological log
-- migration-rehearsal-logs/psql-output.log - raw psql output per statement file
-"@ | Set-Content -Path $reportPath -Encoding utf8
-        Write-ArgusLog "Wrote summary to $reportPath"
-    }
-
-    # ---- Fase 22: cleanup ----
-    Write-ArgusLog "=== Fase 22: tearing down rehearsal container + volume ==="
-    Push-Location $Script:ArgusRepoRoot
-    try {
-        if (
-            (Get-Command docker -ErrorAction SilentlyContinue) -and
-            (Test-Path $Script:ArgusComposeFile) -and
-            (Test-Path $Script:ArgusEnvLocalFile)
-        ) {
-            Invoke-ArgusNative { & docker compose --env-file $Script:ArgusEnvLocalFile -f $Script:ArgusComposeFile down -v 2>&1 } | ForEach-Object { Write-ArgusLog $_ }
-        } else {
-            Write-ArgusLog "Cleanup skipped: Docker, compose file, or local env file is unavailable." "WARN"
-        }
-    } finally {
-        Pop-Location
-    }
-    if (Test-Path $Script:ArgusEnvLocalFile) {
-        Remove-Item -Force $Script:ArgusEnvLocalFile
-        Write-ArgusLog "Removed .env.argus-migration.local."
-    }
+    # Fase 18 (result documents) + Fase 22 (cleanup), in one place that runs on
+    # BOTH paths. A failed run must still tear its container and volume down and
+    # must still leave a summary naming the phase that failed - see
+    # Complete-ArgusRehearsalRun in lib/Common.ps1.
+    $overallResult = Complete-ArgusRehearsalRun -Result $overallResult
 }
 
 Write-ArgusLog "=========================================="

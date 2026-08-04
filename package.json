@@ -30,7 +30,7 @@
     "db:target:validate": "prisma validate --schema prisma/schema.target.prisma",
     "db:target:test": "vitest run tests/database-target",
     "db:target:audit-partitions": "tsx scripts/database-target/ensureAuditLogPartitions.ts",
-    "db:target:rehearsal": "powershell -ExecutionPolicy Bypass -File ./scripts/migration-rehearsal/Invoke-ArgusFullRehearsal.ps1",
+    "db:target:rehearsal": "node scripts/migration-rehearsal/run-rehearsal.mjs",
     "db:target:reset": "powershell -ExecutionPolicy Bypass -File ./scripts/migration-rehearsal/Reset-ArgusRehearsal.ps1",
     "db:target:ci": "npm run db:target:validate && npm run db:target:test && npm run db:target:rehearsal"
   },

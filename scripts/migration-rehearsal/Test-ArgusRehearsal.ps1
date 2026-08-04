@@ -8,7 +8,13 @@
 #>
 param(
     [switch]$SkipFixtures,
-    [switch]$SkipRepoTests
+    [switch]$SkipRepoTests,
+    # Namespaces this invocation's entries in the required-phase ledger. This
+    # script runs up to three times per rehearsal (1st install, post-rollback
+    # reapply, from-scratch 2nd install) and each run's phases must be
+    # distinguishable - otherwise a later run would overwrite an earlier one's
+    # verdict and a failure could disappear from the ledger.
+    [string]$PhaseScope = "FirstInstall"
 )
 
 . (Join-Path $PSScriptRoot "lib\Common.ps1")
@@ -17,11 +23,23 @@ Assert-ArgusLocalOnly
 
 $summary = [ordered]@{
     StartedAt = (Get-Date).ToString("o")
+    PhaseScope = $PhaseScope
+}
+
+function Save-ArgusTestSummary {
+    param($Summary)
+    if (-not (Test-Path $Script:ArgusArtifactDir)) {
+        New-Item -ItemType Directory -Force -Path $Script:ArgusArtifactDir | Out-Null
+    }
+    $Summary.FinishedAt = (Get-Date).ToString("o")
+    $Summary | ConvertTo-Json -Depth 6 | Set-Content -Path (Join-Path $Script:ArgusArtifactDir "test-summary.json") -Encoding utf8
 }
 
 Write-ArgusLog "=== Test-ArgusRehearsal: Fase 11 physical validations ==="
 $physical = Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "sql\physical-validations.sql")
 $summary.PhysicalValidations = $physical.Output
+Add-ArgusPhaseResult -Name "$PhaseScope/PhysicalValidations" -ExitCode $physical.ExitCode -Passed ($physical.ExitCode -eq 0) `
+    -FailureCode "PHYSICAL_VALIDATIONS_FAIL" -Evidence "physical-validations.sql exit=$($physical.ExitCode)" | Out-Null
 
 if (-not $SkipFixtures) {
     Write-ArgusLog "=== Fase 10: applying synthetic fixtures (1st run) ==="
@@ -43,6 +61,13 @@ if ($rlsFailures) {
     Write-ArgusLog "RLS runtime checks: all RLS_TEST_PASS, zero RLS_TEST_FAIL."
     $summary.RlsResult = "PASS"
 }
+# This block deliberately records rather than throws (the RLS MATRIX below is
+# the throwing gate), but "recorded" used to mean "forgotten": RlsResult=FAIL
+# sat in the summary while the rehearsal carried on to Success=True. It is a
+# required phase now, so a FAIL here cannot coexist with a green rehearsal.
+Add-ArgusPhaseResult -Name "$PhaseScope/RlsRuntimeChecks" -ExitCode $rls.ExitCode `
+    -Passed ($summary.RlsResult -eq "PASS") -FailureCode "RLS_RUNTIME_CHECKS_FAIL" `
+    -Evidence "rls-runtime-checks.sql exit=$($rls.ExitCode) result=$($summary.RlsResult)" | Out-Null
 
 # ============================================================
 # Fase 6/7 (corrective mandate): REAL RLS matrix under non-superuser,
@@ -79,6 +104,8 @@ $summary.RlsPositivePass    = $matrixPositives.Count
 $summary.RlsNegativePass    = $matrixNegatives.Count
 $summary.RlsRoleSecurityPass = $matrixRoleSec.Count
 $summary.RlsMatrixResult    = "PASS"
+Add-ArgusPhaseResult -Name "$PhaseScope/RlsMatrix" -ExitCode $rlsMatrix.ExitCode -Passed $true `
+    -Evidence "positive=$($matrixPositives.Count) negative=$($matrixNegatives.Count) role_security=$($matrixRoleSec.Count) helper_not_stub=$($matrixNotStub.Count)" | Out-Null
 Write-ArgusLog "RLS_POSITIVE_PASS=$($matrixPositives.Count) RLS_NEGATIVE_PASS=$($matrixNegatives.Count) RLS_ROLE_SECURITY_PASS=$($matrixRoleSec.Count)"
 
 # ============================================================
@@ -134,6 +161,8 @@ $auditRlsPositive = @($auditPartition.Output | Select-String -Pattern "AUDIT_PAR
 $auditRlsNegative = @($auditPartition.Output | Select-String -Pattern "AUDIT_PARTITION_RLS_OK \| negative").Count
 if ($auditRlsPositive -lt 3) { throw "AUDIT_PARTITION_RLS_FAIL - only $auditRlsPositive positive case(s); a deny-everything matrix proves nothing." }
 if ($auditRlsNegative -lt 7) { throw "AUDIT_PARTITION_RLS_FAIL - only $auditRlsNegative negative case(s)." }
+Add-ArgusPhaseResult -Name "$PhaseScope/AuditPartitionChecks" -ExitCode $auditPartition.ExitCode -Passed $true `
+    -Evidence "all $($requiredAuditMarkers.Count) markers present, routing_verified=$routingOk, rls positive=$auditRlsPositive negative=$auditRlsNegative" | Out-Null
 $summary.AuditPartitionRoutingVerified = $routingOk
 $summary.AuditPartitionRlsPositive = $auditRlsPositive
 $summary.AuditPartitionRlsNegative = $auditRlsNegative
@@ -256,6 +285,8 @@ if ($concurrencyVerify.ExitCode -ne 0 -or ($concurrencyVerify.Output -join "`n")
     throw "AUDIT_PARTITION_CONCURRENCY_FAIL - post-concurrency verification did not pass:`n$($concurrencyVerify.Output -join "`n")"
 }
 $summary.AuditPartitionConcurrencyResult = "PASS"
+Add-ArgusPhaseResult -Name "$PhaseScope/AuditPartitionConcurrency" -ExitCode $concurrencyVerify.ExitCode -Passed $true `
+    -Evidence "10 same-month + $($distinctResults.Count) distinct-month simultaneous connections, exactly 1 CREATED per month, zero duplicate_table/deadlock" | Out-Null
 Write-ArgusLog "AUDIT_PARTITION_CONCURRENCY_PASS (10 same-month + $($distinctResults.Count) distinct-month simultaneous connections, 1 CREATED per month, zero duplicate_table, zero deadlocks)"
 
 # ============================================================
@@ -308,6 +339,8 @@ if ($accessScoped   -lt 3) { throw "ACCESS_ROLE_FAIL - institution/purpose/emerg
 $summary.AccessRolePositivePass = $accessPositive
 $summary.AccessRoleNegativePass = $accessNegative
 $summary.AccessRoleResult = "PASS"
+Add-ArgusPhaseResult -Name "$PhaseScope/AccessRoleChecks" -ExitCode $accessRole.ExitCode -Passed $true `
+    -Evidence "positive=$accessPositive negative=$accessNegative scoped=$accessScoped, all $($requiredAccessMarkers.Count) markers present" | Out-Null
 Write-ArgusLog "ACCESS_POSITIVE_PASS=$accessPositive ACCESS_NEGATIVE_PASS=$accessNegative ACCESS_SCOPED_PASS=$accessScoped"
 foreach ($marker in $requiredAccessMarkers) { Write-ArgusLog $marker }
 
@@ -317,52 +350,43 @@ Write-ArgusLog "=== Audit writer principal + access-role suites under the REAL r
 # Fase 17 whole-suite run into Docker mode, where the post-rollback residue
 # suites (which REQUIRE a rolled-back database) run against a fully-applied one
 # and fail for the wrong reason. Found exactly that way on the first full run.
-$previousIntegrationFlag = $env:ARGUS_WAVE3_INTEGRATION_TEST
-$previousTargetUrl = $env:TARGET_DATABASE_URL
-Push-Location $Script:ArgusRepoRoot
-try {
-    $env:ARGUS_WAVE3_INTEGRATION_TEST = "true"
-    $env:TARGET_DATABASE_URL = $env:DATABASE_URL
-    # TARGET_RUNTIME_DATABASE_URL / TARGET_ADMIN_DATABASE_URL come from
-    # .env.argus-migration.local via Get-ArgusLocalEnv - app_api and
-    # access_admin, never the owner.
-    $principalTests = Invoke-ArgusNative {
-        & npx vitest run `
-            tests/database-target/audit-writer-principal.test.ts `
-            tests/database-target/audit-writer-no-owner-runtime.test.ts `
-            tests/database-target/access-subject.test.ts `
-            tests/database-target/access-subject-exclusivity.test.ts `
-            tests/database-target/access-role-assignment.test.ts `
-            tests/database-target/access-role-assignment-idempotency.test.ts `
-            tests/database-target/access-role-assignment-expiry.test.ts `
-            tests/database-target/access-role-assignment-revocation.test.ts `
-            tests/database-target/classification-with-persisted-role.test.ts `
-            tests/database-target/classification-rejects-forged-guc.test.ts `
-            tests/database-target/classification-institution-scope.test.ts `
-            tests/database-target/classification-purpose.test.ts `
-            tests/database-target/classification-emergency-basis.test.ts `
-            tests/database-target/access-role-rls.test.ts 2>&1
+# TARGET_RUNTIME_DATABASE_URL / TARGET_ADMIN_DATABASE_URL come from
+# .env.argus-migration.local via Get-ArgusLocalEnv - app_api and access_admin,
+# never the owner.
+$principalSuites = @(
+    "tests/database-target/audit-writer-principal.test.ts",
+    "tests/database-target/audit-writer-no-owner-runtime.test.ts",
+    "tests/database-target/access-subject.test.ts",
+    "tests/database-target/access-subject-exclusivity.test.ts",
+    "tests/database-target/access-role-assignment.test.ts",
+    "tests/database-target/access-role-assignment-idempotency.test.ts",
+    "tests/database-target/access-role-assignment-expiry.test.ts",
+    "tests/database-target/access-role-assignment-revocation.test.ts",
+    "tests/database-target/classification-with-persisted-role.test.ts",
+    "tests/database-target/classification-rejects-forged-guc.test.ts",
+    "tests/database-target/classification-institution-scope.test.ts",
+    "tests/database-target/classification-purpose.test.ts",
+    "tests/database-target/classification-emergency-basis.test.ts",
+    "tests/database-target/access-role-rls.test.ts"
+)
+$principalRun = Invoke-ArgusBlockingCommand -Phase "$PhaseScope/AuditWriterPrincipal" `
+    -Command "npx" -Arguments (@("vitest", "run") + $principalSuites) `
+    -FailureCode "AUDIT_WRITER_PRINCIPAL_FAIL" -TimeoutSeconds 1800 `
+    -Environment @{
+        ARGUS_WAVE3_INTEGRATION_TEST = "true"
+        TARGET_DATABASE_URL          = $env:DATABASE_URL
     }
-    $principalExit = $LASTEXITCODE
-} finally {
-    Pop-Location
-    if ($null -eq $previousIntegrationFlag) { Remove-Item Env:ARGUS_WAVE3_INTEGRATION_TEST -ErrorAction SilentlyContinue }
-    else { $env:ARGUS_WAVE3_INTEGRATION_TEST = $previousIntegrationFlag }
-    if ($null -eq $previousTargetUrl) { Remove-Item Env:TARGET_DATABASE_URL -ErrorAction SilentlyContinue }
-    else { $env:TARGET_DATABASE_URL = $previousTargetUrl }
-}
-$summary.AuditWriterPrincipalTestsExitCode = $principalExit
-$summary.AuditWriterPrincipalTestsOutput = $principalTests | Select-Object -Last 25
-if ($principalExit -ne 0) {
-    throw "AUDIT_WRITER_PRINCIPAL_FAIL - the runtime-principal/access-role suites failed:`n$($principalTests | Select-Object -Last 40 | Out-String)"
-}
+$summary.AuditWriterPrincipalTestsExitCode = $principalRun.ExitCode
+$summary.AuditWriterPrincipalTestsOutput = $principalRun.Output | Select-Object -Last 25
 # Nothing may SKIP here: a skipped suite would mean the runtime credentials were
 # absent, which is exactly the condition that previously let the owner stand in
-# for the runtime unnoticed.
-if (($principalTests -join "`n") -match "Test Files\s+\d+ passed \| (\d+) skipped") {
-    throw "AUDIT_WRITER_PRINCIPAL_FAIL - a runtime-principal suite SKIPPED; the app_api/access_admin credentials were not available."
-}
+# for the runtime unnoticed. Every named file must also have been collected.
+Assert-ArgusVitestCoverage -Phase "$PhaseScope/AuditWriterPrincipal" -Output $principalRun.Output `
+    -FailureCode "AUDIT_WRITER_PRINCIPAL_FAIL" -MinFiles $principalSuites.Count -MinTests 1 `
+    -MaxSkippedFiles 0 -MaxSkippedTests 0 | Out-Null
 $summary.AuditWriterPrincipalResult = "PASS"
+Add-ArgusPhaseResult -Name "$PhaseScope/AuditWriterPrincipal" -ExitCode $principalRun.ExitCode -Passed $true `
+    -Evidence "$($principalSuites.Count) runtime-principal/access-role suites under app_api/access_admin, zero skipped" | Out-Null
 Write-ArgusLog "AUDIT_WRITER_PRINCIPAL_PASS"
 
 # ============================================================
@@ -419,6 +443,8 @@ $summary.IncidentZonePositivePass  = $zonePositive
 $summary.IncidentZoneNegativePass  = $zoneNegative
 $summary.IncidentZoneStructurePass = $zoneStructure
 $summary.IncidentZoneResult        = "PASS"
+Add-ArgusPhaseResult -Name "$PhaseScope/IncidentZoneChecks" -ExitCode $incidentZone.ExitCode -Passed $true `
+    -Evidence "positive=$zonePositive negative=$zoneNegative structure=$zoneStructure role_security=$zoneRoleSec, all $($requiredIncidentZoneMarkers.Count) markers present" | Out-Null
 Write-ArgusLog "INCIDENT_ZONE_POSITIVE_PASS=$zonePositive INCIDENT_ZONE_NEGATIVE_PASS=$zoneNegative INCIDENT_ZONE_STRUCTURE_PASS=$zoneStructure"
 foreach ($marker in $requiredIncidentZoneMarkers) { Write-ArgusLog $marker }
 
@@ -427,88 +453,177 @@ Write-ArgusLog "=== R31 suites under the REAL runtime/admin credentials ==="
 # this step and restored afterwards, so the Fase 17 whole-suite run is not
 # switched into Docker mode (where the post-rollback residue suites would run
 # against a fully-applied database and fail for the wrong reason).
-$previousZoneFlag = $env:ARGUS_WAVE3_INTEGRATION_TEST
-$previousZoneUrl = $env:TARGET_DATABASE_URL
-Push-Location $Script:ArgusRepoRoot
-try {
-    $env:ARGUS_WAVE3_INTEGRATION_TEST = "true"
-    $env:TARGET_DATABASE_URL = $env:DATABASE_URL
-    $zoneTests = Invoke-ArgusNative {
-        & npx vitest run `
-            tests/database-target/incident-operational-zone-assignment.test.ts `
-            tests/database-target/incident-operational-zone-primary-unique.test.ts `
-            tests/database-target/incident-operational-zone-command.test.ts `
-            tests/database-target/incident-operational-zone-revocation.test.ts `
-            tests/database-target/incident-operational-zone-idempotency.test.ts `
-            tests/database-target/incident-operational-zone-concurrency.test.ts `
-            tests/database-target/incident-zone-spatial-resolution.test.ts `
-            tests/database-target/spatial-resolution-never-grants-command.test.ts `
-            tests/database-target/incident-command-jurisdiction.test.ts `
-            tests/database-target/incident-command-jurisdiction-mismatch.test.ts `
-            tests/database-target/incident-command-without-command-zone.test.ts `
-            tests/database-target/incident-primary-does-not-grant-command.test.ts `
-            tests/database-target/incident-affected-does-not-grant-command.test.ts `
-            tests/database-target/incident-command-membership-expiry.test.ts `
-            tests/database-target/incident-command-role-expiry.test.ts `
-            tests/database-target/incident-command-institution.test.ts `
-            tests/database-target/incident-command-forged-context.test.ts `
-            tests/database-target/incident-candidate-zone-promotion.test.ts `
-            tests/database-target/incident-zone-rls.test.ts 2>&1
+$zoneSuites = @(
+    "tests/database-target/incident-operational-zone-assignment.test.ts",
+    "tests/database-target/incident-operational-zone-primary-unique.test.ts",
+    "tests/database-target/incident-operational-zone-command.test.ts",
+    "tests/database-target/incident-operational-zone-revocation.test.ts",
+    "tests/database-target/incident-operational-zone-idempotency.test.ts",
+    "tests/database-target/incident-operational-zone-concurrency.test.ts",
+    "tests/database-target/incident-zone-spatial-resolution.test.ts",
+    "tests/database-target/spatial-resolution-never-grants-command.test.ts",
+    "tests/database-target/incident-command-jurisdiction.test.ts",
+    "tests/database-target/incident-command-jurisdiction-mismatch.test.ts",
+    "tests/database-target/incident-command-without-command-zone.test.ts",
+    "tests/database-target/incident-primary-does-not-grant-command.test.ts",
+    "tests/database-target/incident-affected-does-not-grant-command.test.ts",
+    "tests/database-target/incident-command-membership-expiry.test.ts",
+    "tests/database-target/incident-command-role-expiry.test.ts",
+    "tests/database-target/incident-command-institution.test.ts",
+    "tests/database-target/incident-command-forged-context.test.ts",
+    "tests/database-target/incident-candidate-zone-promotion.test.ts",
+    "tests/database-target/incident-zone-rls.test.ts"
+)
+$zoneRun = Invoke-ArgusBlockingCommand -Phase "$PhaseScope/IncidentZoneTests" `
+    -Command "npx" -Arguments (@("vitest", "run") + $zoneSuites) `
+    -FailureCode "INCIDENT_ZONE_TESTS_FAIL" -TimeoutSeconds 1800 `
+    -Environment @{
+        ARGUS_WAVE3_INTEGRATION_TEST = "true"
+        TARGET_DATABASE_URL          = $env:DATABASE_URL
     }
-    $zoneExit = $LASTEXITCODE
-} finally {
-    Pop-Location
-    if ($null -eq $previousZoneFlag) { Remove-Item Env:ARGUS_WAVE3_INTEGRATION_TEST -ErrorAction SilentlyContinue }
-    else { $env:ARGUS_WAVE3_INTEGRATION_TEST = $previousZoneFlag }
-    if ($null -eq $previousZoneUrl) { Remove-Item Env:TARGET_DATABASE_URL -ErrorAction SilentlyContinue }
-    else { $env:TARGET_DATABASE_URL = $previousZoneUrl }
-}
-$summary.IncidentZoneTestsExitCode = $zoneExit
-$summary.IncidentZoneTestsOutput = $zoneTests | Select-Object -Last 25
-if ($zoneExit -ne 0) {
-    throw "INCIDENT_ZONE_TESTS_FAIL - the R31 suites failed:`n$($zoneTests | Select-Object -Last 40 | Out-String)"
-}
+$summary.IncidentZoneTestsExitCode = $zoneRun.ExitCode
+$summary.IncidentZoneTestsOutput = $zoneRun.Output | Select-Object -Last 25
 # Nothing may SKIP here: a skipped suite means the runtime credentials were
 # absent, which is exactly the condition that would let the owner stand in for
 # the runtime unnoticed.
-if (($zoneTests -join "`n") -match "Test Files\s+\d+ passed \| (\d+) skipped") {
-    throw "INCIDENT_ZONE_TESTS_FAIL - an R31 suite SKIPPED; the app_api/access_admin credentials were not available."
-}
+Assert-ArgusVitestCoverage -Phase "$PhaseScope/IncidentZoneTests" -Output $zoneRun.Output `
+    -FailureCode "INCIDENT_ZONE_TESTS_FAIL" -MinFiles $zoneSuites.Count -MinTests 1 `
+    -MaxSkippedFiles 0 -MaxSkippedTests 0 | Out-Null
 $summary.IncidentZoneTestsResult = "PASS"
+Add-ArgusPhaseResult -Name "$PhaseScope/IncidentZoneTests" -ExitCode $zoneRun.ExitCode -Passed $true `
+    -Evidence "$($zoneSuites.Count) R31 suites under app_api/access_admin, zero skipped" | Out-Null
 Write-ArgusLog "INCIDENT_ZONE_TESTS_PASS"
 
-Write-ArgusLog "=== Fase 16: prisma validate --schema prisma/schema.target.prisma ==="
-Push-Location $Script:ArgusRepoRoot
+# ============================================================
+# Fase 16 (prisma validate) and Fase 17 (repo test suites). ALL BLOCKING.
+#
+# This block is the defect this whole file was rewritten around. It used to
+# read:
+#
+#     $targetTests = Invoke-ArgusNative { & npx vitest run tests/database-target/ }
+#     $summary.TargetTestsExitCode = $LASTEXITCODE
+#
+# ...and then never compared TargetTestsExitCode to zero. A red target suite
+# was RECORDED and immediately forgotten, so the rehearsal went on to roll
+# back, reinstall, and report Success=True with failing tests in the summary
+# it had just written. The same was true of PrismaValidateExitCode and of the
+# P0 exit code.
+#
+# Every command below now goes through Invoke-ArgusBlockingCommand, which
+# throws on a non-zero exit and returns nothing at all - there is no way to
+# reach the line after it without the command having exited zero. The exit
+# code is asserted BEFORE any subsequent command runs, and the recorded
+# verdict lands in the required-phase ledger that Success is derived from.
+# ============================================================
+$activePhase = $null
 try {
-    $prismaOutput = Invoke-ArgusNative { & npx prisma validate --schema prisma/schema.target.prisma 2>&1 }
-    $summary.PrismaValidateExitCode = $LASTEXITCODE
-    $summary.PrismaValidateOutput = $prismaOutput
-    Write-ArgusLog "prisma validate exit=$LASTEXITCODE"
-} finally {
-    Pop-Location
-}
-
-if (-not $SkipRepoTests) {
-    Write-ArgusLog "=== Fase 17: repo test suites (target / P0 / rehearsal guard) ==="
-    Push-Location $Script:ArgusRepoRoot
-    try {
-        $targetTests = Invoke-ArgusNative { & npx vitest run tests/database-target/ 2>&1 }
-        $summary.TargetTestsExitCode = $LASTEXITCODE
-        $summary.TargetTestsOutput = $targetTests | Select-Object -Last 20
-
-        $p0Tests = Invoke-ArgusNative { & npx vitest run tests/p0/notifications-endpoint-auth.test.ts tests/p0/risk-assessments-endpoint-auth.test.ts 2>&1 }
-        $summary.P0TestsExitCode = $LASTEXITCODE
-        $summary.P0TestsOutput = $p0Tests | Select-Object -Last 20
-    } finally {
-        Pop-Location
+    Write-ArgusLog "=== Fase 16: prisma validate --schema prisma/schema.target.prisma ==="
+    $activePhase = "$PhaseScope/PrismaValidate"
+    $prismaRun = Invoke-ArgusBlockingCommand -Phase "$PhaseScope/PrismaValidate" `
+        -Command "npm" -Arguments @("run", "db:target:validate") `
+        -FailureCode "PRISMA_TARGET_VALIDATE_FAILED" -TimeoutSeconds 600
+    $summary.PrismaValidateExitCode = $prismaRun.ExitCode
+    $summary.PrismaValidateOutput = $prismaRun.Output
+    if (($prismaRun.Output -join "`n") -notmatch "is valid") {
+        throw "PRISMA_TARGET_VALIDATE_FAILED - prisma validate exited 0 without reporting the schema valid."
     }
+    $summary.PrismaValidateResult = "PASS"
+    Add-ArgusPhaseResult -Name "$PhaseScope/PrismaValidate" -ExitCode $prismaRun.ExitCode -Passed $true `
+        -Evidence "prisma validate --schema prisma/schema.target.prisma reported the schema valid" | Out-Null
+
+    if (-not $SkipRepoTests) {
+        # ---- Fase 17a: the whole tests/database-target suite. BLOCKING. ----
+        #
+        # Coverage rule for THIS phase: every *.test.ts file on disk must be
+        # collected (the count is read from disk, never hardcoded, so the
+        # assertion grows with the suite). Skips ARE permitted here and only
+        # here: the Docker gate is deliberately off for this run so the
+        # post-rollback residue suites are not executed against a
+        # fully-applied database. The Docker-covered assertions are proven by
+        # the gated phases above, each of which forbids skips outright.
+        Write-ArgusLog "=== Fase 17: repo test suites (target / P0) - BLOCKING ==="
+        $activePhase = "$PhaseScope/TargetTests"
+        $targetFileCount = Get-ArgusTestFileCount "tests/database-target"
+        $targetInvocation = Resolve-ArgusPhaseCommand -Phase "$PhaseScope/TargetTests" `
+            -Command "npm" -Arguments @("run", "db:target:test")
+        $targetRun = Invoke-ArgusBlockingCommand -Phase "$PhaseScope/TargetTests" `
+            -Command $targetInvocation.Command -Arguments $targetInvocation.Arguments `
+            -FailureCode "TARGET_TESTS_FAILED" -TimeoutSeconds 2700
+        $summary.TargetTestsExitCode = $targetRun.ExitCode
+        $summary.TargetTestsOutput = $targetRun.Output | Select-Object -Last 20
+
+        $targetCoverage = Assert-ArgusVitestCoverage -Phase "$PhaseScope/TargetTests" `
+            -Output $targetRun.Output -FailureCode "TARGET_TESTS_FAILED" `
+            -MinFiles $targetFileCount -MinTests 1
+        $summary.TargetTestsFiles = $targetCoverage.FilesTotal
+        $summary.TargetTestsPassed = $targetCoverage.TestsPassed
+        $summary.TargetTestsSkipped = $targetCoverage.TestsSkipped
+        $summary.TargetTests = "PASS"
+        Add-ArgusPhaseResult -Name "$PhaseScope/TargetTests" -ExitCode $targetRun.ExitCode -Passed $true `
+            -Evidence "npm run db:target:test: $($targetCoverage.FilesTotal) files (>= $targetFileCount on disk), $($targetCoverage.TestsPassed) passed, $($targetCoverage.TestsSkipped) skipped, 0 failed" | Out-Null
+        Write-ArgusLog "TARGET_TESTS_BLOCKING_PASS files=$($targetCoverage.FilesTotal) tests=$($targetCoverage.TestsPassed) skipped=$($targetCoverage.TestsSkipped)"
+
+        # ---- Fase 17b: the CANONICAL P0 suite. BLOCKING. ----
+        #
+        # `npm run test:p0` = `vitest run tests/p0`, i.e. the whole directory.
+        # This used to be `npx vitest run tests/p0/notifications-endpoint-auth
+        # .test.ts tests/p0/risk-assessments-endpoint-auth.test.ts` - two files,
+        # 20 tests, which is where the "P0 20/20" figure came from while the
+        # real P0 suite is 37 files / 322 tests. The reduced glob is gone; the
+        # rehearsal and CI now invoke the same npm script, and the file count
+        # is read from disk so adding a P0 file cannot silently escape it.
+        # Nothing in tests/p0 is Docker-gated, so zero skips are tolerated.
+        $activePhase = "$PhaseScope/P0Tests"
+        $p0FileCount = Get-ArgusTestFileCount "tests/p0"
+        $p0Invocation = Resolve-ArgusPhaseCommand -Phase "$PhaseScope/P0Tests" `
+            -Command "npm" -Arguments @("run", "test:p0")
+        $p0Run = Invoke-ArgusBlockingCommand -Phase "$PhaseScope/P0Tests" `
+            -Command $p0Invocation.Command -Arguments $p0Invocation.Arguments `
+            -FailureCode "P0_TESTS_FAILED" -TimeoutSeconds 1800
+        $summary.P0TestsExitCode = $p0Run.ExitCode
+        $summary.P0TestsOutput = $p0Run.Output | Select-Object -Last 20
+
+        $p0Coverage = Assert-ArgusVitestCoverage -Phase "$PhaseScope/P0Tests" `
+            -Output $p0Run.Output -FailureCode "P0_TESTS_FAILED" `
+            -MinFiles $p0FileCount -MinTests 1 -MaxSkippedFiles 0 -MaxSkippedTests 0
+        $summary.P0_FILES = $p0Coverage.FilesTotal
+        $summary.P0_TESTS = $p0Coverage.TestsPassed
+        $summary.P0_SKIPPED = $p0Coverage.TestsSkipped
+        $summary.P0_EXIT_CODE = $p0Run.ExitCode
+        $summary.P0Tests = "PASS"
+        Add-ArgusPhaseResult -Name "$PhaseScope/P0Tests" -ExitCode $p0Run.ExitCode -Passed $true `
+            -Evidence "npm run test:p0: P0_FILES=$($p0Coverage.FilesTotal) (all $p0FileCount on disk) P0_TESTS=$($p0Coverage.TestsPassed) P0_SKIPPED=$($p0Coverage.TestsSkipped) P0_EXIT_CODE=$($p0Run.ExitCode)" | Out-Null
+        Write-ArgusLog "P0_CANONICAL_SUITE_PASS P0_FILES=$($p0Coverage.FilesTotal) P0_TESTS=$($p0Coverage.TestsPassed) P0_SKIPPED=$($p0Coverage.TestsSkipped) P0_EXIT_CODE=$($p0Run.ExitCode)"
+    }
+} catch {
+    # The summary must name the phase that failed, so it is written here BEFORE
+    # the failure propagates. The ledger records a real FAILURE rather than
+    # simply having no entry, so the difference between "ran and failed" and
+    # "never ran" stays visible in the final report.
+    #
+    # Two distinct failure shapes reach here and both must be recorded:
+    #   * the command exited non-zero (Invoke-ArgusBlockingCommand threw), and
+    #   * the command exited ZERO but the suite proved nothing
+    #     (Assert-ArgusVitestCoverage threw: empty suite, missing files,
+    #     forbidden skips). The second is why the exit code alone is not the
+    #     verdict.
+    $failed = Get-ArgusLastCommandResult
+    $failedExit = if ($failed -and $failed.Phase -eq $activePhase) { $failed.ExitCode } else { -1 }
+    if ($activePhase) {
+        Add-ArgusPhaseResult -Name $activePhase -ExitCode $failedExit -Passed $false `
+            -FailureCode ($_.Exception.Message -replace '\s.*$', '') `
+            -Evidence "exit $failedExit : $($_.Exception.Message)" | Out-Null
+        switch -Wildcard ($activePhase) {
+            "*/TargetTests"    { $summary.TargetTests = "FAIL"; $summary.TargetTestsExitCode = $failedExit }
+            "*/P0Tests"        { $summary.P0Tests = "FAIL"; $summary.P0_EXIT_CODE = $failedExit }
+            "*/PrismaValidate" { $summary.PrismaValidateResult = "FAIL"; $summary.PrismaValidateExitCode = $failedExit }
+        }
+    }
+    $summary.RepoTestsError = $_.Exception.Message
+    Save-ArgusTestSummary $summary
+    throw
 }
 
-$summary.FinishedAt = (Get-Date).ToString("o")
-
-if (-not (Test-Path $Script:ArgusArtifactDir)) {
-    New-Item -ItemType Directory -Force -Path $Script:ArgusArtifactDir | Out-Null
-}
-$summary | ConvertTo-Json -Depth 6 | Set-Content -Path (Join-Path $Script:ArgusArtifactDir "test-summary.json") -Encoding utf8
+Save-ArgusTestSummary $summary
 
 return $summary

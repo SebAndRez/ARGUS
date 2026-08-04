@@ -1,4 +1,4 @@
-name: ARGUS Database Rehearsal
+﻿name: ARGUS Database Rehearsal
 
 # Runs the full local (Docker/PostGIS) target-database migration rehearsal
 # in CI (Executable Migration Plan Fase 3). This workflow NEVER touches
@@ -14,8 +14,19 @@ name: ARGUS Database Rehearsal
 # from-scratch second install, RLS runtime checks, physical validations,
 # `prisma validate`, and the repo test suites — see that script's header
 # comment for the exact phase-by-phase breakdown. This workflow does not
-# reimplement any of that; it only invokes it and fails the job if it
-# fails.
+# reimplement any of that; it invokes the canonical npm scripts
+# (`npm run db:target:ci`, `npm run test:p0`) and fails the job if they
+# fail.
+#
+# Blocking discipline, identical to the local harness:
+#   * every bash step runs `set -euo pipefail`;
+#   * every pwsh step sets `$ErrorActionPreference = 'Stop'`;
+#   * no step uses `continue-on-error`, and no command is followed by
+#     `|| true` — an exit code is never discarded anywhere in this file;
+#   * the rehearsal's own artifact is re-verified afterwards by
+#     verify-rehearsal-result.mjs, so Success=true is rejected unless every
+#     required phase is present, executed, exit 0 and passed;
+#   * logs/artifacts are uploaded only when the job failed.
 
 on:
   pull_request:
@@ -63,25 +74,47 @@ jobs:
 
       - name: Confirm Docker is available
         shell: bash
-        run: docker info
-
-      - name: prisma validate --schema prisma/schema.target.prisma
-        run: npm run db:target:validate
-
-      - name: Unit/contract tests (tests/database-target/)
-        run: npm run db:target:test
+        run: |
+          set -euo pipefail
+          docker info
 
       - name: Anti-remote-connection guard (assert-local-only.mjs unit tests)
-        run: npx vitest run tests/database-target/target-migration-rehearsal-local-only-guard.test.ts tests/database-target/target-client-factory-anti-remote.test.ts
-
-      - name: Full rehearsal — 11 waves, backfill x2, rollback, reinstall from scratch, RLS + physical + prisma + repo tests
-        shell: pwsh
+        shell: bash
         run: |
-          ./scripts/migration-rehearsal/Invoke-ArgusFullRehearsal.ps1
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Full rehearsal failed — see migration-rehearsal-logs/ and migration-rehearsal-artifacts/ (uploaded below)."
-            exit 1
-          }
+          set -euo pipefail
+          npx vitest run tests/database-target/target-migration-rehearsal-local-only-guard.test.ts tests/database-target/target-client-factory-anti-remote.test.ts
+
+      # `npm run db:target:ci` is the canonical command: prisma target validate
+      # && the whole tests/database-target suite && the full rehearsal (11
+      # waves, backfill x2, rollback, from-scratch reinstall, RLS, physical
+      # validations, and — since this change — the BLOCKING target and P0 test
+      # phases). It is not re-implemented step by step here; duplicating it in
+      # YAML is how CI and the local harness drift apart.
+      - name: Full target CI — prisma validate + tests/database-target + full rehearsal (blocking)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run db:target:ci
+
+      # The rehearsal already runs the canonical P0 suite as a blocking phase.
+      # Running it here as well is deliberate: it is the same `npm run test:p0`
+      # (37 files / 322 tests, zero skips tolerated), so CI fails on a red P0
+      # suite even if a future edit were to drop the phase from the rehearsal.
+      - name: Canonical P0 suite (blocking)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run test:p0
+
+      # Success=true from the rehearsal is not taken at face value: this
+      # re-derives the verdict from the artifact's own required-phase ledger and
+      # rejects a green result that is not backed by every required phase and
+      # every blocking marker.
+      - name: Verify the rehearsal artifact — Success must be backed by every required phase (blocking)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/migration-rehearsal/lib/verify-rehearsal-result.mjs
 
       # ---------------------------------------------------------------------
       # Wave 3 — shadow-write integration proof (Fase 14 of the wave-3
@@ -95,6 +128,7 @@ jobs:
       - name: Wave 3 — bring up local Postgres/PostGIS and apply waves 000-040
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           ./scripts/migration-rehearsal/Reset-ArgusRehearsal.ps1
           . ./scripts/migration-rehearsal/lib/Common.ps1
           Get-ArgusLocalEnv | Out-Null
@@ -189,6 +223,7 @@ jobs:
       - name: Audit partitions — physical checks + real multi-connection concurrency + RLS matrix (blocking)
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           . ./scripts/migration-rehearsal/lib/Common.ps1
           Get-ArgusLocalEnv | Out-Null
           $c = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/audit-partition-checks.sql" -AllowFailure
@@ -224,6 +259,7 @@ jobs:
       - name: Access roles — give app_api/access_admin their local-only credentials
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           . ./scripts/migration-rehearsal/lib/Common.ps1
           Get-ArgusLocalEnv | Out-Null
           Set-ArgusRuntimeRolePasswords
@@ -231,6 +267,7 @@ jobs:
       - name: Access roles — subjects, assignments, classification matrix, forged-GUC denial, RLS (blocking)
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           . ./scripts/migration-rehearsal/lib/Common.ps1
           Get-ArgusLocalEnv | Out-Null
           $c = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/access-role-checks.sql" -AllowFailure
@@ -287,6 +324,7 @@ jobs:
       - name: R31 — incident/zone/jurisdiction relation, command matrix, spatial resolution (blocking)
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           . ./scripts/migration-rehearsal/lib/Common.ps1
           Get-ArgusLocalEnv | Out-Null
           $c = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/incident-zone-checks.sql" -AllowFailure
@@ -348,7 +386,9 @@ jobs:
         # Deliberately runs with NO ARGUS_TARGET_DB_* variable and NO
         # TARGET_DATABASE_URL set: the flags-off path must return NOT_ENABLED
         # without constructing a client, so it must not need a URL at all.
+        shell: bash
         run: |
+          set -euo pipefail
           npx vitest run \
             tests/database-target/audit-log-maintenance-disabled.test.ts \
             tests/database-target/audit-log-partition-observability-redaction.test.ts \
@@ -365,6 +405,7 @@ jobs:
       - name: RLS matrix — non-superuser roles, positive AND negative cases (blocking)
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           . ./scripts/migration-rehearsal/lib/Common.ps1
           Get-ArgusLocalEnv | Out-Null
           $m = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/rls-matrix-checks.sql" -AllowFailure
@@ -385,6 +426,7 @@ jobs:
       - name: Assert zero BYPASSRLS / superuser among application roles (blocking)
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           . ./scripts/migration-rehearsal/lib/Common.ps1
           Get-ArgusLocalEnv | Out-Null
           $r = Invoke-ArgusPsql -SqlText "SELECT count(*) FROM pg_roles WHERE rolname IN ('app_api','ingest_worker','jobs_worker','audit_reader','readonly_inspector','migration_owner') AND (rolsuper OR rolbypassrls);"
@@ -392,7 +434,9 @@ jobs:
           if (($r.Output -join ' ') -notmatch '(^|\s)0(\s|$)') { Write-Error "An ARGUS role has SUPERUSER or BYPASSRLS"; exit 1 }
 
       - name: Helper/reconciliation/rollback contract tests (static, blocking)
+        shell: bash
         run: |
+          set -euo pipefail
           npx vitest run \
             tests/database-target/rls-helper-is-owner.test.ts \
             tests/database-target/rls-helper-command-role.test.ts \
@@ -412,6 +456,7 @@ jobs:
       - name: Rollback leaves ZERO ARGUS residue (blocking — full 100->000 cycle)
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           . ./scripts/migration-rehearsal/lib/Common.ps1
           Get-ArgusLocalEnv | Out-Null
           # Baseline was captured before any wave applied? No — this job's
@@ -438,6 +483,7 @@ jobs:
       - name: Audit partitions leave ZERO residue after rollback (blocking)
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           . ./scripts/migration-rehearsal/lib/Common.ps1
           Get-ArgusLocalEnv | Out-Null
           $r = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/audit-partition-residue.sql" -AllowFailure
@@ -450,6 +496,7 @@ jobs:
       - name: Access role substrate leaves ZERO residue after rollback (blocking)
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           . ./scripts/migration-rehearsal/lib/Common.ps1
           Get-ArgusLocalEnv | Out-Null
           $r = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/access-role-residue.sql" -AllowFailure
@@ -462,6 +509,7 @@ jobs:
       - name: R31 substrate leaves ZERO residue after rollback (blocking)
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           . ./scripts/migration-rehearsal/lib/Common.ps1
           Get-ArgusLocalEnv | Out-Null
           $r = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/incident-zone-residue.sql" -AllowFailure
@@ -483,12 +531,22 @@ jobs:
             tests/database-target/access-role-zero-residue.test.ts \
             tests/database-target/incident-zone-zero-residue.test.ts
 
+      # `|| true` used to hide this command's exit code, which meant a teardown
+      # that failed to remove the container and volume was indistinguishable
+      # from one that succeeded. The "nothing to tear down" case is now handled
+      # by asking whether there is anything to tear down, rather than by
+      # discarding the answer.
       - name: Wave 3/4 — tear down local Postgres/PostGIS
         if: always()
         shell: bash
         run: |
-          docker compose --env-file .env.argus-migration.local -f docker-compose.argus-migration.yml down -v || true
-          rm -f .env.argus-migration.local
+          set -euo pipefail
+          if [ -f .env.argus-migration.local ]; then
+            docker compose --env-file .env.argus-migration.local -f docker-compose.argus-migration.yml down -v
+            rm -f .env.argus-migration.local
+          else
+            echo "No .env.argus-migration.local — the rehearsal harness already tore its own container down."
+          fi
 
       - name: Confirm prisma/schema.prisma and prisma/migrations/ are STILL untouched (post-run)
         if: always()
