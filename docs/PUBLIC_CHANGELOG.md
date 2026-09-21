@@ -1,5 +1,23 @@
 # ARGUS Public Changelog
 
+## 2026-09-21 - pending-ee31495 - Argus v1.0.6.9: fix database rehearsal CI traceability
+
+**Archivos modificados:** 3
+
+**Resumen publico:**  
+Se actualizaron 3 archivos relacionados con ARGUS GRID.
+
+**Cambios principales:**
+- Se realizaron ajustes internos para mejorar estabilidad, interfaz o mantenimiento de ARGUS.
+
+**Modulos afectados:**
+- ARGUS GRID
+
+**En simple:**  
+Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada.
+
+---
+
 ## 2026-09-21 - pending-64cc25b - Argus v1.0.6.8: fix: close "Cerrar y Unificar" — green build/CI, secured endpoints, VESTA privacy, modules on the real pipeline
 
 **Archivos modificados:** 62

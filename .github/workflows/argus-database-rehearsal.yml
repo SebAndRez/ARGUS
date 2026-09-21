@@ -2,8 +2,9 @@
 
 # Runs the full local (Docker/PostGIS) target-database migration rehearsal
 # in CI (Executable Migration Plan Fase 3). This workflow NEVER touches
-# production: it never sets DATABASE_URL/DIRECT_URL to anything but the
-# disposable container the rehearsal harness itself creates via
+# production: it never points DATABASE_URL/DIRECT_URL at anything but a
+# loopback validation-only sentinel (job `env:` below) or the disposable
+# container the rehearsal harness itself creates via
 # docker-compose.argus-migration.yml, and it never runs `prisma migrate
 # deploy`/`db push`/`db pull` against any real database. No production
 # secrets are read here — the job declares zero `secrets:` inputs.
@@ -65,6 +66,19 @@ jobs:
     # No `secrets:`/`env:` block reads any production credential. The only
     # database this job ever talks to is the disposable, loopback-bound
     # container the rehearsal harness creates and destroys itself.
+    #
+    # DATABASE_URL / DIRECT_URL: both datasources (prisma/schema.prisma and
+    # prisma/schema.target.prisma) declare `url = env("DATABASE_URL")` and
+    # `directUrl = env("DIRECT_URL")`, and `prisma validate` fails with P1012
+    # when either is undefined. A developer machine resolves them from its own
+    # .env, which is why this only surfaced in CI. They are set here to a
+    # validation-only sentinel: loopback, port 1 (nothing listens there, so any
+    # accidental connection is refused immediately), never a real or remote
+    # database. Every step that actually talks to the rehearsal container
+    # reads its own URL from .env.argus-migration.local / TARGET_DATABASE_URL.
+    env:
+      DATABASE_URL: postgresql://ci_validate_only:ci_validate_only@127.0.0.1:1/argus_ci_validate_only
+      DIRECT_URL: postgresql://ci_validate_only:ci_validate_only@127.0.0.1:1/argus_ci_validate_only
     steps:
       - name: Checkout
         uses: actions/checkout@v4
