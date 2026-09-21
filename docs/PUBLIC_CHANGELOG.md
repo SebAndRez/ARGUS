@@ -1,5 +1,32 @@
 # ARGUS Public Changelog
 
+## 2026-09-21 - pending-64cc25b - Argus v1.0.6.8: fix: close "Cerrar y Unificar" — green build/CI, secured endpoints, VESTA privacy, modules on the real pipeline
+
+**Archivos modificados:** 62
+
+**Resumen publico:**  
+Se actualizaron 62 archivos relacionados con Eventos y fuentes externas y Seguridad movil.
+
+**Cambios principales:**
+- Se actualizaron componentes del mapa operativo.
+- Se mejoro la lectura y gestion de reportes.
+- Se actualizaron eventos o fuentes externas.
+- Se ajustaron vistas y elementos de interfaz.
+- Se ajustaron flujos de acceso y sesion.
+
+**Modulos afectados:**
+- Eventos y fuentes externas
+- Seguridad movil
+- Reportes ciudadanos
+- Perfil de usuario
+- Mapa operativo
+- Capas del mapa
+
+**En simple:**  
+Esta actualizacion ayuda a que los reportes sean mas claros, ordenados y faciles de revisar.
+
+---
+
 ## 2026-07-21 - pending-b81f110 - ARGUS 1.0.6.5
 
 **Archivos modificados:** 7

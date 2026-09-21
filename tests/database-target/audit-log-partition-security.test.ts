@@ -175,7 +175,10 @@ describe.skipIf(!auditPartitionDockerShouldRun)("audit_logs partition lifecycle 
     const rows = await raw(client).$queryRawUnsafe<{ grantee: string; table_name: string; privilege_type: string }>(
       `SELECT g.grantee, g.table_name, g.privilege_type
          FROM information_schema.role_table_grants g
-         JOIN pg_inherits i ON i.inhrelid = ('security.' || quote_ident(g.table_name))::regclass
+         -- to_regclass, not ::regclass: the planner may evaluate the join before
+         -- the table_schema filter, and PostGIS views (public.geography_columns,
+         -- installed by wave 080) have no security.* counterpart.
+         JOIN pg_inherits i ON i.inhrelid = to_regclass('security.' || quote_ident(g.table_name))
         WHERE g.table_schema = 'security'
           AND i.inhparent = 'security.audit_logs'::regclass
           AND g.grantee IN ('app_api','ingest_worker','jobs_worker','audit_reader','readonly_inspector','PUBLIC')`

@@ -4,12 +4,12 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "@/hooks/useSession";
 import { useUserLocation } from "@/hooks/useUserLocation";
-import { auraDemoMedicalPoints, auraDemoProfile, auraDemoStock, auraDemoTriageCases } from "@/modules/aura/data";
-import { getNearbyMedicalPoints } from "@/data/auraMedicalPoints";
+import { auraDemoProfile, auraDemoStock, auraDemoTriageCases } from "@/modules/aura/data";
+import { useNearbyMedicalPoints } from "@/hooks/useNearbyMedicalPoints";
+import { loadOperationalEvents } from "@/lib/modules/loadOperationalEvents";
+import type { CrisisEvent } from "@/types/crisis";
 import { canUseAuraFeature, resolveAuraModuleAccess, resolveAuraRole } from "@/modules/aura/auraAccess";
 import { auditAuraAction } from "@/modules/aura/auraAudit";
-import { getAuraAtlasSummary } from "@/modules/aura/auraAtlasBridge";
-import { calculateAuraMedicalCapacityStatus } from "@/modules/aura/auraCapacity";
 import { getAuraProfileCompleteness } from "@/modules/aura/auraMedicalProfile";
 import { sanitizeAuraMedicalProfileForRole } from "@/modules/aura/auraPrivacy";
 import AuraMedicalRoutePanel from "@/components/aura/AuraMedicalRoutePanel";
@@ -40,11 +40,29 @@ export default function AuraDashboard() {
   const role = resolveAuraRole(user);
   const access = resolveAuraModuleAccess(role);
   const profile = useMemo(() => sanitizeAuraMedicalProfileForRole(auraDemoProfile, role), [role]);
-  const summary = useMemo(() => getAuraAtlasSummary(auraDemoTriageCases, auraDemoMedicalPoints, auraDemoStock), []);
-  const nearbyMedicalPoints = useMemo(
-    () => getNearbyMedicalPoints({ lat: location.latitude, lng: location.longitude }),
-    [location.latitude, location.longitude]
-  );
+  // Real health facilities near the user (CriticalPoi); the server only serves the demo fixture where allowed.
+  const { points: nearbyMedicalPoints, source: medicalPointsSource } = useNearbyMedicalPoints(location.latitude, location.longitude);
+  // Canonical health incidents (ingestion pipeline) + the server's demo-data permission.
+  const [healthIncidents, setHealthIncidents] = useState<CrisisEvent[]>([]);
+  const [demoFallbackAllowed, setDemoFallbackAllowed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    loadOperationalEvents("argus-aura")
+      .then((loaded) => {
+        if (cancelled) return;
+        setDemoFallbackAllowed(loaded.demoFallbackAllowed);
+        setHealthIncidents(loaded.canonical.filter((event) => event.category === "emergencia medica" && event.status !== "RESOLVED"));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  // Triage cases, stock and the sample profile have no backend yet (AURA Pro):
+  // shown only where demo data is allowed, never in production.
+  const triageCases = demoFallbackAllowed ? auraDemoTriageCases : [];
+  const stock = demoFallbackAllowed ? auraDemoStock : [];
+  const usesDemoData = demoFallbackAllowed || medicalPointsSource === "demo";
   const selectedMedicalPoint = nearbyMedicalPoints.find((point) => point.id === selectedPointId) ?? null;
   const canSeeProfessional = canUseAuraFeature(role, "view_professional_dashboard");
   const canSeeStock = canUseAuraFeature(role, "view_medical_stock");
@@ -71,14 +89,14 @@ export default function AuraDashboard() {
   }
 
   const kpis = [
-    ["Casos activos", summary.activeMedicalCases],
-    ["Casos criticos", summary.criticalCases],
-    ["Puntos activos", summary.activeMedicalPoints],
-    ["Puntos limitados", summary.saturatedMedicalPoints],
-    ["Ambulancias", summary.ambulancesAvailable],
-    ["Stock critico", summary.criticalStock],
-    ["Perfil completo", `${getAuraProfileCompleteness(auraDemoProfile)}%`],
-    ["Ultima actualizacion", summary.lastUpdated ? new Date(summary.lastUpdated).toLocaleString("es-CL") : "Sin datos"],
+    ["Puntos medicos cercanos", nearbyMedicalPoints.length],
+    ["Hospitales / urgencias", nearbyMedicalPoints.filter((point) => point.type === "hospital" || point.type === "sapu").length],
+    ["Alertas sanitarias activas", healthIncidents.length],
+    ["Casos activos", demoFallbackAllowed ? triageCases.filter((item) => item.status !== "closed").length : "Sin backend"],
+    ["Casos criticos", demoFallbackAllowed ? triageCases.filter((item) => item.urgency === "critical").length : "Sin backend"],
+    ["Stock critico", demoFallbackAllowed ? stock.filter((item) => item.status === "critical").length : "Sin backend"],
+    ["Perfil completo", demoFallbackAllowed ? `${getAuraProfileCompleteness(auraDemoProfile)}%` : "En tu dispositivo"],
+    ["Fuente puntos medicos", medicalPointsSource === "critical_poi" ? "Catalogo real" : medicalPointsSource === "demo" ? "Demo" : "Sin datos"],
   ];
 
   return (
@@ -92,7 +110,9 @@ export default function AuraDashboard() {
           <div className="flex flex-wrap gap-2">
             <span className="border border-rose-300/25 bg-rose-400/10 px-3 py-1.5 text-xs font-bold uppercase text-rose-100">Publico / Medico profesional</span>
             {auraModule?.maturity && <ModuleMaturityBadge maturity={auraModule.maturity} />}
-            <span className="border border-amber-300/30 bg-amber-400/10 px-3 py-1.5 text-xs text-amber-100">Datos medicos de prueba</span>
+            {usesDemoData && (
+              <span className="border border-amber-300/30 bg-amber-400/10 px-3 py-1.5 text-xs text-amber-100">Incluye datos de prueba</span>
+            )}
             <span className="border border-cyan-300/25 bg-cyan-400/10 px-3 py-1.5 text-xs text-cyan-100">Rol: {role}</span>
             <a href="/modules" className="border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-slate-300">Volver a modulos</a>
           </div>
@@ -125,7 +145,10 @@ export default function AuraDashboard() {
 
             <Panel title="Puntos medicos cercanos">
               <div className="grid gap-3 md:grid-cols-3">
-                {auraDemoMedicalPoints.map((point) => {
+                {nearbyMedicalPoints.length === 0 && (
+                  <p className="text-sm text-slate-400">No hay puntos medicos registrados cerca de tu ubicacion.</p>
+                )}
+                {nearbyMedicalPoints.slice(0, 9).map((point) => {
                   const isSelected = point.id === selectedPointId;
                   return (
                     <button
@@ -138,16 +161,16 @@ export default function AuraDashboard() {
                     >
                       <div className="flex items-start justify-between gap-2">
                         <h3 className="text-sm font-semibold text-white">{point.name}</h3>
-                        <span className="border border-cyan-300/20 px-2 py-1 text-[0.6rem] uppercase text-cyan-100">{point.status}</span>
+                        <span className="border border-cyan-300/20 px-2 py-1 text-[0.6rem] uppercase text-cyan-100">{point.type}</span>
                       </div>
-                      <p className="mt-2 text-xs text-slate-400">{point.publicNotes}</p>
+                      <p className="mt-2 text-xs text-slate-400">{point.capabilities.join(" · ") || "Servicios no informados"}</p>
                       <p className="mt-2 text-xs text-slate-300">
-                        Capacidad: {calculateAuraMedicalCapacityStatus(point)}
-                        {point.capacity?.isEstimated && (
-                          <span className="ml-1 text-amber-300/80">(estimada, no confirmada)</span>
-                        )}
+                        Disponibilidad: {point.availabilityStatus === "unknown" ? "no informada" : point.availabilityStatus}
                       </p>
-                      <p className="mt-1 text-xs text-slate-500">Confianza: {point.confidence}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {point.distanceKm !== undefined ? `${point.distanceKm} km` : "Distancia no calculada"}
+                        {point.isDemo && <span className="ml-1 text-amber-300/80">(demo)</span>}
+                      </p>
                     </button>
                   );
                 })}
@@ -172,7 +195,10 @@ export default function AuraDashboard() {
             {canSeeProfessional && (
               <Panel title="Panel profesional" tone="amber">
                 <div className="grid gap-3 lg:grid-cols-3">
-                  {auraDemoTriageCases.map((item) => (
+                  {triageCases.length === 0 && (
+                    <p className="text-sm text-slate-400">AURA Pro todavia no tiene backend de casos clinicos: no hay casos que mostrar.</p>
+                  )}
+                  {triageCases.map((item) => (
                     <article key={item.id} className="border border-white/10 bg-white/[0.035] p-3">
                       <p className="text-xs font-bold uppercase text-amber-100">{item.urgency}</p>
                       <h3 className="mt-1 text-sm font-semibold">{item.category}</h3>
@@ -198,7 +224,8 @@ export default function AuraDashboard() {
             {canSeeStock && (
               <Panel title="Stock medico" tone="amber">
                 <div className="grid gap-2">
-                  {auraDemoStock.map((item) => (
+                  {stock.length === 0 && <p className="text-sm text-slate-400">Sin inventario medico conectado.</p>}
+                  {stock.map((item) => (
                     <div key={item.id} className="border border-white/10 bg-white/[0.03] p-2 text-sm">
                       <div className="flex justify-between gap-3"><span>{item.name}</span><strong className="uppercase">{item.status}</strong></div>
                       <p className="mt-1 text-xs text-slate-400">{item.quantity} {item.unit} · {item.restricted ? "restringido" : "operacional"}</p>

@@ -7,11 +7,13 @@ import OraculoCanonicalIncidentPanel from "@/modules/oraculo/components/OraculoC
 import type { CrisisEvent } from "@/types/crisis";
 import type { OraculoEvidence, OraculoVerificationStatus } from "@/modules/oraculo/types";
 import { oraculoDemoEvidence } from "@/modules/oraculo/data";
+import { loadOperationalEvents } from "@/lib/modules/loadOperationalEvents";
 import { oraculoSourceRegistry, getOraculoSourceById } from "@/modules/oraculo/oraculoSourceRegistry";
 import { calculateOraculoReliabilityScore } from "@/modules/oraculo/oraculoScoring";
 import { detectOraculoContradictions } from "@/modules/oraculo/oraculoContradictions";
 import {
   convertVigiaReportToOraculoEvidence,
+  convertCanonicalEventToOraculoEvidence,
   getOraculoAtlasSummary,
   prepareEvidenceForFenixScenario,
   prepareEvidenceForTalos,
@@ -45,6 +47,7 @@ export default function OraculoDashboard() {
 
   const [vigiaEvidence, setVigiaEvidence] = useState<OraculoEvidence[]>([]);
   const [apiLoaded, setApiLoaded] = useState(false);
+  const [demoFallbackAllowed, setDemoFallbackAllowed] = useState(false);
   const [verificationOverrides, setVerificationOverrides] = useState<Record<string, OraculoVerificationStatus>>({});
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -61,13 +64,17 @@ export default function OraculoDashboard() {
   useEffect(() => {
     async function loadVigiaEvidence() {
       try {
-        const res = await fetch("/api/events", { cache: "no-store" });
-        const data = await res.json();
-        const reportsOnly: CrisisEvent[] = (data.events ?? []).filter((event: CrisisEvent) => event.type === "REPORT");
-        const converted = reportsOnly
+        // Citizen evidence (VIGÍA reports) + official/open evidence (canonical incidents).
+        const loaded = await loadOperationalEvents("argus-oraculo");
+        setDemoFallbackAllowed(loaded.demoFallbackAllowed);
+        const reportsOnly: CrisisEvent[] = loaded.reports.filter((event) => event.type === "REPORT");
+        const citizen = reportsOnly
           .map((event) => convertVigiaReportToOraculoEvidence(crisisEventToVigiaReport(event)))
           .filter((evidence): evidence is OraculoEvidence => evidence !== null);
-        setVigiaEvidence(converted);
+        const canonical = loaded.canonical
+          .map(convertCanonicalEventToOraculoEvidence)
+          .filter((evidence): evidence is OraculoEvidence => evidence !== null);
+        setVigiaEvidence([...canonical, ...citizen]);
       } catch {
         setStatusMessage("No se pudo cargar evidencia ciudadana en este momento.");
       } finally {
@@ -77,7 +84,8 @@ export default function OraculoDashboard() {
     loadVigiaEvidence();
   }, []);
 
-  const isDemoData = apiLoaded && vigiaEvidence.length === 0;
+  // Demo evidence only without real evidence AND when the server allows demo data (never in production).
+  const isDemoData = apiLoaded && vigiaEvidence.length === 0 && demoFallbackAllowed;
   const evidenceList = useMemo(() => {
     const base = isDemoData ? oraculoDemoEvidence : vigiaEvidence;
     return base.map((evidence) => ({

@@ -34,6 +34,7 @@ describe("CUSTOS — la búsqueda siempre es demo, y lo declara en cada respuest
       operationalReason: custosDemoReason,
       userRole: "POLICE",
       userId: "officer-1",
+      demoResultsAllowed: true,
     });
     const responseB = performCustosSearch({
       searchType: "identity",
@@ -41,9 +42,23 @@ describe("CUSTOS — la búsqueda siempre es demo, y lo declara en cada respuest
       operationalReason: custosDemoReason,
       userRole: "POLICE",
       userId: "officer-1",
+      demoResultsAllowed: true,
     });
     expect(responseA.redacted).toBe(true);
+    expect(responseA.results.length).toBeGreaterThan(0);
     expect(responseA.results.map((r) => r.id)).toEqual(responseB.results.map((r) => r.id));
+  });
+
+  it("sin permiso de datos demo (producción) nunca devuelve personas ficticias, y lo avisa", () => {
+    const response = performCustosSearch({
+      searchType: "identity",
+      query: "cualquier nombre",
+      operationalReason: custosDemoReason,
+      userRole: "POLICE",
+      userId: "officer-1",
+    });
+    expect(response.results).toEqual([]);
+    expect(response.warnings.join(" ")).toMatch(/no está integrado con registros oficiales/);
   });
 
   it("un rol no autorizado no obtiene resultados, incluso con motivo operacional válido", () => {

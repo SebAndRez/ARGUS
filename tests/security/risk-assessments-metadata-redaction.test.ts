@@ -18,9 +18,16 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
+// The route resolves the session since 83ab16d; these cases exercise the
+// anonymous (public) path, which is the one the redaction must protect.
+vi.mock("@/services/authService", () => ({
+  getCurrentUser: vi.fn(async () => null),
+}));
+
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { GET as riskAssessmentsGet } from "@/app/api/risk-assessments/route";
+import { resetMemoryRateLimitBackendForTests } from "@/lib/security/rateLimitBackend";
 
 const findManyMock = vi.mocked(prisma.riskAssessment.findMany);
 
@@ -49,6 +56,7 @@ function requestForEvent(externalEventId: string) {
 
 beforeEach(() => {
   findManyMock.mockReset();
+  resetMemoryRateLimitBackendForTests();
 });
 
 afterEach(() => {

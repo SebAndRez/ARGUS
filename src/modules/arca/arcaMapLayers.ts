@@ -6,7 +6,7 @@ export interface ArcaMapMarker {
   name: string;
   status: ArcaShelterStatus;
   location: ArcaGeoPoint;
-  layer: "active" | "full" | "limited" | "closed" | "safe_zone";
+  layer: "active" | "full" | "limited" | "closed" | "safe_zone" | "unknown";
 }
 
 /**
@@ -19,6 +19,8 @@ export function buildArcaMapMarkers(shelters: ArcaShelter[]): ArcaMapMarker[] {
     const capacityStatus = calculateArcaCapacityStatus(shelter);
     let layer: ArcaMapMarker["layer"] = "active";
     if (shelter.status === "closed") layer = "closed";
+    // Real sources often publish no operational status: never count those as active.
+    else if (shelter.status === "unknown") layer = "unknown";
     else if (shelter.type === "safe_zone" || shelter.type === "evacuation_point") layer = "safe_zone";
     else if (capacityStatus === "full" || capacityStatus === "over_capacity") layer = "full";
     else if (capacityStatus === "limited" || capacityStatus === "near_full") layer = "limited";
@@ -40,5 +42,6 @@ export function groupArcaMarkersByLayer(markers: ArcaMapMarker[]): Record<ArcaMa
     limited: markers.filter((m) => m.layer === "limited").length,
     closed: markers.filter((m) => m.layer === "closed").length,
     safe_zone: markers.filter((m) => m.layer === "safe_zone").length,
+    unknown: markers.filter((m) => m.layer === "unknown").length,
   };
 }

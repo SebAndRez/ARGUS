@@ -29,6 +29,22 @@
 #   * logs/artifacts are uploaded only when the job failed.
 
 on:
+  # Work lands on phase-3-ui-ux by direct push (no PRs), so pull_request alone
+  # meant this workflow had never run. push uses the same path filter.
+  push:
+    branches:
+      - phase-3-ui-ux
+      - main
+    paths:
+      - "package.json"
+      - "prisma/schema.target.prisma"
+      - "prisma/target-migrations/**"
+      - "scripts/migration-rehearsal/**"
+      - "scripts/database-target/**"
+      - "src/lib/database-target/**"
+      - "tests/database-target/**"
+      - "docker-compose.argus-migration.yml"
+      - ".github/workflows/argus-database-rehearsal.yml"
   pull_request:
     paths:
       - "package.json"
@@ -132,6 +148,11 @@ jobs:
           ./scripts/migration-rehearsal/Reset-ArgusRehearsal.ps1
           . ./scripts/migration-rehearsal/lib/Common.ps1
           Get-ArgusLocalEnv | Out-Null
+          # Genuinely empty catalog snapshot, taken before fixtures or any wave —
+          # the same baseline Invoke-ArgusFullRehearsal.ps1 uses for its residue
+          # check (it also carries psql's own "\pset" echo lines, so they cancel out).
+          $baseline = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/catalog-object-inventory.sql"
+          $baseline.Output | Set-Content -Path "$env:RUNNER_TEMP/catalog-empty.txt" -Encoding utf8
           Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/fixtures/000_legacy_synthetic_fixtures.sql" | Out-Null
           $waves = @("000_preflight", "010_foundation", "020_identity", "030_ingestion_observation_evidence", "040_incident")
           foreach ($w in $waves) {
@@ -160,11 +181,28 @@ jobs:
 
       # ---------------------------------------------------------------------
       # Wave 4 — IncidentPromotion/DiscardDecision/IncidentHypothesis
-      # integration proof. Reuses the SAME already-up waves 000-040 container
-      # from the Wave 3 section above (no second Docker bring-up needed —
-      # incident.* also lives in wave 040) — runs before that container is
-      # torn down.
+      # integration proof. Reuses the SAME container from the Wave 3 section
+      # above. Since d01c844 promotion also materialises the incident's
+      # operational zone, which lives in geo.* (wave 080) — so the remaining
+      # waves 050-100 must be applied first. Deployment consequence: wave 040's
+      # promotion path cannot be enabled before wave 080 is installed.
       # ---------------------------------------------------------------------
+      - name: Wave 4 — apply remaining waves 050-100 (promotion depends on geo.*, wave 080)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . ./scripts/migration-rehearsal/lib/Common.ps1
+          Get-ArgusLocalEnv | Out-Null
+          $waves = @("050_help_mission", "060_resources", "070_alerts_communications", "080_geography", "090_ice_media", "100_projections_legacy_retirement")
+          foreach ($w in $waves) {
+            $dir = Join-Path (Join-Path $Script:ArgusRepoRoot "prisma/target-migrations") $w
+            $r = & ./scripts/migration-rehearsal/Invoke-Wave.ps1 -WaveDir $dir
+            if (-not $r.Success) {
+              Write-Error "Wave $w failed while preparing the wave-4 suite — see migration-rehearsal-logs/."
+              exit 1
+            }
+          }
+
       - name: Wave 4 — human/automated promotion, discard, hypothesis, idempotency, concurrency, audit, RLS coverage
         shell: bash
         run: |
@@ -459,10 +497,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           . ./scripts/migration-rehearsal/lib/Common.ps1
           Get-ArgusLocalEnv | Out-Null
-          # Baseline was captured before any wave applied? No — this job's
-          # container already has 000-040 applied, so roll everything back and
-          # compare against a freshly-reset database instead.
-          $waves = @("000_preflight","010_foundation","020_identity","030_ingestion_observation_evidence","040_incident")
+          # This job's container has all 11 waves applied (000-040 for wave 3,
+          # then 050-100 before the wave-4 suite), so roll everything back,
+          # 100 -> 000, and compare against an empty baseline.
+          $waves = @("000_preflight","010_foundation","020_identity","030_ingestion_observation_evidence","040_incident","050_help_mission","060_resources","070_alerts_communications","080_geography","090_ice_media","100_projections_legacy_retirement")
           foreach ($w in ($waves | Sort-Object -Descending)) {
             $dir = Join-Path (Join-Path $Script:ArgusRepoRoot "prisma/target-migrations") $w
             $r = & ./scripts/migration-rehearsal/Invoke-Wave.ps1 -WaveDir $dir -Rollback
@@ -470,9 +508,9 @@ jobs:
           }
           $after = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/catalog-object-inventory.sql"
           $after.Output | Set-Content -Path "$env:RUNNER_TEMP/catalog-after.txt" -Encoding utf8
-          # An empty baseline: everything ARGUS created must be gone, so any
-          # non-extension, non-public, non-pg_toast object is residue.
-          "" | Set-Content -Path "$env:RUNNER_TEMP/catalog-empty.txt" -Encoding utf8
+          # Baseline captured right after the reset in the wave-3 bring-up step:
+          # everything ARGUS created must be gone, so any non-extension,
+          # non-public, non-pg_toast object not in the baseline is residue.
           node ./scripts/migration-rehearsal/lib/classify-catalog-residue.mjs "$env:RUNNER_TEMP/catalog-empty.txt" "$env:RUNNER_TEMP/catalog-after.txt"
           if ($LASTEXITCODE -ne 0) { Write-Error "ROLLBACK_ZERO_RESIDUE_FAIL - ARGUS objects survived rollback"; exit 1 }
           Write-Host "ROLLBACK_ZERO_RESIDUE_PASS"

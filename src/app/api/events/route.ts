@@ -5,6 +5,9 @@ import { hasAnyRole } from "@/lib/security/rbac";
 import { OPERATOR_ROLES } from "@/lib/security/apiGuards";
 import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 import { toPublicHelpRequestMapEvent, toPublicReportMapEvent } from "@/lib/security/incidentDto";
+// Surfaced to module dashboards so their client-side demo fallback honours the
+// same production guard as every server route (never demo data in production).
+import { isDemoDataAllowed } from "@/lib/security/productionGuard";
 
 type EventSeverityKey = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
@@ -40,7 +43,7 @@ export async function GET(request: NextRequest) {
       ...reports.map(toPublicReportMapEvent).filter((event) => event !== null),
       ...helpRequests.map(toPublicHelpRequestMapEvent).filter((event) => event !== null),
     ];
-    return NextResponse.json({ events });
+    return NextResponse.json({ events, demoFallbackAllowed: isDemoDataAllowed() });
   }
 
   const events = [
@@ -91,7 +94,7 @@ export async function GET(request: NextRequest) {
     })),
   ];
 
-  const response = NextResponse.json({ events });
+  const response = NextResponse.json({ events, demoFallbackAllowed: isDemoDataAllowed() });
   // Never let a CDN/browser cache the full operator view of PII-bearing rows.
   response.headers.set("Cache-Control", "private, no-store");
   return response;

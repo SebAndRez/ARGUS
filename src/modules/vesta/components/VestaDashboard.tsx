@@ -51,6 +51,20 @@ export default function VestaDashboard() {
   const role = resolveVestaRole(user);
   const [profile, setProfile] = useState<VestaProfileSummary | null>(null);
   const [fetching, setFetching] = useState(false);
+  // Server-side demo permission (never true in production); gates the AURA sample-profile prefill.
+  const [demoFallbackAllowed, setDemoFallbackAllowed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/events", { cache: "no-store" })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!cancelled) setDemoFallbackAllowed(res.ok && data.demoFallbackAllowed === true);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [reviewSavedAt, setReviewSavedAt] = useState<number | null>(null);
   const [familyPlanFormVersion, setFamilyPlanFormVersion] = useState(0);
 
@@ -177,7 +191,8 @@ export default function VestaDashboard() {
       fetch("/api/vesta/family-plan", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(plan),
+        // Medical notes never leave the device (the server would drop them anyway).
+        body: JSON.stringify({ ...plan, medicalNeedsNotes: null }),
       }),
       fetch("/api/vesta/contacts", {
         method: "PUT",
@@ -185,7 +200,9 @@ export default function VestaDashboard() {
         body: JSON.stringify({ contacts }),
       }),
     ]);
-    const updatedPlan = planResponse.ok ? await planResponse.json() : plan;
+    const savedPlan = planResponse.ok ? await planResponse.json() : plan;
+    // Keep the device-only medical notes in local state for the downloadable plan.
+    const updatedPlan = { ...savedPlan, medicalNeedsNotes: plan.medicalNeedsNotes };
     const updatedContacts = contactsResponse.ok ? (await contactsResponse.json()).contacts : contacts;
     setProfile((current) => (current ? { ...current, familyPlan: updatedPlan, emergencyContacts: updatedContacts } : current));
     setFamilyPlanFormVersion((current) => current + 1);
@@ -243,6 +260,17 @@ export default function VestaDashboard() {
     setProfile((current) => (current ? { ...current, lastFullReviewAt } : current));
     setReviewSavedAt(Date.now());
   }, []);
+
+  const eraseVestaData = useCallback(async () => {
+    const confirmed = window.confirm(
+      "Se borrarán tu plan familiar, contactos de emergencia, checklist y recordatorios de VESTA. Esta acción no se puede deshacer. ¿Continuar?"
+    );
+    if (!confirmed) return;
+    const response = await fetch("/api/vesta/profile", { method: "DELETE" });
+    if (!response.ok) return;
+    // Reloading recreates an empty profile with the default checklist.
+    await fetchProfile();
+  }, [fetchProfile]);
 
   const exportPlan = useCallback(() => {
     if (!profile) return;
@@ -355,6 +383,14 @@ export default function VestaDashboard() {
             >
               {fetching ? "Actualizando..." : "Actualizar"}
             </button>
+            <button
+              type="button"
+              onClick={() => void eraseVestaData()}
+              disabled={fetching}
+              className="min-h-9 border border-rose-300/30 bg-rose-500/10 px-3 text-xs font-bold uppercase text-rose-100 disabled:opacity-50"
+            >
+              Borrar mis datos VESTA
+            </button>
           </section>
         )}
 
@@ -377,13 +413,17 @@ export default function VestaDashboard() {
             <Panel title="Plan familiar">
               {profile ? (
                 <div className="grid gap-3">
-                  <button
-                    type="button"
-                    onClick={prefillFromAura}
-                    className="w-fit border border-rose-300/25 bg-rose-400/10 px-3 py-1.5 text-[0.65rem] font-bold uppercase text-rose-100"
-                  >
-                    Reutilizar datos de AURA
-                  </button>
+                  {/* AURA has no persisted per-user profile yet: this prefill copies the sample
+                      profile, so it must never write fictitious contacts into a real plan in production. */}
+                  {demoFallbackAllowed && (
+                    <button
+                      type="button"
+                      onClick={prefillFromAura}
+                      className="w-fit border border-rose-300/25 bg-rose-400/10 px-3 py-1.5 text-[0.65rem] font-bold uppercase text-rose-100"
+                    >
+                      Reutilizar datos de AURA (demo)
+                    </button>
+                  )}
                   <VestaFamilyPlanPanel
                     key={familyPlanFormVersion}
                     familyPlan={profile.familyPlan}

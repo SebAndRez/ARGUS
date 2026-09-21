@@ -130,5 +130,16 @@ export type ModuleContextResult<T> =
   | { state: "degraded"; data: T; error: ModuleContextError }
   | { state: "unauthorized" | "unavailable" | "insufficient_data"; error: ModuleContextError };
 
-/** Los cuatro módulos cubiertos por esta tarea — usado para resolver permisos por módulo consultor. */
-export type OperationalContextModuleId = "argus-atlas" | "argus-vigia" | "argus-oraculo" | "argus-talos";
+/**
+ * Módulos que leen incidentes canónicos — usado para resolver permisos por
+ * módulo consultor (siempre contra el registro, server-side). HERMES, ARCA y
+ * AURA solo consumen la lista (riesgo de rutas, contexto de refugios/salud).
+ */
+export type OperationalContextModuleId =
+  | "argus-atlas"
+  | "argus-vigia"
+  | "argus-oraculo"
+  | "argus-talos"
+  | "argus-hermes"
+  | "argus-arca"
+  | "argus-aura";

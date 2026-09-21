@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 
 export async function POST(request: Request) {
+  // Same policy as POST /api/mobile/device/register.
+  const rateLimitOutcome = await enforceRateLimit({ policy: "mobile_safety_signal", request });
+  const rateLimitedResponse = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const deviceIdHash = String(body.deviceIdHash ?? "").trim();
   const capabilities = Array.isArray(body.capabilities)

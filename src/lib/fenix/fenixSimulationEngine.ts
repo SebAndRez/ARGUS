@@ -480,11 +480,25 @@ function buildSimulationInput(input: {
   };
 }
 
+/**
+ * Real data around the simulation origin, fetched by the caller (server) and
+ * injected here so the engine stays synchronous and testable. When present it
+ * replaces the scenario's demo shelters, the demo medical points and the
+ * synthetic report count — the projection itself remains an estimate.
+ */
+export type FenixRealContext = {
+  shelters?: FenixShelter[];
+  medicalPoints?: Array<{ id: string; name: string; distanceKm?: number }>;
+  relatedReportsCount?: number;
+};
+
 export function runFenixSimulation(input: {
   scenarioId?: string;
   vehicleType?: FenixVehicleType;
   accessLevel?: FenixInstitutionalAccessLevel;
+  realContext?: FenixRealContext;
 } & Partial<FenixSimulationInput>): LegacyFenixSimulationResult & FenixSimulationResult {
+  const realContext = input.realContext;
   const normalizedInput = buildSimulationInput(input);
   const scenario =
     demoFenixScenarios.find((item) => item.id === normalizedInput.scenarioId) ??
@@ -495,7 +509,10 @@ export function runFenixSimulation(input: {
       : normalizedInput.mobility;
   const accessLevel = normalizedInput.mode;
   const routes = demoFenixRoutes.filter((route) => route.scenarioId === scenario.id);
-  const shelters = demoFenixShelters.filter((shelter) => shelter.scenarioId === scenario.id);
+  const shelters =
+    realContext?.shelters !== undefined
+      ? realContext.shelters
+      : demoFenixShelters.filter((shelter) => shelter.scenarioId === scenario.id);
   const population = demoFenixPopulation.filter(
     (item) => item.scenarioId === scenario.id
   );
@@ -525,23 +542,57 @@ export function runFenixSimulation(input: {
   const affectedZones = estimateAffectedZones(normalizedInput);
   const projectedZonesGeoJson = buildProjectedZonesGeoJson(affectedZones);
   const routeImpacts = estimateRouteImpacts(routes, affectedZones);
-  const geoContext = buildGeoContextSummary(normalizedInput);
+  const baseGeoContext = buildGeoContextSummary(normalizedInput);
+  // Surface the real context (when the caller supplied it) instead of the scenario's demo lists.
+  const geoContext = {
+    ...baseGeoContext,
+    ...(realContext?.shelters !== undefined
+      ? { nearbyShelters: realContext.shelters.slice(0, 4).map((shelter) => ({ ...shelter, isDemo: false })) }
+      : {}),
+    ...(realContext?.medicalPoints !== undefined
+      ? { nearbyMedicalPoints: realContext.medicalPoints.slice(0, 4) }
+      : {}),
+    ...(realContext?.relatedReportsCount !== undefined
+      ? {
+          nearbyReportsAggregate: {
+            approximateCount: realContext.relatedReportsCount,
+            isDemo: false,
+            note: "Conteo real de reportes y SOS en el área proyectada; no expone registros individuales.",
+          },
+        }
+      : {}),
+  };
   const sourcesUsed = buildFenixSourceAttributions(normalizedInput);
   const dataQuality = buildFenixDataQuality(normalizedInput, sourcesUsed.length);
   const connectedUsersAggregate = estimateConnectedUsersExposure(
     aggregateConnectedUsersByArea(affectedZones),
     affectedZones
   );
-  const reportDensity = estimateReportDensity([], affectedZones);
+  const reportDensity =
+    realContext?.relatedReportsCount !== undefined
+      ? {
+          relatedReports: realContext.relatedReportsCount,
+          densityLabel: realContext.relatedReportsCount >= 10 ? ("high" as const) : ("medium" as const),
+          isDemo: false,
+        }
+      : estimateReportDensity([], affectedZones);
   const shelterPressure = estimateShelterPressure(shelters);
-  const medicalPoints = shelters
-    .filter((shelter) => shelter.medicalSupport)
-    .map((shelter) => ({
-      id: shelter.id,
-      name: shelter.name,
-      distanceKm: Number(Math.max(0.8, (shelter.currentOccupancy ?? 0) / 1000).toFixed(1)),
-      isDemo: true,
-    }));
+  const medicalPoints =
+    realContext?.medicalPoints !== undefined
+      ? realContext.medicalPoints.map((point) => ({
+          id: point.id,
+          name: point.name,
+          distanceKm: point.distanceKm ?? 0,
+          isDemo: false,
+        }))
+      : shelters
+          .filter((shelter) => shelter.medicalSupport)
+          .map((shelter) => ({
+            id: shelter.id,
+            name: shelter.name,
+            distanceKm: Number(Math.max(0.8, (shelter.currentOccupancy ?? 0) / 1000).toFixed(1)),
+            isDemo: true,
+          }));
   const isDemo = true;
   const baseForConfidence = { isDemo, uncertainty: normalizedInput.uncertainty };
   const institutionalActionPlan = buildInstitutionalActionPlan({ routeImpacts });

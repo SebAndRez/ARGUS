@@ -72,7 +72,8 @@ import {
   curatedConflictZones,
   curatedNewsEvidence,
 } from "@/data/conflictZones";
-import { getNearbyMedicalPoints } from "@/data/auraMedicalPoints";
+import { useNearbyMedicalPoints } from "@/hooks/useNearbyMedicalPoints";
+import { useNearbyRealShelters } from "@/hooks/useNearbyRealShelters";
 import {
   demoRiskProjections,
   demoWeatherObservations,
@@ -467,14 +468,19 @@ export default function AppPage() {
     preferences: navPreferences,
   });
 
-  const medicalPoints = useMemo(
-    () => getNearbyMedicalPoints({ lat: location.latitude, lng: location.longitude }),
-    [location.latitude, location.longitude]
+  // Real health facilities (CriticalPoi) — the server only serves the AURA demo fixture where demo data is allowed.
+  const { points: medicalPoints } = useNearbyMedicalPoints(location.latitude, location.longitude);
+  // Real shelters (same source as FÉNIX/ARCA); demo shelters only when the server allows demo data.
+  const { shelters: realShelters } = useNearbyRealShelters(location.latitude, location.longitude);
+  const [demoFallbackAllowed, setDemoFallbackAllowed] = useState(false);
+  const mapShelters = useMemo(
+    () => (realShelters.length === 0 && demoFallbackAllowed ? arcaDemoShelters : realShelters),
+    [realShelters, demoFallbackAllowed]
   );
 
   const shelterEntities = useMemo(
-    () => arcaDemoShelters.map((shelter) => arcaShelterToMapEntity(shelter, { lat: location.latitude, lng: location.longitude })),
-    [location.latitude, location.longitude]
+    () => mapShelters.map((shelter) => arcaShelterToMapEntity(shelter, { lat: location.latitude, lng: location.longitude })),
+    [mapShelters, location.latitude, location.longitude]
   );
 
   // Deep link desde AURA (dashboard completo, /modules/aura) hacia el SOS
@@ -805,10 +811,10 @@ export default function AppPage() {
   }, [router]);
 
   const handleViewShelterCapacity = useCallback((entity: MapEntity) => {
-    const shelter = arcaDemoShelters.find((candidate) => candidate.id === entity.refId) ?? null;
+    const shelter = mapShelters.find((candidate) => candidate.id === entity.refId) ?? null;
     setSelectedShelterDetail(shelter);
     setSelectedMapEntity(null);
-  }, []);
+  }, [mapShelters]);
 
   const handleReportUpdateFromEntity = useCallback(() => {
     setSelectedMapEntity(null);
@@ -949,9 +955,10 @@ export default function AppPage() {
     () => events.filter((event) => isCitizenReportVisible(event, currentTimeMs)),
     [currentTimeMs, events]
   );
+  // Demo layers (synthetic reports, routes, risk projections) only where the server allows demo data.
   const visibleDemoEvents = useMemo(
-    () => (layerSettings.demoReports ? filteredDemoEvents : []),
-    [filteredDemoEvents, layerSettings.demoReports]
+    () => (layerSettings.demoReports && demoFallbackAllowed ? filteredDemoEvents : []),
+    [filteredDemoEvents, layerSettings.demoReports, demoFallbackAllowed]
   );
   const handleViewIncidentDetail = useCallback(
     (entity: MapEntity) => {
@@ -1717,6 +1724,7 @@ export default function AppPage() {
         const res = await fetch("/api/events", { cache: "no-store" });
         if (!res.ok) throw new Error("No se pudieron cargar los eventos");
         const data = await res.json();
+        setDemoFallbackAllowed(data.demoFallbackAllowed === true);
         let expiredDemoAssigned = false;
         const enrichedEvents = (data.events ?? []).map((event: CrisisEvent) => {
           const normalizedStatus = event.status?.trim().toUpperCase();
@@ -2382,9 +2390,9 @@ export default function AppPage() {
         medicalAidRequest={medicalAidRequest}
         quakeSenseClusters={quakeSenseClusters}
         safetyChecks={safetyChecks}
-        riskProjections={demoRiskProjections}
+        riskProjections={demoFallbackAllowed ? demoRiskProjections : []}
         onRiskProjectionSelect={selectRiskProjection}
-        routes={demoRoutes}
+        routes={demoFallbackAllowed ? demoRoutes : []}
         conflictZones={curatedConflictZones}
         conflictEvents={curatedConflictEvents}
         newsEvidence={curatedNewsEvidence}

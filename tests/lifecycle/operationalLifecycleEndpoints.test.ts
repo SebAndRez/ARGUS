@@ -38,6 +38,9 @@ vi.mock("@/lib/ingestion/sourceCache", () => ({
 
 vi.mock("@/lib/security/productionGuard", () => ({
   isDemoDataAllowed: vi.fn(() => false),
+  // Required since /api/notifications enforces the public rate limit (83ab16d),
+  // whose backend selection reads the production flag.
+  isProductionEnvironment: vi.fn(() => false),
 }));
 
 vi.mock("@/services/authService", () => ({

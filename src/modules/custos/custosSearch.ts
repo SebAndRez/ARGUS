@@ -19,7 +19,13 @@ export function performCustosSearch(input: CustosSearchInput): CustosSearchRespo
 
   if (input.query.trim().length < 3) warnings.push("Busqueda demasiado amplia; refine los criterios.");
   const level = getCustosAccessLevel(input.userRole as never);
-  const results = custosDemoResults.map((result) => redactCustosResultForAccessLevel(result, level));
+  // No official-registry integration exists: never return fictitious people outside demo environments.
+  const results = input.demoResultsAllowed
+    ? custosDemoResults.map((result) => redactCustosResultForAccessLevel(result, level))
+    : [];
+  if (!input.demoResultsAllowed) {
+    warnings.push("CUSTOS aún no está integrado con registros oficiales: la búsqueda no devuelve personas.");
+  }
   const riskSensitive = input.searchType === "emergency_contact" || input.searchType === "medical_transfer_status";
   auditCustosAction({ userId: input.userId, userRole: input.userRole, action: "search_executed", operationalReasonId: input.operationalReason.id, searchId, caseId: input.operationalReason.caseId, resultCount: results.length, redacted: true });
   return { searchId, results, redacted: true, requiresApproval: riskSensitive, warnings, auditId: `audit-${searchId}`, createdAt };

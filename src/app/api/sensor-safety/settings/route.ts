@@ -4,6 +4,7 @@ import {
   updateSensorSafetySettings,
 } from "@/lib/sensor-safety/sensorSafetyStore";
 import type { SensorSafetyModule, SensorSafetySettings } from "@/types/sensorSafety";
+import { requireOperator } from "@/lib/security/apiGuards";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,12 @@ export async function GET() {
 }
 
 export async function PATCH(request: NextRequest) {
+  // Process-wide store shared by every visitor: operator action only.
+  const { user, response: authResponse } = await requireOperator();
+  if (authResponse || !user) {
+    return authResponse ?? NextResponse.json({ error: "Autenticacion requerida." }, { status: 401 });
+  }
+
   const body = await request.json().catch(() => ({}));
   const enabledModules = Array.isArray(body.enabledModules)
     ? body.enabledModules.filter((item: unknown): item is SensorSafetyModule =>

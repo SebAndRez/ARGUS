@@ -178,6 +178,10 @@ export default function VestaFamilyPlanPanel({ familyPlan, contacts, canEdit, on
       </div>
       {textInput({ label: "Ruta de evacuación", value: evacuationRouteNotes, onChange: setEvacuationRouteNotes, textarea: true })}
       {textInput({ label: "Necesidades médicas", value: medicalNeedsNotes, onChange: setMedicalNeedsNotes, textarea: true })}
+      <p className="-mt-2 text-[0.7rem] leading-snug text-slate-400">
+        Por privacidad, ARGUS no guarda información médica en sus servidores. Este campo queda solo en este
+        dispositivo y aparece en el plan descargable.
+      </p>
       {textInput({ label: "Mascotas", value: petsNotes, onChange: setPetsNotes, textarea: true })}
       {textInput({ label: "Observaciones", value: observations, onChange: setObservations, textarea: true })}
 

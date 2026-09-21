@@ -10,6 +10,9 @@ import { crisisEventToVigiaReport } from "@/modules/vigia/utils";
 import { convertVigiaReportsToHermesBlockages } from "@/modules/hermes/hermesVigiaBridge";
 import { convertTalosAssessmentsToHermesRiskZones } from "@/modules/hermes/hermesTalosBridge";
 import { talosDemoAssessments } from "@/modules/talos/data";
+import { assessTalosEvents } from "@/modules/talos/talosLiveAssessments";
+import type { TalosRiskAssessment } from "@/modules/talos/types";
+import { loadOperationalEvents } from "@/lib/modules/loadOperationalEvents";
 import { calculateHermesRoutes } from "@/modules/hermes/hermesRouting";
 import { getHermesAtlasSummary } from "@/modules/hermes/hermesAtlasBridge";
 import {
@@ -42,6 +45,8 @@ export default function HermesDashboard() {
 
   const [vigiaBlockages, setVigiaBlockages] = useState<HermesBlockage[]>([]);
   const [apiLoaded, setApiLoaded] = useState(false);
+  const [demoFallbackAllowed, setDemoFallbackAllowed] = useState(false);
+  const [liveAssessments, setLiveAssessments] = useState<TalosRiskAssessment[]>([]);
   const [routes, setRoutes] = useState<HermesRoute[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
@@ -61,32 +66,43 @@ export default function HermesDashboard() {
   }, [moduleAccess.canEnter, sessionLoading]);
 
   useEffect(() => {
-    async function loadReports() {
+    async function loadOperationalData() {
       try {
-        const res = await fetch("/api/events", { cache: "no-store" });
-        const data = await res.json();
-        const reportsOnly: CrisisEvent[] = (data.events ?? []).filter((event: CrisisEvent) => event.type === "REPORT");
-        const blockages = convertVigiaReportsToHermesBlockages(reportsOnly.map(crisisEventToVigiaReport));
-        setVigiaBlockages(blockages);
+        // Citizen reports + canonical incidents (road closures, floods, landslides, fires...).
+        const loaded = await loadOperationalEvents("argus-hermes");
+        setDemoFallbackAllowed(loaded.demoFallbackAllowed);
+        const citizenReports: CrisisEvent[] = loaded.reports.filter((event) => event.type === "REPORT");
+        const citizenBlockages = convertVigiaReportsToHermesBlockages(citizenReports.map(crisisEventToVigiaReport));
+        // Canonical incidents are external/official evidence, attributed as such (not as VIGÍA reports).
+        const canonicalBlockages = convertVigiaReportsToHermesBlockages(loaded.canonical.map(crisisEventToVigiaReport)).map(
+          (blockage) => ({ ...blockage, id: blockage.id.replace("hermes-blockage-vigia-", "hermes-blockage-canonical-"), sourceModule: "ORACULO" as const })
+        );
+        setVigiaBlockages([...canonicalBlockages, ...citizenBlockages]);
+        setLiveAssessments(assessTalosEvents(loaded.events));
+        if (!loaded.reportsOk && loaded.canonicalState === "error") {
+          setStatusMessage("No se pudieron cargar reportes de movilidad en este momento.");
+        }
       } catch {
         setStatusMessage("No se pudieron cargar reportes de movilidad en este momento.");
       } finally {
         setApiLoaded(true);
       }
     }
-    loadReports();
+    loadOperationalData();
   }, []);
 
-  const isDemoData = apiLoaded && vigiaBlockages.length === 0;
+  // Demo blockages only without real data AND when the server allows demo data (never in production).
+  const isDemoData = apiLoaded && vigiaBlockages.length === 0 && demoFallbackAllowed;
   const blockages = isDemoData ? hermesDemoBlockages : vigiaBlockages;
 
-  // Zonas de riesgo TALOS: reutiliza el motor real de TALOS (mismo set demo
-  // usado por `/modules/talos`) a través del puente `hermesTalosBridge.ts`,
-  // sin recalcular riesgo por su cuenta.
-  const riskZones = useMemo(
-    () => (canViewRiskLayers ? convertTalosAssessmentsToHermesRiskZones(talosDemoAssessments) : []),
-    [canViewRiskLayers]
-  );
+  // Zonas de riesgo TALOS: las mismas evaluaciones en vivo que muestra
+  // `/modules/talos` (`assessTalosEvents`), vía `hermesTalosBridge.ts`, sin
+  // recalcular riesgo por su cuenta. El set demo solo con fallback permitido.
+  const riskZones = useMemo(() => {
+    if (!canViewRiskLayers) return [];
+    const source = liveAssessments.length === 0 && demoFallbackAllowed ? talosDemoAssessments : liveAssessments;
+    return convertTalosAssessmentsToHermesRiskZones(source);
+  }, [canViewRiskLayers, liveAssessments, demoFallbackAllowed]);
 
   const selectedRoute = routes.find((route) => route.id === selectedRouteId) ?? null;
 

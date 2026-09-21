@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getNearbyMedicalPoints } from "@/data/auraMedicalPoints";
 import { createDemoMedicalAidRequest } from "@/lib/medical/medicalAidEngine";
-import type { MedicalAidType } from "@/types/medical";
+import type { MedicalAidType, MedicalPoint } from "@/types/medical";
+import { getRealMedicalPointsNear } from "@/lib/medical/realMedicalPoints";
+import { isDemoDataAllowed } from "@/lib/security/productionGuard";
+import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +18,11 @@ const allowedTypes: MedicalAidType[] = [
 ];
 
 export async function POST(request: NextRequest) {
+  // Anonymous and now DB-backed (real medical points): same public read limit as /api/events.
+  const rateLimitOutcome = await enforceRateLimit({ policy: "public_incident_read", request });
+  const rateLimitedResponse = rateLimitResponseForOutcome(rateLimitOutcome);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   try {
     const body = await request.json();
     const type = body.type as MedicalAidType;
@@ -28,7 +36,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Coordenadas invalidas." }, { status: 400 });
     }
 
-    const nearestMedicalPoint = getNearbyMedicalPoints({ lat: latitude, lng: longitude })[0];
+    // Nearest REAL medical point; the demo fixture only where demo data is allowed.
+    let nearestMedicalPoint: MedicalPoint | undefined;
+    try {
+      nearestMedicalPoint = (await getRealMedicalPointsNear({ lat: latitude, lng: longitude }))[0];
+    } catch {
+      nearestMedicalPoint = undefined;
+    }
+    if (!nearestMedicalPoint && isDemoDataAllowed()) {
+      nearestMedicalPoint = getNearbyMedicalPoints({ lat: latitude, lng: longitude })[0];
+    }
 
     return NextResponse.json({
       request: createDemoMedicalAidRequest({

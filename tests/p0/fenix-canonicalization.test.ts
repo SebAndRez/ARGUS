@@ -25,6 +25,12 @@ vi.mock("@/services/authService", () => ({
   getCurrentUser: vi.fn(),
 }));
 
+// The simulation route now reads real shelters/medical points/report counts
+// around the origin; keep this auth suite off any database.
+vi.mock("@/lib/fenix/fenixRealContext", () => ({
+  getFenixRealContext: vi.fn(async () => ({})),
+}));
+
 import { getCurrentUser } from "@/services/authService";
 import { getModuleById } from "@/data/argusModules";
 import {

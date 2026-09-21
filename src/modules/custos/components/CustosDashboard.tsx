@@ -31,6 +31,20 @@ export default function CustosDashboard() {
   const [query, setQuery] = useState("Persona demo");
   const [searchType, setSearchType] = useState<CustosSearchType>("identity");
   const [response, setResponse] = useState<CustosSearchResponse | null>(null);
+  // Server-side demo permission (never true in production): gates the fictitious result set.
+  const [demoFallbackAllowed, setDemoFallbackAllowed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/events", { cache: "no-store" })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!cancelled) setDemoFallbackAllowed(res.ok && data.demoFallbackAllowed === true);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const validation = useMemo(() => validateCustosOperationalReason(reason), [reason]);
   const accessLevel = getCustosAccessLevel(role);
 
@@ -61,7 +75,14 @@ export default function CustosDashboard() {
   }
 
   function runSearch() {
-    const result = performCustosSearch({ searchType, query, operationalReason: reason, userRole: role, userId: user?.id ?? "demo-user" });
+    const result = performCustosSearch({
+      searchType,
+      query,
+      operationalReason: reason,
+      userRole: role,
+      userId: user?.id ?? "demo-user",
+      demoResultsAllowed: demoFallbackAllowed,
+    });
     setResponse(result);
   }
 
@@ -151,7 +172,12 @@ export default function CustosDashboard() {
 
               <Panel title="Auditoria">
                 <div className="grid gap-2">
-                  {custosDemoAuditTrail.map((entry) => (
+                  {!demoFallbackAllowed && (
+                    <p className="text-xs text-slate-400">
+                      La auditoría de CUSTOS todavía no se persiste en el servidor; no hay registros que mostrar.
+                    </p>
+                  )}
+                  {(demoFallbackAllowed ? custosDemoAuditTrail : []).map((entry) => (
                     <div key={entry.id} className="grid gap-1 border border-white/10 bg-white/[0.03] p-2 text-xs text-slate-300 sm:grid-cols-4">
                       <span>{entry.action}</span>
                       <span>{entry.role}</span>

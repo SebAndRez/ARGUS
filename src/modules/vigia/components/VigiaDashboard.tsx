@@ -52,6 +52,7 @@ export default function VigiaDashboard() {
 
   const [apiReports, setApiReports] = useState<VigiaReport[]>([]);
   const [apiLoaded, setApiLoaded] = useState(false);
+  const [demoFallbackAllowed, setDemoFallbackAllowed] = useState(false);
   const [statusOverrides, setStatusOverrides] = useState<Record<string, VigiaReportStatus>>({});
   const [selectedEvent, setSelectedEvent] = useState<CrisisEvent | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -71,6 +72,7 @@ export default function VigiaDashboard() {
       try {
         const res = await fetch("/api/events", { cache: "no-store" });
         const data = await res.json();
+        setDemoFallbackAllowed(res.ok && data.demoFallbackAllowed === true);
         const reportsOnly: CrisisEvent[] = (data.events ?? []).filter(
           (event: CrisisEvent) => event.type === "REPORT"
         );
@@ -84,7 +86,8 @@ export default function VigiaDashboard() {
     loadReports();
   }, []);
 
-  const isDemoData = apiLoaded && apiReports.length === 0;
+  // Demo reports only without real reports AND when the server allows demo data (never in production).
+  const isDemoData = apiLoaded && apiReports.length === 0 && demoFallbackAllowed;
   const baseReports = isDemoData ? vigiaDemoReports : apiReports;
 
   const reports = useMemo(
