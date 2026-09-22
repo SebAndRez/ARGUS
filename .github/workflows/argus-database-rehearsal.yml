@@ -92,6 +92,21 @@ jobs:
       - name: Install dependencies (reproducible)
         run: npm ci
 
+      # `npm ci` only generates the CURRENT client (prisma/schema.prisma). The
+      # isolated target client (generator `target_client` in
+      # prisma/schema.target.prisma → node_modules/.prisma/target-client-DO-NOT-USE)
+      # must exist before the first step that loads it: the full rehearsal's
+      # FirstInstall/AuditWriterPrincipal phase inside "Full target CI" below.
+      # Generation is offline (no database connection) and writes only under
+      # node_modules/, never prisma/.
+      - name: Generate the isolated target Prisma client (before any target test)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx prisma generate --schema prisma/schema.target.prisma
+          test -f node_modules/.prisma/target-client-DO-NOT-USE/index.js \
+            || { echo "::error::target Prisma client was not generated into the workspace node_modules"; exit 1; }
+
       - name: Confirm prisma/schema.prisma and prisma/migrations/ are untouched (pre-run)
         shell: bash
         run: |

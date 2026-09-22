@@ -1,5 +1,23 @@
 # ARGUS Public Changelog
 
+## 2026-09-22 - pending-b22a227 - Argus v1.0.6.10: fix target Prisma client generation in CI
+
+**Archivos modificados:** 2
+
+**Resumen publico:**  
+Se actualizaron 2 archivos relacionados con ARGUS GRID.
+
+**Cambios principales:**
+- Se realizaron ajustes internos para mejorar estabilidad, interfaz o mantenimiento de ARGUS.
+
+**Modulos afectados:**
+- ARGUS GRID
+
+**En simple:**  
+Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada.
+
+---
+
 ## 2026-09-21 - pending-ee31495 - Argus v1.0.6.9: fix database rehearsal CI traceability
 
 **Archivos modificados:** 3

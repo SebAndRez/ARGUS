@@ -1,5 +1,20 @@
 [
   {
+    "changeId": "b22a227d8cb6",
+    "date": "2026-09-22",
+    "commit": "pending-b22a227",
+    "title": "Argus v1.0.6.10: fix target Prisma client generation in CI",
+    "fileCount": 2,
+    "summary": "Se actualizaron 2 archivos relacionados con ARGUS GRID.",
+    "changes": [
+      "Se realizaron ajustes internos para mejorar estabilidad, interfaz o mantenimiento de ARGUS."
+    ],
+    "affectedModules": [
+      "ARGUS GRID"
+    ],
+    "simpleExplanation": "Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada."
+  },
+  {
     "changeId": "ee31495785f9",
     "date": "2026-09-21",
     "commit": "pending-ee31495",
