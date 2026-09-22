@@ -1,5 +1,20 @@
 [
   {
+    "changeId": "dbe9e9e30bf7",
+    "date": "2026-09-22",
+    "commit": "pending-dbe9e9e",
+    "title": "Argus v1.0.6.11: fix Vitest ANSI parsing in database rehearsal",
+    "fileCount": 1,
+    "summary": "Se actualizaron 1 archivos relacionados con ARGUS GRID.",
+    "changes": [
+      "Se realizaron ajustes internos para mejorar estabilidad, interfaz o mantenimiento de ARGUS."
+    ],
+    "affectedModules": [
+      "ARGUS GRID"
+    ],
+    "simpleExplanation": "Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada."
+  },
+  {
     "changeId": "b22a227d8cb6",
     "date": "2026-09-22",
     "commit": "pending-b22a227",

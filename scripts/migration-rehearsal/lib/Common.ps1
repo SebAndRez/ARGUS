@@ -276,11 +276,30 @@ function Stop-ArgusProcessTree {
 # a global "expect 881 tests" would be wrong the moment a test is added.
 # =============================================================================
 
+function Remove-ArgusAnsi {
+    <#
+    Strips terminal escape sequences (CSI such as ESC[2m / ESC[32m, and OSC)
+    from captured output. vitest colours its summary whenever `CI` is set
+    (GitHub Actions sets CI=true), even with stdout redirected to a pipe, so on
+    the runner the summary line starts with ESC[2m rather than whitespace:
+      ESC[2m Test Files ESC[22m ESC[1mESC[32m1 passedESC[39m...ESC[90m (1)ESC[39m
+    Only the escape bytes are removed; every visible character is kept.
+    #>
+    param([AllowEmptyString()][string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    $esc = [char]27
+    $bel = [char]7
+    $text = [regex]::Replace($Text, "$esc\][^$bel$esc]*(?:$bel|$esc\\)", '')
+    return [regex]::Replace($text, "$esc\[[0-?]*[ -/]*[@-~]", '')
+}
+
 function Get-ArgusVitestSummary {
     <#
     Parses vitest's terminal summary:
       Test Files  80 passed | 32 skipped (112)
            Tests  881 passed | 443 skipped (1324)
+    ANSI colour codes are stripped first (see Remove-ArgusAnsi); the summary
+    must still be present with both lines, so exit 0 without it never parses.
     Parsed=$false means no summary was printed at all, which is itself a
     failure - a suite that never reported a result did not run.
     #>
@@ -291,7 +310,7 @@ function Get-ArgusVitestSummary {
         FilesTotal = 0; FilesPassed = 0; FilesFailed = 0; FilesSkipped = 0
         TestsTotal = 0; TestsPassed = 0; TestsFailed = 0; TestsSkipped = 0
     }
-    $text = ($Output -join "`n")
+    $text = Remove-ArgusAnsi ($Output -join "`n")
     $fileMatch = [regex]::Match($text, '(?m)^\s*Test Files\s+(?<body>\S.*?)\s*$')
     $testMatch = [regex]::Match($text, '(?m)^\s*Tests\s+(?<body>\S.*?)\s*$')
     if (-not $fileMatch.Success -or -not $testMatch.Success) { return [pscustomobject]$summary }
@@ -371,7 +390,7 @@ function Assert-ArgusVitestCoverage {
     if ($s.TestsPassed -lt $MinTests) {
         throw "$FailureCode - phase '$Phase': only $($s.TestsPassed) test(s) actually executed and passed, expected at least $MinTests."
     }
-    $text = ($Output -join "`n")
+    $text = Remove-ArgusAnsi ($Output -join "`n")
     foreach ($marker in $RequiredMarkers) {
         if ($text -notmatch [regex]::Escape($marker)) {
             throw "$FailureCode - phase '$Phase': required marker $marker is missing from the suite output."
