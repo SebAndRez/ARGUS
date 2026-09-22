@@ -1,4 +1,6 @@
 import { planArgusRoute } from "@/lib/routing/argusRoutingEngine";
+import { calculateRoutes, type RoutingMode } from "@/lib/routing/routingService";
+import type { RouteHazardPoint } from "@/lib/routing/routeSafety";
 import type { ArgusNavRoute, RouteHazard, RouteOptimizationMode, VehicleProfile } from "@/types/routing";
 import type {
   HermesBlockage,
@@ -12,13 +14,14 @@ import { evaluateHermesRouteSafety } from "@/modules/hermes/hermesRouteSafety";
 import { generateHermesRouteExplanation } from "@/modules/hermes/hermesExplanations";
 
 /**
- * HERMES no implementa un motor de routing propio: reutiliza el motor demo
- * ya existente en `src/lib/routing/argusRoutingEngine.ts`
- * (`planArgusRoute` + `getMockRoutes`), que genera geometría simulada entre
- * origen y destino con scoring de eficiencia relativo. HERMES agrega su
- * propia capa de explicabilidad (bloqueos VIGÍA/ORÁCULO, zonas TALOS,
- * confianza, advertencias) encima de esa geometría — no finge navegación
- * real exacta.
+ * HERMES no implementa un motor de routing propio. La geometría viene del
+ * servicio de ruteo real ya usado por el mapa principal
+ * (`src/lib/routing/routingService.ts`, proveedor configurable: OSRM por
+ * defecto), con bloqueos y zonas TALOS enviados como peligros a evitar. Solo si
+ * el proveedor no responde, o el modo no tiene ruteo real (dron/bote), se usa
+ * el motor simulado (`planArgusRoute`) y la ruta queda marcada `isDemo: true`.
+ * HERMES agrega su capa de explicabilidad (bloqueos VIGÍA/ORÁCULO, zonas
+ * TALOS, confianza, advertencias) encima de cualquiera de las dos.
  */
 
 const mobilityToVehicleProfile: Record<HermesRoutingInput["mobilityMode"], VehicleProfile> = {
@@ -79,10 +82,13 @@ function toGeometry(coordinates: Array<[number, number]>): HermesGeoPoint[] {
   return coordinates.map(([lat, lng]) => ({ lat, lng }));
 }
 
+/** The part of a route HERMES scores — satisfied by both the real provider and the simulated engine. */
+type RouteShape = Pick<ArgusNavRoute, "coordinates" | "distanceKm" | "estimatedMinutes">;
+
 function buildHermesRoute(
   id: string,
   name: string,
-  navRoute: ArgusNavRoute,
+  navRoute: RouteShape,
   input: HermesRoutingInput,
   context: { nearbyBlockages: HermesBlockage[]; nearbyRiskZones: HermesRiskZone[]; recentDataAvailable: boolean }
 ): HermesRoute {
@@ -121,9 +127,81 @@ function buildHermesRoute(
   return route;
 }
 
+/**
+ * Real street routing mode for each HERMES mobility mode. `null` = no real
+ * routing exists for that mode yet (drone/boat), so the simulated engine is
+ * used and the route stays `isDemo: true`.
+ */
+const mobilityToRoutingMode: Record<HermesRoutingInput["mobilityMode"], RoutingMode | null> = {
+  walking: "walking",
+  bicycle: "bike",
+  car: "vehicle",
+  motorcycle: "vehicle",
+  bus: "vehicle",
+  four_by_four: "vehicle",
+  logistics_truck: "vehicle",
+  ambulance: "emergency_vehicle",
+  fire_truck: "emergency_vehicle",
+  police_vehicle: "emergency_vehicle",
+  drone_future: null,
+  boat_future: null,
+};
+
+function toRouteHazardPoints(blockages: HermesBlockage[], riskZones: HermesRiskZone[]): RouteHazardPoint[] {
+  return [
+    ...blockages.map((blockage) => ({
+      id: blockage.id,
+      label: blockage.type,
+      lat: blockage.location.lat,
+      lng: blockage.location.lng,
+      severity: blockage.severity,
+    })),
+    ...riskZones.map((zone) => ({
+      id: zone.id,
+      label: `TALOS ${zone.category}`,
+      lat: zone.center.lat,
+      lng: zone.center.lng,
+      severity: zone.riskLevel === "minimal" ? ("low" as const) : zone.riskLevel,
+    })),
+  ];
+}
+
 export async function calculateHermesRoutes(input: HermesRoutingInput): Promise<HermesRoute[]> {
   const blockages = input.blockages ?? [];
   const riskZones = input.riskZones ?? [];
+  const context = {
+    nearbyBlockages: blockages,
+    nearbyRiskZones: riskZones,
+    recentDataAvailable: blockages.length > 0 || riskZones.length > 0,
+  };
+
+  // 1) Real street geometry from the configured provider (same service as the main map).
+  const routingMode = mobilityToRoutingMode[input.mobilityMode];
+  if (routingMode) {
+    const realRoutes = await calculateRoutes({
+      origin: input.origin,
+      destination: input.destination,
+      mode: routingMode,
+      preferences: { hazards: toRouteHazardPoints(blockages, riskZones), wantAlternatives: true },
+    });
+    const usable = realRoutes.filter((route) => !route.isDemo && route.geometry.length >= 2);
+    if (usable.length > 0) {
+      return usable.map((route, index) =>
+        ({
+          ...buildHermesRoute(
+            `hermes-route-${route.id ?? index}`,
+            route.title ?? `Ruta ${index + 1}`,
+            { coordinates: route.geometry, distanceKm: route.distanceKm, estimatedMinutes: route.durationMin },
+            input,
+            context
+          ),
+          isDemo: false,
+        })
+      );
+    }
+  }
+
+  // 2) Fallback: simulated geometry, always labelled as demo.
   const hazards = toRouteHazards(blockages, riskZones);
   const vehicleProfile = mobilityToVehicleProfile[input.mobilityMode];
   const optimizationMode = purposeToOptimizationMode[input.purpose];
@@ -135,12 +213,6 @@ export async function calculateHermesRoutes(input: HermesRoutingInput): Promise<
     hazards,
     optimizationMode,
   });
-
-  const context = {
-    nearbyBlockages: blockages,
-    nearbyRiskZones: riskZones,
-    recentDataAvailable: blockages.length > 0 || riskZones.length > 0,
-  };
 
   const recommended = buildHermesRoute(
     `hermes-route-${plan.recommendedRoute.id}`,

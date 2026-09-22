@@ -52,7 +52,9 @@ describe("Invoke-ArgusBlockingCommand — source-level guarantees", () => {
   });
 });
 
-describe.skipIf(!hasPowerShell)("Invoke-ArgusBlockingCommand — behaviour", () => {
+// Each case spawns a real PowerShell process (and the timeout case waits 3 s on
+// purpose), so vitest's 5 s default is too tight under load.
+describe.skipIf(!hasPowerShell)("Invoke-ArgusBlockingCommand — behaviour", { timeout: 60_000 }, () => {
   it("returns the full structured contract for a successful command", () => {
     const run = runHarness(`
 $r = Invoke-ArgusBlockingCommand -Phase "T/Ok" -Command ${quote(NODE)} -Arguments @(${quote(FAULT_FIXTURE)}, 'pass') -FailureCode "T_FAILED" -TimeoutSeconds 120

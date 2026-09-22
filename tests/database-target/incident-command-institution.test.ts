@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   askHasCommandRole,
@@ -23,6 +24,10 @@ import { closeTargetPrincipalClients, closeTargetPrismaClient } from "../../src/
  */
 describe.skipIf(!incidentZoneDockerShouldRun)("institution compatibility", () => {
   let fixture: IncidentZoneFixture;
+  // A fresh id — deriving it from membershipBId (replacing the last hex digit
+  // with "e") collided whenever that UUID already ended in "e" (1 in 16 runs),
+  // which then deleted membership B itself and broke the following case.
+  const outsiderMembershipId = randomUUID();
 
   beforeAll(async () => {
     fixture = await createIncidentZoneFixture("R31Institution");
@@ -55,14 +60,14 @@ describe.skipIf(!incidentZoneDockerShouldRun)("institution compatibility", () =>
       `INSERT INTO institution.institutional_memberships
          (id, person_id, organization_id, role_label, status, effective_from)
        VALUES ($1::uuid, $2::uuid, $3::uuid, 'Outsider', 'ACTIVE', now() - interval '1 day')`,
-      fixture.membershipBId.replace(/.$/, "e"),
+      outsiderMembershipId,
       fixture.personAId,
       fixture.orgBId
     );
     await owner.$executeRawUnsafe(
       `UPDATE command.command_roles SET institutional_membership_id = $2::uuid WHERE id = $1::uuid`,
       fixture.commandRoleAId,
-      fixture.membershipBId.replace(/.$/, "e")
+      outsiderMembershipId
     );
 
     await expect(askHasCommandRole(fixture.personAId, fixture.incidentCommandId)).resolves.toBe(false);
@@ -78,7 +83,7 @@ describe.skipIf(!incidentZoneDockerShouldRun)("institution compatibility", () =>
     await expect(askHasCommandRole(fixture.personAId, fixture.incidentCommandId)).resolves.toBe(true);
     await owner.$executeRawUnsafe(
       `DELETE FROM institution.institutional_memberships WHERE id = $1::uuid`,
-      fixture.membershipBId.replace(/.$/, "e")
+      outsiderMembershipId
     );
   });
 

@@ -37,7 +37,8 @@ describe("Registro de módulos — vocabulario de madurez", () => {
 
   it("la clasificación de cada módulo coincide con la evidencia auditada (Prompt 18)", () => {
     expect(getModuleById("argus-hermes")?.maturity).toBe("partially_operational");
-    expect(getModuleById("argus-arca")?.maturity).toBe("preview");
+    // Real shelters (CriticalPoi, same source as FÉNIX) since the 2026-09-21 closure.
+    expect(getModuleById("argus-arca")?.maturity).toBe("partially_operational");
     expect(getModuleById("argus-aura")?.maturity).toBe("partially_operational");
     expect(getModuleById("argus-custos")?.maturity).toBe("preview");
     expect(getModuleById("argus-nexus")?.maturity).toBe("planned");

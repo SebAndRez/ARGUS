@@ -7,7 +7,11 @@ import { getCurrentUser } from "@/services/authService";
 import { hasAnyRole } from "@/lib/security/rbac";
 import { OPERATOR_ROLES } from "@/lib/security/apiGuards";
 import { enforceRateLimit, rateLimitResponseForOutcome } from "@/lib/security/rateLimit";
-import { toPublicHelpRequestMapEvent, toPublicReportMapEvent } from "@/lib/security/incidentDto";
+import {
+  toPublicHelpRequestMapEvent,
+  toPublicReportMapEvent,
+  type PublicCrisisMapEvent,
+} from "@/lib/security/incidentDto";
 import { isDemoDataAllowed } from "@/lib/security/productionGuard";
 import { logOperationalEvent } from "@/lib/observability/operationalEvents";
 import { getPredictiveNotificationPackets } from "@/lib/predictive-core/predictiveFeed";
@@ -71,6 +75,22 @@ function parseReadIds(value: string | null) {
  * HelpRequests excluded). Before this fix, this was the only one of the four
  * routes reading `Report`/`HelpRequest` that skipped that redaction entirely.
  */
+/** Adapts the redacted public DTO to the `CrisisEvent` shape the notification engine consumes. */
+function publicMapEventToCrisisEvent(publicEvent: PublicCrisisMapEvent): CrisisEvent {
+  // `authorId` is not part of CrisisEvent; drop it rather than widen the type.
+  const { authorId: _authorId, ...event } = publicEvent;
+  void _authorId;
+  return {
+    ...event,
+    category: event.category ?? "otro",
+    severity: (event.severity ?? event.priority ?? "MEDIUM") as EventSeverity,
+    priority: event.priority as HelpPriority | null,
+    createdAt: event.createdAt ?? new Date(0).toISOString(),
+    updatedAt: event.updatedAt ?? undefined,
+    author: event.author ?? undefined,
+  };
+}
+
 async function getPersistedEvents(canViewFull: boolean): Promise<CrisisEvent[]> {
   try {
     const [reports, helpRequests] = await Promise.all([
@@ -88,9 +108,11 @@ async function getPersistedEvents(canViewFull: boolean): Promise<CrisisEvent[]> 
 
     if (!canViewFull) {
       return [
-        ...reports.map(toPublicReportMapEvent).filter((event) => event !== null),
-        ...helpRequests.map(toPublicHelpRequestMapEvent).filter((event) => event !== null),
-      ];
+        ...reports.map(toPublicReportMapEvent),
+        ...helpRequests.map(toPublicHelpRequestMapEvent),
+      ]
+        .filter((event) => event !== null)
+        .map(publicMapEventToCrisisEvent);
     }
 
     return [

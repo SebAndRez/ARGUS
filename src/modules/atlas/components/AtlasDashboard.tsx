@@ -27,6 +27,8 @@ import type { AtlasDecisionLogItem } from "@/modules/atlas/types";
 
 import { auditAtlasAccess, resolveAtlasAccess, resolveAtlasRole } from "@/modules/atlas/atlasAccess";
 import { atlasDemoDecisionLog, atlasDemoEvents } from "@/modules/atlas/data";
+import { loadOperationalEvents } from "@/lib/modules/loadOperationalEvents";
+import { isCanonicalCrisisEvent } from "@/lib/modules/canonicalCrisisEvent";
 import {
   buildAtlasAlertQueue,
   buildAtlasCitizenReportsSummary,
@@ -131,6 +133,7 @@ export default function AtlasDashboard() {
 
   const [events, setEvents] = useState<CrisisEvent[]>([]);
   const [eventsLoaded, setEventsLoaded] = useState(false);
+  const [demoFallbackAllowed, setDemoFallbackAllowed] = useState(false);
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AtlasDecisionLogItem[] | null>(null);
   const [sources] = useState<CommandSourceHealth[]>(() => getCommandSourceHealth());
@@ -172,9 +175,13 @@ export default function AtlasDashboard() {
   useEffect(() => {
     async function loadEvents() {
       try {
-        const res = await fetch("/api/events", { cache: "no-store" });
-        const data = await res.json();
-        setEvents(data.events?.length ? data.events : []);
+        // Canonical incidents (ingestion pipeline) + citizen reports/SOS.
+        const loaded = await loadOperationalEvents("argus-atlas");
+        setDemoFallbackAllowed(loaded.demoFallbackAllowed);
+        setEvents(loaded.events);
+        if (!loaded.reportsOk && loaded.canonicalState === "error") {
+          setStatusMessage("No se pudieron cargar los eventos en este momento.");
+        }
       } catch {
         setStatusMessage("No se pudieron cargar los eventos en este momento.");
       } finally {
@@ -233,7 +240,8 @@ export default function AtlasDashboard() {
     loadAuditLogs();
   }, [operatorAuthorized]);
 
-  const isDemoData = eventsLoaded && events.length === 0;
+  // Demo events only without real data AND when the server allows demo data (never in production).
+  const isDemoData = eventsLoaded && events.length === 0 && demoFallbackAllowed;
   const effectiveEvents = isDemoData ? atlasDemoEvents : events;
 
   const gpsStatus = useMemo<"active" | "inactive" | "unknown">(() => {
@@ -288,8 +296,9 @@ export default function AtlasDashboard() {
     [effectiveEvents, sourceSummary, moduleStatuses, lastUpdatedIso]
   );
 
-  const decisionLogIsDemo = auditLogs === null;
-  const decisionLogItems = auditLogs ?? atlasDemoDecisionLog;
+  // Demo audit entries never stand in for the real log in production.
+  const decisionLogIsDemo = auditLogs === null && demoFallbackAllowed;
+  const decisionLogItems = auditLogs ?? (demoFallbackAllowed ? atlasDemoDecisionLog : []);
   const criticalCount = useMemo(
     () => effectiveEvents.filter((e) => e.severity === "CRITICAL" && e.status !== "RESOLVED").length,
     [effectiveEvents]
@@ -338,6 +347,11 @@ export default function AtlasDashboard() {
 
   async function handleEventAction(action: string) {
     if (!selectedEvent) return;
+    if (isCanonicalCrisisEvent(selectedEvent)) {
+      // Official/open-data incidents are not moderated like citizen reports; their lifecycle comes from the source.
+      setStatusMessage("Este incidente proviene de una fuente oficial/abierta: su estado se actualiza desde la fuente, no se modera aquí.");
+      return;
+    }
     try {
       const endpoint = selectedEvent.type === "REPORT" ? "/api/reports" : "/api/help-requests";
       const res = await fetch(`${endpoint}/${selectedEvent.id}`, {

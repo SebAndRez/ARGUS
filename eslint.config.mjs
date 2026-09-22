@@ -16,6 +16,10 @@ const eslintConfig = defineConfig([
     "build/**",
     "coverage/**",
     "next-env.d.ts",
+    // Internal docs/snapshots (mostly gitignored) and rehearsal outputs are not app code.
+    "docs/**",
+    "migration-rehearsal-artifacts/**",
+    "migration-rehearsal-logs/**",
   ]),
   {
     rules: {

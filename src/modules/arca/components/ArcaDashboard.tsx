@@ -6,6 +6,7 @@ import { useUserLocation } from "@/hooks/useUserLocation";
 import type { CrisisEvent } from "@/types/crisis";
 import type { ArcaShelter } from "@/modules/arca/types";
 import { arcaDemoShelters } from "@/modules/arca/data";
+import { useNearbyRealShelters } from "@/hooks/useNearbyRealShelters";
 import { crisisEventToVigiaReport } from "@/modules/vigia/utils";
 import { convertVigiaReportsToArcaSignals } from "@/modules/arca/arcaVigiaBridge";
 import { getArcaAtlasSummary } from "@/modules/arca/arcaAtlasBridge";
@@ -32,6 +33,7 @@ export default function ArcaDashboard() {
   const location = useUserLocation();
 
   const [vigiaSignalCount, setVigiaSignalCount] = useState(0);
+  const [demoFallbackAllowed, setDemoFallbackAllowed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [routeResult, setRouteResult] = useState<{ shelterId: string; route: HermesRoute } | null>(null);
   const [isRouting, setIsRouting] = useState(false);
@@ -56,6 +58,7 @@ export default function ArcaDashboard() {
       try {
         const res = await fetch("/api/events", { cache: "no-store" });
         const data = await res.json();
+        setDemoFallbackAllowed(res.ok && data.demoFallbackAllowed === true);
         const reportsOnly: CrisisEvent[] = (data.events ?? []).filter((event: CrisisEvent) => event.type === "REPORT");
         const signals = convertVigiaReportsToArcaSignals(reportsOnly.map(crisisEventToVigiaReport));
         setVigiaSignalCount(signals.length);
@@ -66,10 +69,13 @@ export default function ArcaDashboard() {
     loadVigiaSignals();
   }, []);
 
-  // ARCA todavía no tiene backend real de refugios (`/api/arca/shelters`
-  // preparado a futuro); usa siempre el set demo tipado, marcado como tal.
-  const shelters: ArcaShelter[] = arcaDemoShelters;
-  const isDemoData = true;
+  // Refugios reales: la misma fuente que FÉNIX (`/api/fenix/shelters` con
+  // coordenadas → CriticalPoi + estado operacional).
+  const { shelters: realShelters, loaded: sheltersLoaded } = useNearbyRealShelters(location.latitude, location.longitude);
+
+  // Demo shelters only without real ones AND when the server allows demo data (never in production).
+  const isDemoData = sheltersLoaded && realShelters.length === 0 && demoFallbackAllowed;
+  const shelters: ArcaShelter[] = isDemoData ? arcaDemoShelters : realShelters;
 
   const selectedShelter = shelters.find((shelter) => shelter.id === selectedId) ?? null;
   const atlasSummary = useMemo(() => getArcaAtlasSummary(shelters), [shelters]);

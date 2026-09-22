@@ -3,6 +3,7 @@ import { runFenixSimulation } from "@/lib/fenix/fenixSimulationEngine";
 import { createFenixSeedFromPrediction } from "@/lib/predictive-core/fenixBridge";
 import { requireOperator } from "@/lib/security/apiGuards";
 import { isDemoDataAllowed } from "@/lib/security/productionGuard";
+import { getFenixRealContext } from "@/lib/fenix/fenixRealContext";
 import type { ArgusDecisionPacket } from "@/types/predictiveCore";
 import type { FenixSimulationInput } from "@/types/fenixSimulation";
 
@@ -94,12 +95,28 @@ export async function POST(request: NextRequest) {
     void vehicleType;
     void accessLevel;
 
+    const initialLocation = body.initialLocation ?? {
+      latitude: Number(body.lat ?? predictiveSeed?.lat ?? -33.45),
+      longitude: Number(body.lng ?? predictiveSeed?.lng ?? -70.66),
+    };
+    // Real shelters / medical points / report count inside the projected area
+    // (initial radius + growth over the horizon). Demo scenario data only
+    // remains for parts with no real source, and only where demo data is allowed.
+    const projectedRadiusKm = Math.min(50, initialRadiusKm + (speedKmh * simulationMinutes) / 60);
+    const realContext = await getFenixRealContext(
+      { lat: initialLocation.latitude, lng: initialLocation.longitude },
+      projectedRadiusKm
+    );
+    if (!isDemoDataAllowed()) {
+      realContext.shelters ??= [];
+      realContext.medicalPoints ??= [];
+      realContext.relatedReportsCount ??= 0;
+    }
+
     const result = runFenixSimulation({
       scenarioId,
-      initialLocation: body.initialLocation ?? {
-        latitude: Number(body.lat ?? predictiveSeed?.lat ?? -33.45),
-        longitude: Number(body.lng ?? predictiveSeed?.lng ?? -70.66),
-      },
+      realContext,
+      initialLocation,
       crisisType: body.crisisType ?? mapPredictiveHazard(predictiveSeed?.crisisType),
       exposedPopulationEstimate: body.exposedPopulationEstimate,
       uncertainty: body.uncertainty,

@@ -100,7 +100,7 @@ function deepSortKeys(value: unknown): unknown {
 function canonicalize(content: AuditLogSignableContent): string {
   const ordered: Record<string, unknown> = {};
   for (const key of Object.keys(content).sort()) {
-    ordered[key] = deepSortKeys((content as Record<string, unknown>)[key] ?? null);
+    ordered[key] = deepSortKeys((content as unknown as Record<string, unknown>)[key] ?? null);
   }
   return JSON.stringify(ordered);
 }

@@ -11,6 +11,14 @@ function asJson(value: unknown): Prisma.InputJsonValue {
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Privacy (ARGUS_RELEASE_TODO P0 — "no persistir datos medicos hasta RLS,
+ * roles y auditoria"): the legacy database has no RLS, so free-text medical
+ * information (`medicalNeedsNotes`, `members[].medicalNotes`) is never
+ * stored. Every save writes `null` / drops the member field, which also
+ * purges values persisted before this fix. Medical notes stay on the
+ * user's device only (see VestaFamilyPlanPanel).
+ */
 function sanitizeMembers(value: unknown): VestaFamilyMember[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -19,7 +27,6 @@ function sanitizeMembers(value: unknown): VestaFamilyMember[] {
       name: String(item.name ?? "").trim(),
       relationship: item.relationship ? String(item.relationship) : undefined,
       isDependent: Boolean(item.isDependent),
-      medicalNotes: item.medicalNotes ? String(item.medicalNotes) : undefined,
     }))
     .filter((member) => member.name.length > 0)
     .slice(0, 30);
@@ -48,7 +55,7 @@ export async function PUT(request: NextRequest) {
       primaryMeetingPoint: textOrNull(body.primaryMeetingPoint) ?? null,
       alternateMeetingPoint: textOrNull(body.alternateMeetingPoint) ?? null,
       evacuationRouteNotes: textOrNull(body.evacuationRouteNotes) ?? null,
-      medicalNeedsNotes: textOrNull(body.medicalNeedsNotes) ?? null,
+      medicalNeedsNotes: null,
       petsNotes: textOrNull(body.petsNotes) ?? null,
       observations: textOrNull(body.observations) ?? null,
     },
@@ -57,7 +64,7 @@ export async function PUT(request: NextRequest) {
       primaryMeetingPoint: textOrNull(body.primaryMeetingPoint),
       alternateMeetingPoint: textOrNull(body.alternateMeetingPoint),
       evacuationRouteNotes: textOrNull(body.evacuationRouteNotes),
-      medicalNeedsNotes: textOrNull(body.medicalNeedsNotes),
+      medicalNeedsNotes: null,
       petsNotes: textOrNull(body.petsNotes),
       observations: textOrNull(body.observations),
     },
@@ -68,7 +75,8 @@ export async function PUT(request: NextRequest) {
     primaryMeetingPoint: plan.primaryMeetingPoint,
     alternateMeetingPoint: plan.alternateMeetingPoint,
     evacuationRouteNotes: plan.evacuationRouteNotes,
-    medicalNeedsNotes: plan.medicalNeedsNotes,
+    medicalNeedsNotes: null,
+    medicalDataPersisted: false,
     petsNotes: plan.petsNotes,
     observations: plan.observations,
     updatedAt: plan.updatedAt.toISOString(),

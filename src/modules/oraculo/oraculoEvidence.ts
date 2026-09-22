@@ -1,4 +1,6 @@
 import type { VigiaReport } from "@/modules/vigia/types";
+import type { CrisisEvent } from "@/types/crisis";
+import { crisisEventToVigiaReport } from "@/modules/vigia/utils";
 import type {
   OraculoAtlasSummary,
   OraculoConnector,
@@ -83,6 +85,50 @@ export function convertVigiaReportToOraculoEvidence(report: VigiaReport): Oracul
     tags,
     attribution: report.reporter.alias,
     isDemo: report.isDemo,
+  };
+}
+
+/**
+ * Convierte un incidente canónico del pipeline de ingesta (ya adaptado a
+ * `CrisisEvent` por `canonicalIncidentToCrisisEvent`) en evidencia de fuente
+ * oficial/abierta — nunca como reporte ciudadano. Los incidentes cerrados no
+ * alimentan evidencia activa.
+ */
+export function convertCanonicalEventToOraculoEvidence(event: CrisisEvent): OraculoEvidence | null {
+  if (event.status === "RESOLVED") return null;
+  const isOfficial = event.sourceCategory === "official";
+  const validated = event.status === "VALIDATED";
+  const normalizedCategory = event.category.toLowerCase();
+  const category: OraculoEvidence["category"] = normalizedCategory.includes("tsunami")
+    ? "tsunami"
+    : normalizedCategory.includes("volcan")
+      ? "volcano"
+      : normalizedCategory.includes("clima")
+        ? "weather"
+        : normalizedCategory.includes("conflicto")
+          ? "conflict"
+          : normalizedCategory.includes("medios")
+            ? "news"
+            : vigiaTypeToCategory[crisisEventToVigiaReport(event).type] ?? "institutional";
+  return {
+    id: `oraculo-canonical-${event.id}`,
+    title: event.title,
+    summary: event.description,
+    sourceId: event.sourceId ?? "argus-canonical-incidents",
+    sourceName: event.sourceId ?? "Pipeline canónico ARGUS",
+    sourceType: isOfficial ? "official" : category === "news" ? "media" : "international_organization",
+    category,
+    relatedEventId: event.id,
+    relatedModule: "ATLAS",
+    observedAt: event.createdAt,
+    collectedAt: event.updatedAt ?? event.createdAt,
+    location: { lat: event.latitude, lng: event.longitude, label: event.locationText ?? undefined },
+    confidence: validated ? "high" : "medium",
+    reliabilityScore: isOfficial ? 85 : validated ? 70 : 55,
+    verificationStatus: validated ? "verified" : "unverified",
+    contradictionStatus: "none",
+    tags: ["canonical", category],
+    isDemo: false,
   };
 }
 

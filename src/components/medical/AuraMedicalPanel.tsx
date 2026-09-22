@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { getNearbyMedicalPoints } from "@/data/auraMedicalPoints";
+import { useNearbyMedicalPoints } from "@/hooks/useNearbyMedicalPoints";
 import { createDemoMedicalAidRequest } from "@/lib/medical/medicalAidEngine";
 import { getEmergencyVisibleMedicalProfile } from "@/lib/medical/medicalPrivacy";
 import MedicalDisclaimer from "@/components/medical/MedicalDisclaimer";
@@ -64,7 +64,8 @@ export default function AuraMedicalPanel({
     [location.latitude, location.longitude]
   );
 
-  const nearbyPoints = useMemo(() => getNearbyMedicalPoints(origin), [origin]);
+  // Real health facilities near the user (demo fixture only where the server allows it).
+  const { points: nearbyPoints } = useNearbyMedicalPoints(origin.lat, origin.lng);
   const rankedPoints = useMemo(() => rankMedicalPointsForSos(nearbyPoints), [nearbyPoints]);
   const recommendedId = useMemo(() => pickRecommendedMedicalPointId(rankedPoints), [rankedPoints]);
   const selectedPoint = rankedPoints.find((point) => point.id === selectedPointId) ?? null;

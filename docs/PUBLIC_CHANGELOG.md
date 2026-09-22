@@ -1,5 +1,86 @@
 # ARGUS Public Changelog
 
+## 2026-09-22 - pending-dbe9e9e - Argus v1.0.6.11: fix Vitest ANSI parsing in database rehearsal
+
+**Archivos modificados:** 1
+
+**Resumen publico:**  
+Se actualizaron 1 archivos relacionados con ARGUS GRID.
+
+**Cambios principales:**
+- Se realizaron ajustes internos para mejorar estabilidad, interfaz o mantenimiento de ARGUS.
+
+**Modulos afectados:**
+- ARGUS GRID
+
+**En simple:**  
+Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada.
+
+---
+
+## 2026-09-22 - pending-b22a227 - Argus v1.0.6.10: fix target Prisma client generation in CI
+
+**Archivos modificados:** 2
+
+**Resumen publico:**  
+Se actualizaron 2 archivos relacionados con ARGUS GRID.
+
+**Cambios principales:**
+- Se realizaron ajustes internos para mejorar estabilidad, interfaz o mantenimiento de ARGUS.
+
+**Modulos afectados:**
+- ARGUS GRID
+
+**En simple:**  
+Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada.
+
+---
+
+## 2026-09-21 - pending-ee31495 - Argus v1.0.6.9: fix database rehearsal CI traceability
+
+**Archivos modificados:** 3
+
+**Resumen publico:**  
+Se actualizaron 3 archivos relacionados con ARGUS GRID.
+
+**Cambios principales:**
+- Se realizaron ajustes internos para mejorar estabilidad, interfaz o mantenimiento de ARGUS.
+
+**Modulos afectados:**
+- ARGUS GRID
+
+**En simple:**  
+Esta actualizacion incorpora mejoras de mantenimiento para que ARGUS siga evolucionando de forma ordenada.
+
+---
+
+## 2026-09-21 - pending-64cc25b - Argus v1.0.6.8: fix: close "Cerrar y Unificar" — green build/CI, secured endpoints, VESTA privacy, modules on the real pipeline
+
+**Archivos modificados:** 62
+
+**Resumen publico:**  
+Se actualizaron 62 archivos relacionados con Eventos y fuentes externas y Seguridad movil.
+
+**Cambios principales:**
+- Se actualizaron componentes del mapa operativo.
+- Se mejoro la lectura y gestion de reportes.
+- Se actualizaron eventos o fuentes externas.
+- Se ajustaron vistas y elementos de interfaz.
+- Se ajustaron flujos de acceso y sesion.
+
+**Modulos afectados:**
+- Eventos y fuentes externas
+- Seguridad movil
+- Reportes ciudadanos
+- Perfil de usuario
+- Mapa operativo
+- Capas del mapa
+
+**En simple:**  
+Esta actualizacion ayuda a que los reportes sean mas claros, ordenados y faciles de revisar.
+
+---
+
 ## 2026-07-21 - pending-b81f110 - ARGUS 1.0.6.5
 
 **Archivos modificados:** 7

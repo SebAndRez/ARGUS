@@ -14,7 +14,16 @@ export const dynamic = "force-dynamic";
  * existente, nunca contra el rol leído en el cliente.
  */
 
-const VALID_MODULE_IDS: OperationalContextModuleId[] = ["argus-atlas", "argus-vigia", "argus-oraculo", "argus-talos"];
+const VALID_MODULE_IDS: OperationalContextModuleId[] = [
+  "argus-atlas",
+  "argus-vigia",
+  "argus-oraculo",
+  "argus-talos",
+  // List-only consumers: HERMES (route risk), ARCA (shelter context), AURA (health context).
+  "argus-hermes",
+  "argus-arca",
+  "argus-aura",
+];
 
 function parseListParam<T extends string>(value: string | null): T[] | undefined {
   if (!value) return undefined;
@@ -26,7 +35,7 @@ export async function GET(request: NextRequest) {
   const moduleId = params.get("module") as OperationalContextModuleId | null;
   if (!moduleId || !VALID_MODULE_IDS.includes(moduleId)) {
     return NextResponse.json(
-      { state: "unavailable", error: { code: "INVALID_INCIDENT_ID", message: "Parámetro ?module= requerido y debe ser uno de los cuatro módulos soportados." } },
+      { state: "unavailable", error: { code: "INVALID_INCIDENT_ID", message: "Parámetro ?module= requerido y debe ser uno de los módulos soportados." } },
       { status: 400 }
     );
   }

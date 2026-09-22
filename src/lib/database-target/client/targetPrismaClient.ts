@@ -122,17 +122,25 @@ type TargetPrismaClientCtor = new (args: {
  * `prisma generate --schema prisma/schema.target.prisma` locally. It only
  * fails, loudly, at the moment something actually tries to construct a
  * client without having generated it.
+ *
+ * The specifier is resolved against this module's own URL into an absolute
+ * `file://` URL of the generator output (`prisma/schema.target.prisma`
+ * → `../node_modules/.prisma/target-client-DO-NOT-USE`), i.e. the workspace's
+ * own `node_modules`. A bare relative specifier was rewritten by vite-node to
+ * the root-relative id `/node_modules/.prisma/...`, which made the failure
+ * message point at the filesystem root instead of the workspace.
  */
 async function defaultLoadClientCtor(): Promise<TargetPrismaClientCtor> {
-  const generatedClientPath =
-    "../../../../node_modules/.prisma/target-client-DO-NOT-USE" as string;
+  const generatedClientEntry =
+    "../../../../node_modules/.prisma/target-client-DO-NOT-USE/index.js" as string;
+  const generatedClientUrl = new URL(generatedClientEntry, import.meta.url).href;
   let mod: { PrismaClient?: TargetPrismaClientCtor };
   try {
-    mod = await import(generatedClientPath);
+    mod = await import(generatedClientUrl);
   } catch (err) {
     throw new TargetDatabaseClientConfigError(
-      "Target Prisma client is not generated. Run `npm run db:target:validate` (or " +
-        "`prisma generate --schema prisma/schema.target.prisma`) before requesting a target client. " +
+      "Target Prisma client is not generated. Run " +
+        "`npx prisma generate --schema prisma/schema.target.prisma` before requesting a target client. " +
         `Underlying error: ${err instanceof Error ? err.message : String(err)}`
     );
   }

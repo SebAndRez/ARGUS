@@ -74,12 +74,21 @@ export async function getOrCreateVestaProfile(userId: string) {
 
 function mapFamilyPlan(profile: ProfileWithRelations): VestaFamilyPlan {
   const plan = profile.familyPlan;
+  // Medical free text is never returned (nor stored since the privacy fix);
+  // rows written before it are hidden here and purged on the next save.
+  const members = Array.isArray(plan?.membersJson)
+    ? (plan?.membersJson as unknown as VestaFamilyMember[]).map((member) => ({
+        name: member.name,
+        relationship: member.relationship,
+        isDependent: member.isDependent,
+      }))
+    : [];
   return {
-    members: Array.isArray(plan?.membersJson) ? (plan?.membersJson as unknown as VestaFamilyMember[]) : [],
+    members,
     primaryMeetingPoint: plan?.primaryMeetingPoint ?? null,
     alternateMeetingPoint: plan?.alternateMeetingPoint ?? null,
     evacuationRouteNotes: plan?.evacuationRouteNotes ?? null,
-    medicalNeedsNotes: plan?.medicalNeedsNotes ?? null,
+    medicalNeedsNotes: null,
     petsNotes: plan?.petsNotes ?? null,
     observations: plan?.observations ?? null,
     updatedAt: plan?.updatedAt?.toISOString() ?? null,

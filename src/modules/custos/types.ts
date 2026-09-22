@@ -51,6 +51,12 @@ export type CustosSearchInput = {
   operationalReason: CustosOperationalReason;
   userRole: string;
   userId: string;
+  /**
+   * CUSTOS has no integration with official registries: the only "results" are
+   * the fictitious demo set, returned solely when the server allows demo data
+   * (never in production). Defaults to false.
+   */
+  demoResultsAllowed?: boolean;
 };
 
 export type CustosSearchResponse = {

@@ -32,6 +32,7 @@ export default function ArcaShelterMapPanel({ shelters, selected }: Props) {
         <span className="border border-orange-400/30 bg-orange-500/8 px-2 py-1 text-orange-100">{grouped.full} llenos</span>
         <span className="border border-cyan-300/25 bg-cyan-400/8 px-2 py-1 text-cyan-100">{grouped.safe_zone} zonas seguras</span>
         <span className="border border-white/10 bg-white/[0.02] px-2 py-1 text-slate-400">{grouped.closed} cerrados</span>
+        <span className="border border-white/10 bg-white/[0.02] px-2 py-1 text-slate-400">{grouped.unknown} sin estado informado</span>
       </div>
       {selected && (
         <p className="mt-2 text-xs text-slate-300">

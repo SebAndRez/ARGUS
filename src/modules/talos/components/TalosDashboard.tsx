@@ -4,17 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "@/hooks/useSession";
 import TalosCanonicalIncidentPanel from "@/modules/talos/components/TalosCanonicalIncidentPanel";
-import type { CrisisEvent } from "@/types/crisis";
 import type { TalosRiskAssessment } from "@/modules/talos/types";
 import { talosDemoAssessments } from "@/modules/talos/data";
-import { calculateTalosRiskAssessment } from "@/modules/talos/talosScoring";
-import { crisisEventToVigiaReport } from "@/modules/vigia/utils";
-import { convertVigiaReportsToTalosSignals } from "@/modules/talos/talosVigiaBridge";
+import { assessTalosEvents } from "@/modules/talos/talosLiveAssessments";
+import { loadOperationalEvents } from "@/lib/modules/loadOperationalEvents";
 import { getTalosAtlasSummary } from "@/modules/talos/talosAtlasBridge";
 import { prepareTalosSignalsForFenix } from "@/modules/talos/talosModuleBridges";
 import { resolveTalosModuleAccess, resolveTalosRole, canUseTalosFeature } from "@/modules/talos/talosAccess";
 import { auditTalosAction } from "@/modules/talos/talosAudit";
-import { formatTalosRelativeTime, mapCrisisCategoryToTalosCategory, talosRiskLevelLabel } from "@/modules/talos/utils";
+import { formatTalosRelativeTime, talosRiskLevelLabel } from "@/modules/talos/utils";
 
 import TalosHeader from "@/modules/talos/components/TalosHeader";
 import TalosKpiGrid from "@/modules/talos/components/TalosKpiGrid";
@@ -35,6 +33,7 @@ export default function TalosDashboard() {
 
   const [apiAssessments, setApiAssessments] = useState<TalosRiskAssessment[]>([]);
   const [apiLoaded, setApiLoaded] = useState(false);
+  const [demoFallbackAllowed, setDemoFallbackAllowed] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -53,29 +52,13 @@ export default function TalosDashboard() {
   useEffect(() => {
     async function loadEvents() {
       try {
-        const res = await fetch("/api/events", { cache: "no-store" });
-        const data = await res.json();
-        const events: CrisisEvent[] = (data.events ?? []).filter((event: CrisisEvent) => event.status !== "RESOLVED");
-        const assessments = events.map((event) => {
-          const isCitizenReport = event.type === "REPORT";
-          const vigiaSignal = isCitizenReport
-            ? convertVigiaReportsToTalosSignals([crisisEventToVigiaReport(event)])
-            : undefined;
-          return calculateTalosRiskAssessment({
-            event: {
-              id: event.id,
-              title: event.title,
-              category: mapCrisisCategoryToTalosCategory(event.category),
-              severity: event.severity,
-              status: event.status,
-              createdAt: event.createdAt,
-              updatedAt: event.updatedAt,
-              location: { lat: event.latitude, lng: event.longitude, label: event.locationText ?? undefined },
-            },
-            vigiaSignal,
-          });
-        });
-        setApiAssessments(assessments);
+        // Canonical incidents (ingestion pipeline) + citizen reports/SOS.
+        const loaded = await loadOperationalEvents("argus-talos");
+        setDemoFallbackAllowed(loaded.demoFallbackAllowed);
+        setApiAssessments(assessTalosEvents(loaded.events));
+        if (!loaded.reportsOk && loaded.canonicalState === "error") {
+          setStatusMessage("No se pudieron cargar eventos para evaluar riesgo en este momento.");
+        }
       } catch {
         setStatusMessage("No se pudieron cargar eventos para evaluar riesgo en este momento.");
       } finally {
@@ -85,7 +68,8 @@ export default function TalosDashboard() {
     loadEvents();
   }, []);
 
-  const isDemoData = apiLoaded && apiAssessments.length === 0;
+  // Demo assessments only when there is no real data AND the server allows demo data (never in production).
+  const isDemoData = apiLoaded && apiAssessments.length === 0 && demoFallbackAllowed;
   const assessments = isDemoData ? talosDemoAssessments : apiAssessments;
 
   const selected = assessments.find((a) => a.id === selectedId) ?? null;
