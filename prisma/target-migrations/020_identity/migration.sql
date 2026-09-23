@@ -14,20 +14,30 @@
 -- ARGUS_PHYSICAL_ACCESS_CONTROL_v1.1_FROZEN.md §4.1-4.3,
 -- ARGUS_MIGRATION_DECISION_REGISTER_v1.0_FROZEN.md D-01.
 --
--- VERIFY_AGAINST_V1.0: Table Catalog v1.1 explicitly defers the full 40-field
--- fichas for identity.*/institution.*/capability.* (unmodified in v1.1) to
--- ARGUS_PHYSICAL_TABLE_CATALOG_v1.0.md, a document NOT available in this
--- session. The column sets below are reconstructed from cross-referenced
--- clues in the v1.1 frozen documents that ARE available (Access Control
--- v1.1 §4.1-4.3 ownership-column names, Enums Reference v1.1 §1 enum
--- names/value-counts per table, Target-Current Mapping v1.1 §1 field names
--- cited for the User-split), structurally consistent with those documents
--- but NOT independently confirmed field-for-field against v1.0. Every table
--- in this file is flagged VERIFY_AGAINST_V1.0 in its own comment as a
--- reminder to reconcile against the v1.0 ficha before this draft is treated
--- as final DDL. `capability.accreditations` is the one exception — its full
--- ficha IS given directly in Table Catalog v1.1 (modified by P2-03) and is
--- transcribed verbatim, not reconstructed.
+-- RECONCILED_AGAINST_V1.0 (Paso 6A). Table Catalog v1.1 defers the full
+-- 40-field fichas for identity.*/institution.*/capability.* (unmodified in
+-- v1.1) to ARGUS_PHYSICAL_TABLE_CATALOG_v1.0.md. That document was NOT
+-- available when this wave was drafted, so its column sets were reconstructed
+-- from cross-referenced clues and every table was flagged
+-- VERIFY_AGAINST_V1.0 "as a reminder to reconcile against the v1.0 ficha
+-- before this draft is treated as final DDL".
+--
+-- The v1.0 catalog IS in the repository, and this file has now been
+-- reconciled against it field by field. What the reconciliation changed, and
+-- why each change is the ficha's wording rather than a preference, is
+-- recorded per divergence in
+-- scripts/migration-rehearsal/lib/drift-reconciliation-plan.mjs (keys
+-- `020|*`). Two shapes are deliberately NOT the ficha's:
+--   * `identity.people.display_alias` stays varchar(255) instead of
+--     varchar(100): legacy `User.publicAlias` is an unbounded String, so
+--     narrowing it could truncate a real alias. Widening a varchar accepts
+--     every value the ficha's width accepts, so nothing the model expects
+--     becomes invalid;
+--   * the D-02 provenance columns (`legacy_*`, `migration_*`) exist on every
+--     backfilled table and appear in no ficha by design — they are migration
+--     bookkeeping, classified INTENTIONAL_SQL_ONLY by the drift comparer.
+-- `capability.accreditations` was never reconstructed: its full ficha is in
+-- Table Catalog v1.1 (modified by P2-03) and was transcribed verbatim.
 
 CREATE SCHEMA IF NOT EXISTS identity;
 CREATE SCHEMA IF NOT EXISTS institution;
@@ -36,14 +46,23 @@ CREATE SCHEMA IF NOT EXISTS capability;
 -- ============================================================
 -- 1. Local enums (Enums Reference v1.1 §1, rows 4-15)
 -- ============================================================
+-- A1 §identity.user_accounts Estado: ACTIVE/SUSPENDED/BLOCKED/PENDING/
+-- REVOKED/SOFT_DELETED, DEFAULT 'PENDING'. The applied labels were
+-- PENDING_VERIFICATION/LOCKED/DEACTIVATED/DELETED (Paso 6A: 020|identity.
+-- user_account_status_enum). The backfill maps legacy ACTIVE -> ACTIVE and
+-- every other legacy state -> SUSPENDED; both labels survive the rename.
 DO $$ BEGIN CREATE TYPE identity.user_account_status_enum AS ENUM
-  ('PENDING_VERIFICATION','ACTIVE','SUSPENDED','LOCKED','DEACTIVATED','DELETED');
+  ('PENDING','ACTIVE','SUSPENDED','BLOCKED','REVOKED','SOFT_DELETED');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- 6 values (#4)
+-- A1 §identity.verified_identities Estado: PENDING/VERIFIED/REJECTED/
+-- EXPIRED/SUSPENDED/REVOKED (UNVERIFIED was applied instead of SUSPENDED).
 DO $$ BEGIN CREATE TYPE identity.verified_identity_status_enum AS ENUM
-  ('UNVERIFIED','PENDING','VERIFIED','REJECTED','EXPIRED','REVOKED');
+  ('PENDING','VERIFIED','REJECTED','EXPIRED','SUSPENDED','REVOKED');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- 6 values (#5)
+-- A2 §OperationalSession row 8 (and A1): ACTIVE/EXPIRED/ENDED_BY_USER/
+-- ENDED_BY_TIMEOUT. IDLE/ENDED were applied instead.
 DO $$ BEGIN CREATE TYPE identity.operational_session_status_enum AS ENUM
-  ('ACTIVE','IDLE','ENDED','EXPIRED');
+  ('ACTIVE','EXPIRED','ENDED_BY_USER','ENDED_BY_TIMEOUT');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- 4 values (#6)
 DO $$ BEGIN CREATE TYPE identity.operational_session_end_reason_enum AS ENUM
   ('LOGOUT','TIMEOUT','REVOKED');
@@ -51,8 +70,9 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- 3 values (#7)
 DO $$ BEGIN CREATE TYPE identity.trust_domain_enum AS ENUM
   ('GENERAL','TERRITORIAL','WITNESS','MEDICAL','LOGISTICS','COMMAND','VOLUNTEER','INSTITUTIONAL');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- 8 values (#8), placeholder labels flagged for review
+-- A1 §institution.institutional_memberships Estado: ACTIVE/REVOKED/EXPIRED.
 DO $$ BEGIN CREATE TYPE institution.institutional_membership_status_enum AS ENUM
-  ('ACTIVE','SUSPENDED','ENDED');
+  ('ACTIVE','REVOKED','EXPIRED');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- 3 values (#9)
 DO $$ BEGIN CREATE TYPE institution.credential_status_enum AS ENUM
   ('ACTIVE','EXPIRED','REVOKED');
@@ -90,9 +110,14 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- 2 values (#115)
 CREATE TABLE IF NOT EXISTS identity.people (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   legal_name           varchar(255) NOT NULL,
-  display_alias        varchar(255) NULL,
+  -- NOT NULL per the ficha: legacy `User.publicAlias` is `String` (not null)
+  -- in prisma/schema.prisma, so every migrated row already carries one. Width
+  -- stays 255 (see the header note) rather than the ficha's 100.
+  display_alias        varchar(255) NOT NULL,
   national_id_hash     text NULL,           -- hashed, never plaintext national ID
-  contact_info         jsonb NULL,
+  date_of_birth        date NULL,
+  contact_info         jsonb NULL,          -- email/phone/city/region/countryCode
+  classification       security.information_classification_enum NOT NULL DEFAULT 'OPERATIONAL',
   -- D-02 legacy provenance (backfilled from User, 7 rows):
   legacy_status        text NULL,
   legacy_source        varchar(100) NULL,
@@ -101,7 +126,8 @@ CREATE TABLE IF NOT EXISTS identity.people (
   migration_review_status varchar(30) NULL CHECK (migration_review_status IN
     ('AUTO_MAPPED','REQUIRES_REVIEW','REVIEWED_APPROVED','REVIEWED_REJECTED')),
   created_at           timestamptz NOT NULL DEFAULT now(),
-  updated_at           timestamptz NOT NULL DEFAULT now()
+  updated_at           timestamptz NOT NULL DEFAULT now(),
+  deleted_at           timestamptz NULL
 );
 -- D-01: institution_assignment_status is NEVER a stored column — derived as
 -- NOT EXISTS (SELECT 1 FROM institution.institutional_memberships WHERE
@@ -111,11 +137,23 @@ CREATE TABLE IF NOT EXISTS identity.people (
 CREATE TABLE IF NOT EXISTS identity.user_accounts (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   person_id            uuid NOT NULL UNIQUE,
-  email                varchar(320) NOT NULL,
-  password_hash        text NULL,
-  google_sub           varchar(255) NULL,
-  auth_provider        varchar(50) NOT NULL DEFAULT 'LOCAL',
-  status               identity.user_account_status_enum NOT NULL DEFAULT 'PENDING_VERIFICATION',
+  -- No email / password_hash / google_sub. The v1.0 ficha for this table has
+  -- none of the three, and that is not an omission: contact data lives in
+  -- `identity.people.contact_info` (where fn_sync_users already writes the
+  -- legacy email, unchanged) and credentials are outside this table by design.
+  -- Keeping a second copy of every user's email here duplicated PII for no
+  -- reader. Paso 6A: 020|identity.user_accounts.
+  -- NULL-able on purpose (Paso 5 fix). schema.target.prisma declares
+  -- `authProvider String?`, and legacy `User.authProvider` is nullable too
+  -- (`String? @default("local")` — the default only applies to rows Prisma
+  -- creates, so a row written before it existed, or by raw SQL, can be NULL).
+  -- The column was NOT NULL here, stricter than BOTH the model and the source:
+  -- migrating or shadow-writing such a user would have failed with a not-null
+  -- violation, and the only alternatives would have been to fabricate a value
+  -- or to drop the row. Nullable keeps the honest value; the DEFAULT still
+  -- applies to target-native inserts that omit the column.
+  auth_provider        varchar(50) NULL DEFAULT 'LOCAL',
+  status               identity.user_account_status_enum NOT NULL DEFAULT 'PENDING',
   last_login_at        timestamptz NULL,
   legacy_status        text NULL,
   legacy_source        varchar(100) NULL,
@@ -124,20 +162,25 @@ CREATE TABLE IF NOT EXISTS identity.user_accounts (
   migration_review_status varchar(30) NULL,
   created_at           timestamptz NOT NULL DEFAULT now(),
   updated_at           timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_user_accounts_person FOREIGN KEY (person_id) REFERENCES identity.people(id) ON DELETE RESTRICT,
-  CONSTRAINT uq_user_accounts_email UNIQUE (email),
-  CONSTRAINT uq_user_accounts_google_sub UNIQUE (google_sub)
+  deleted_at           timestamptz NULL,
+  CONSTRAINT fk_user_accounts_person FOREIGN KEY (person_id) REFERENCES identity.people(id) ON DELETE RESTRICT
 );
 
 -- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS identity.verified_identities (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   person_id            uuid NOT NULL,
-  status               identity.verified_identity_status_enum NOT NULL DEFAULT 'UNVERIFIED',
+  status               identity.verified_identity_status_enum NOT NULL DEFAULT 'PENDING',
   verified_at          timestamptz NULL,
-  document_type        varchar(50) NULL,
-  document_country     varchar(2) NULL,
-  document_identifier  text NULL,
+  expires_at           timestamptz NULL,
+  -- NOT NULL per the ficha. The backfill only creates a row when legacy
+  -- `User.governmentIdHash IS NOT NULL`, and already writes the explicit
+  -- placeholders 'UNKNOWN' / 'XX' for the two values legacy never captured —
+  -- so no row needs a NULL here, and a missing document identifier can no
+  -- longer be recorded as a verified identity at all.
+  document_type        varchar(50) NOT NULL,
+  document_country     varchar(2) NOT NULL,
+  document_identifier  text NOT NULL,
   legacy_status        text NULL,
   legacy_source        varchar(100) NULL,
   legacy_record_id     text NULL,
@@ -155,8 +198,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_verified_identities_person_active
 CREATE TABLE IF NOT EXISTS identity.liveness_checks (
   id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   verified_identity_id  uuid NOT NULL,
-  performed_at          timestamptz NOT NULL DEFAULT now(),
+  method                varchar(50) NOT NULL,
   result                boolean NOT NULL,
+  completed_at          timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_liveness_checks_verified_identity
     FOREIGN KEY (verified_identity_id) REFERENCES identity.verified_identities(id) ON DELETE RESTRICT
 );
@@ -166,10 +210,13 @@ CREATE TABLE IF NOT EXISTS identity.devices (
   id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   person_id           uuid NOT NULL,
   device_fingerprint  text NOT NULL,
-  label               varchar(255) NULL,
-  registered_at       timestamptz NOT NULL DEFAULT now(),
+  is_trusted          boolean NOT NULL DEFAULT false,
   last_seen_at        timestamptz NULL,
-  CONSTRAINT fk_devices_person FOREIGN KEY (person_id) REFERENCES identity.people(id) ON DELETE RESTRICT
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  deleted_at          timestamptz NULL,
+  -- CASCADE, not RESTRICT: the ficha's own reason is "el dispositivo no tiene
+  -- sentido sin su persona". A device row is part of the Person aggregate.
+  CONSTRAINT fk_devices_person FOREIGN KEY (person_id) REFERENCES identity.people(id) ON DELETE CASCADE
 );
 
 -- VERIFY_AGAINST_V1.0
@@ -191,15 +238,22 @@ CREATE TABLE IF NOT EXISTS identity.operational_sessions (
 CREATE TABLE IF NOT EXISTS identity.reputation_events (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   person_id            uuid NOT NULL,
-  trust_domain         identity.trust_domain_enum NOT NULL DEFAULT 'GENERAL',
+  -- The ficha calls this column `domain`; `trust_domain` was applied. The
+  -- type and the only value any backfill writes ('GENERAL') are unchanged.
+  domain               identity.trust_domain_enum NOT NULL DEFAULT 'GENERAL',
   delta                numeric(6,2) NOT NULL,
-  reason               text NULL,
+  -- NOT NULL per the ficha: the backfill always writes an explicit reason.
+  reason               text NOT NULL,
+  -- FK to evidence.evidence_records is declared in Wave 030, where the
+  -- evidence schema first exists (same deferral Wave 010 uses for device_id).
+  evidence_id          uuid NULL,
   legacy_status        text NULL,
   legacy_source        varchar(100) NULL,
   legacy_record_id     text NULL,
   migration_confidence varchar(10) NULL,
   migration_review_status varchar(30) NULL,
   occurred_at          timestamptz NOT NULL DEFAULT now(),
+  created_at           timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_reputation_events_person FOREIGN KEY (person_id) REFERENCES identity.people(id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS ix_reputation_events_person_id ON identity.reputation_events (person_id);
@@ -211,10 +265,16 @@ CREATE TABLE IF NOT EXISTS identity.emergency_contacts (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   person_id     uuid NOT NULL,
   contact_name  varchar(255) NOT NULL,
-  contact_info  jsonb NOT NULL,
+  relationship  varchar(50) NULL,
+  -- The ficha calls this column `endpoint` (how to reach the contact);
+  -- `contact_info` was applied and collided by name with
+  -- identity.people.contact_info, which is a different thing.
+  endpoint      jsonb NOT NULL,
   priority      smallint NOT NULL DEFAULT 1,
   created_at    timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_emergency_contacts_person FOREIGN KEY (person_id) REFERENCES identity.people(id) ON DELETE RESTRICT
+  deleted_at    timestamptz NULL,
+  -- CASCADE per the ficha ("hija directa del agregado Person").
+  CONSTRAINT fk_emergency_contacts_person FOREIGN KEY (person_id) REFERENCES identity.people(id) ON DELETE CASCADE
 );
 
 -- VERIFY_AGAINST_V1.0
@@ -240,10 +300,17 @@ CREATE TABLE IF NOT EXISTS identity.consents (
 -- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS institution.organizations (
   id                       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name                     varchar(255) NOT NULL,
+  -- `legal_name` per the ficha (`name` was applied). An organization's legal
+  -- name is not interchangeable with a display name.
+  legal_name               varchar(255) NOT NULL,
   registration_identifier  varchar(100) NULL,
+  -- Whether the organization can exercise formal authority is a stored fact,
+  -- never inferred from its name or its status.
+  has_formal_authority     boolean NOT NULL DEFAULT false,
   status                   institution.organization_status_enum NOT NULL DEFAULT 'ACTIVE',
   created_at               timestamptz NOT NULL DEFAULT now(),
+  updated_at               timestamptz NOT NULL DEFAULT now(),
+  deleted_at               timestamptz NULL,
   CONSTRAINT uq_organizations_registration_identifier UNIQUE (registration_identifier)
 );
 
@@ -251,25 +318,40 @@ CREATE TABLE IF NOT EXISTS institution.organizations (
 CREATE TABLE IF NOT EXISTS institution.organizational_units (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id uuid NOT NULL,
+  parent_unit_id  uuid NULL,
   name            varchar(255) NOT NULL,
   status          institution.organizational_unit_status_enum NOT NULL DEFAULT 'ACTIVE',
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  -- CASCADE from the organization (a unit cannot outlive it), RESTRICT on the
+  -- self-reference (a parent with children is not silently removed) — both
+  -- per the ficha.
   CONSTRAINT fk_organizational_units_organization
-    FOREIGN KEY (organization_id) REFERENCES institution.organizations(id) ON DELETE RESTRICT
+    FOREIGN KEY (organization_id) REFERENCES institution.organizations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_organizational_units_parent
+    FOREIGN KEY (parent_unit_id) REFERENCES institution.organizational_units(id) ON DELETE RESTRICT
 );
 
 -- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS institution.institutional_memberships (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  person_id        uuid NOT NULL,
-  organization_id  uuid NOT NULL,
-  role_label       varchar(100) NULL,
-  status           institution.institutional_membership_status_enum NOT NULL DEFAULT 'ACTIVE',
-  effective_from   timestamptz NOT NULL DEFAULT now(),
-  effective_to     timestamptz NULL,
+  person_id             uuid NOT NULL,
+  organization_id       uuid NOT NULL,
+  organizational_unit_id uuid NULL,
+  -- `role_title` per the ficha, and NOT NULL: a membership without a role is
+  -- not a membership. `role_label`, nullable, was applied.
+  role_title            varchar(100) NOT NULL,
+  role_scope            varchar(100) NULL,
+  status                institution.institutional_membership_status_enum NOT NULL DEFAULT 'ACTIVE',
+  effective_from        timestamptz NOT NULL DEFAULT now(),
+  effective_to          timestamptz NULL,
+  revoked_at            timestamptz NULL,
+  created_at            timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_institutional_memberships_person
     FOREIGN KEY (person_id) REFERENCES identity.people(id) ON DELETE RESTRICT,
   CONSTRAINT fk_institutional_memberships_organization
-    FOREIGN KEY (organization_id) REFERENCES institution.organizations(id) ON DELETE RESTRICT
+    FOREIGN KEY (organization_id) REFERENCES institution.organizations(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_institutional_memberships_unit
+    FOREIGN KEY (organizational_unit_id) REFERENCES institution.organizational_units(id) ON DELETE SET NULL
 );
 -- Partial unique: at most one ACTIVE membership per (person, organization):
 CREATE UNIQUE INDEX IF NOT EXISTS uq_institutional_memberships_active
@@ -279,12 +361,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_institutional_memberships_active
 CREATE TABLE IF NOT EXISTS institution.institutional_credentials (
   id                          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   institutional_membership_id uuid NOT NULL,
-  credential_kind             varchar(100) NOT NULL,
+  credential_type             varchar(100) NOT NULL,   -- `credential_kind` was applied
   status                      institution.credential_status_enum NOT NULL DEFAULT 'ACTIVE',
   issued_at                   timestamptz NOT NULL DEFAULT now(),
   expires_at                  timestamptz NULL,
+  revoked_at                  timestamptz NULL,
+  -- CASCADE per the ficha: a credential belongs to its membership.
   CONSTRAINT fk_institutional_credentials_membership
-    FOREIGN KEY (institutional_membership_id) REFERENCES institution.institutional_memberships(id) ON DELETE RESTRICT
+    FOREIGN KEY (institutional_membership_id) REFERENCES institution.institutional_memberships(id) ON DELETE CASCADE
 );
 
 -- ============================================================
@@ -814,7 +898,7 @@ CREATE OR REPLACE FUNCTION security.fn_audit_access_role_change(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, security, public
+SET search_path = pg_catalog, security, public, extensions
 AS $fn$
 DECLARE
   v_now timestamptz := now();

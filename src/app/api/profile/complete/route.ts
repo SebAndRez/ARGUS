@@ -5,6 +5,7 @@ import {
   validateDocument,
 } from "@/lib/identity/countryDocumentRules";
 import { prisma } from "@/lib/prisma";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
 import { getCurrentUser } from "@/services/authService";
 import { logAuditEvent } from "@/services/auditService";
 
@@ -101,6 +102,9 @@ export async function POST(request: Request) {
     targetId: user.id,
     metadata: { countryCode, publicAlias },
   });
+
+  // Shadow write (Paso 5) — mapped profile columns converge in place.
+  await shadowWriteAfterLegacyWrite("User", [user.id]);
 
   return NextResponse.json({
     ok: true,

@@ -145,7 +145,7 @@ export function shadowWriteIncident(
     );
   }
   return {
-    kind: "PERSISTED",
+    kind: "TRANSFORMED",
     target,
     legacyId: record.id,
     migrationConfidence: target.migrationConfidence ?? "HIGH",
@@ -268,7 +268,7 @@ export function shadowWriteIncidentCandidate(
   }
   const target = knowledgeIncidentToCandidate(record, mappingTable);
   return {
-    kind: "PERSISTED",
+    kind: "TRANSFORMED",
     target,
     legacyId: record.id,
     migrationConfidence: target.migrationConfidence ?? "LOW",

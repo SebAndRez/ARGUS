@@ -22,8 +22,9 @@
 CREATE SCHEMA IF NOT EXISTS resource;
 
 -- ============================================================
--- 1. Local enums (resource_type_enum already created in governance schema,
---    Wave 010, reused unchanged here per that file's own note)
+-- 1. Local enums (resource.resource_type_enum is created in Wave 010, where
+--    its first user governance.resource_reservation_rules lives, and reused
+--    unchanged here per that file's own note)
 -- ============================================================
 DO $$ BEGIN CREATE TYPE resource.resource_status_enum AS ENUM
   ('AVAILABLE','RESERVED','DEPLOYED','UNAVAILABLE','MAINTENANCE','OUT_OF_SERVICE',
@@ -43,7 +44,7 @@ DO $$ BEGIN CREATE TYPE resource.reservation_status_enum AS ENUM
 -- VERIFY_AGAINST_V1.0. D-06: destination for CriticalPoi route (A).
 CREATE TABLE IF NOT EXISTS resource.resources (
   id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  resource_type           governance.resource_type_enum NOT NULL,
+  resource_type           resource.resource_type_enum NOT NULL,
   owner_organization_id   uuid NULL,
   status                  resource.resource_status_enum NOT NULL DEFAULT 'AVAILABLE',
   legacy_status           text NULL,
@@ -59,13 +60,18 @@ CREATE TABLE IF NOT EXISTS resource.resources (
 CREATE TABLE IF NOT EXISTS resource.operational_units (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   resource_id uuid NOT NULL UNIQUE,
-  name        varchar(255) NOT NULL,
-  created_at  timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_operational_units_resource FOREIGN KEY (resource_id) REFERENCES resource.resources(id) ON DELETE RESTRICT
+  -- No `name` and no `created_at`: A1 §resource.operational_units gives this
+  -- 1:1 extension of resource.resources neither, and the unit is named by its
+  -- resource row. Table is CREATE_EMPTY. Paso 6A: 060|resource.operational_units.
+  -- CASCADE per the ficha (UNIQUE 1:1 child of resources).
+  CONSTRAINT fk_operational_units_resource FOREIGN KEY (resource_id) REFERENCES resource.resources(id) ON DELETE CASCADE
 );
--- Note P2-12: operational_units.member_count is deliberately NOT a stored
--- column — served exclusively via proj.operational_unit_member_counts
--- (Wave 100), COUNT(*) over operational_unit_members WHERE left_at IS NULL.
+-- Note P2-12 (Table Catalog v1.1, NEWER than the v1.0 ficha and therefore the
+-- authority on this one column): operational_units.member_count is deliberately
+-- NOT a stored column — served exclusively via proj.operational_unit_member_
+-- counts (Wave 100), COUNT(*) over operational_unit_members WHERE left_at IS
+-- NULL. schema.target.prisma's `memberCount` field is removed to match, rather
+-- than the column being added back here.
 
 -- Full ficha given directly in Table Catalog v1.1 (P1-01) — transcribed verbatim.
 CREATE TABLE IF NOT EXISTS resource.operational_unit_members (
@@ -127,20 +133,30 @@ CREATE TABLE IF NOT EXISTS resource.inventories (
 
 -- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS resource.vehicle_profiles (
-  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  resource_id  uuid NOT NULL UNIQUE,
-  vehicle_kind varchar(100) NULL,
-  created_at   timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_vehicle_profiles_resource FOREIGN KEY (resource_id) REFERENCES resource.resources(id) ON DELETE RESTRICT
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  resource_id         uuid NOT NULL UNIQUE,
+  -- A1 §resource.vehicle_profiles: the profile records what the vehicle IS
+  -- (plate, energy, capacity). `vehicle_kind`/`created_at` were applied and
+  -- appear in no ficha — the kind is resource.resources.resource_type.
+  registration_number varchar(50) NULL,
+  fuel_or_energy_type varchar(50) NULL,
+  load_capacity       numeric(10,2) NULL,
+  CONSTRAINT fk_vehicle_profiles_resource FOREIGN KEY (resource_id) REFERENCES resource.resources(id) ON DELETE CASCADE
 );
 
 -- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS resource.aircraft_profiles (
-  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  resource_id   uuid NOT NULL UNIQUE,
-  aircraft_kind varchar(100) NULL,
-  created_at    timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_aircraft_profiles_resource FOREIGN KEY (resource_id) REFERENCES resource.resources(id) ON DELETE RESTRICT
+  id                       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  resource_id              uuid NOT NULL UNIQUE,
+  -- An aircraft profile EXTENDS a vehicle profile (A1: vehicle_profile_id NOT
+  -- NULL, FK RESTRICT) — the same shape uncrewed_vehicle_profiles already has.
+  vehicle_profile_id       uuid NOT NULL,
+  crew_size                integer NULL,
+  range_km                 numeric(10,2) NULL,
+  -- A certification that has lapsed must be visible as lapsed, not absent.
+  certification_expires_at timestamptz NULL,
+  CONSTRAINT fk_aircraft_profiles_resource FOREIGN KEY (resource_id) REFERENCES resource.resources(id) ON DELETE CASCADE,
+  CONSTRAINT fk_aircraft_profiles_vehicle_profile FOREIGN KEY (vehicle_profile_id) REFERENCES resource.vehicle_profiles(id) ON DELETE RESTRICT
 );
 
 -- Full ficha given directly in Table Catalog v1.1 (P2-03) — transcribed verbatim.
@@ -151,7 +167,7 @@ CREATE TABLE IF NOT EXISTS resource.uncrewed_vehicle_profiles (
   comms_link_status                        resource.comms_link_status_enum NULL,
   regulatory_restrictions                  jsonb NULL,
   regulatory_restrictions_schema_version   integer NOT NULL DEFAULT 1,
-  CONSTRAINT fk_uvp_resource FOREIGN KEY (resource_id) REFERENCES resource.resources(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_uvp_resource FOREIGN KEY (resource_id) REFERENCES resource.resources(id) ON DELETE CASCADE,
   CONSTRAINT fk_uvp_vehicle_profile FOREIGN KEY (vehicle_profile_id) REFERENCES resource.vehicle_profiles(id) ON DELETE RESTRICT,
   CONSTRAINT ck_uvp_regulatory_restrictions_schema_version
     CHECK (regulatory_restrictions IS NULL OR regulatory_restrictions_schema_version >= 1)

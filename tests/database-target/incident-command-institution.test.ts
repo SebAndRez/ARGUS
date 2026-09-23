@@ -58,7 +58,7 @@ describe.skipIf(!incidentZoneDockerShouldRun)("institution compatibility", () =>
     // it. The jurisdictional scope stays on jurisdiction A.
     await owner.$executeRawUnsafe(
       `INSERT INTO institution.institutional_memberships
-         (id, person_id, organization_id, role_label, status, effective_from)
+         (id, person_id, organization_id, role_title, status, effective_from)
        VALUES ($1::uuid, $2::uuid, $3::uuid, 'Outsider', 'ACTIVE', now() - interval '1 day')`,
       outsiderMembershipId,
       fixture.personAId,

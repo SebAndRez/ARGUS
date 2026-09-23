@@ -14,6 +14,13 @@ REVOKE SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA command FROM app_api;
 REVOKE SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA risk FROM app_api;
 REVOKE SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA incident FROM app_api;
 
+-- Drop this wave's sync functions (backfill.sql — one mapping shared by the
+-- backfill and the application's shadow-write). migration_meta's own DROP
+-- SCHEMA (000's rollback) has no CASCADE, so a survivor fails that rollback
+-- loudly instead of lingering.
+DROP FUNCTION IF EXISTS migration_meta.fn_sync_knowledge_incidents(text[]);
+DROP FUNCTION IF EXISTS migration_meta.fn_sync_incident_transitions(text[], text[]);
+
 -- Drop the MIGRATION_REVIEW_QUEUE views (backfill.sql) before any table they
 -- depend on, or those DROP TABLE statements fail with "other objects depend on it".
 DROP VIEW IF EXISTS incident.vw_migration_review_queue;

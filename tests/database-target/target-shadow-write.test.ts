@@ -25,11 +25,11 @@ describe("runShadowWrite generic engine", () => {
       domain: "TestDomain",
       legacyId: (r) => r.id,
       idempotencyKey: (r) => `test:${r.id}`,
-      targetTransform: () => ({ kind: "PERSISTED", target: { ok: true }, legacyId: "x1", migrationConfidence: "HIGH", reviewStatus: "AUTO_MAPPED" }),
+      targetTransform: () => ({ kind: "TRANSFORMED", target: { ok: true }, legacyId: "x1", migrationConfidence: "HIGH", reviewStatus: "AUTO_MAPPED" }),
       ctx: ENABLED,
     });
     expect(record.legacyId).toBe("x1");
-    expect(record.outcome.kind).toBe("PERSISTED");
+    expect(record.outcome.kind).toBe("TRANSFORMED");
   });
 
   it("returns NOT_ENABLED and never calls targetTransform when the flag is off", () => {
@@ -69,7 +69,7 @@ describe("runShadowWrite generic engine", () => {
   it("is idempotent — a second run with the same idempotency key after success does not re-persist", () => {
     const store = new InMemoryIdempotencyStore();
     const targetTransform = vi.fn().mockReturnValue({
-      kind: "PERSISTED",
+      kind: "TRANSFORMED",
       target: { ok: true },
       legacyId: "x1",
       migrationConfidence: "HIGH",
@@ -85,7 +85,7 @@ describe("runShadowWrite generic engine", () => {
     };
     const first = runShadowWrite({ id: "x1" }, options);
     const second = runShadowWrite({ id: "x1" }, options);
-    expect(first.outcome.kind).toBe("PERSISTED");
+    expect(first.outcome.kind).toBe("TRANSFORMED");
     expect(second.outcome.kind).toBe("NOT_ENABLED");
     expect(targetTransform).toHaveBeenCalledTimes(1);
   });
@@ -102,7 +102,7 @@ describe("runShadowWrite generic engine", () => {
           return { kind: "REQUIRES_REVIEW" as const, reason: "needs a human" };
         }
         return {
-          kind: "PERSISTED" as const,
+          kind: "TRANSFORMED" as const,
           target: { ok: true },
           legacyId: "x1",
           migrationConfidence: "HIGH" as const,
@@ -116,7 +116,7 @@ describe("runShadowWrite generic engine", () => {
     expect(first.retryable).toBe(true);
 
     const second = retryShadowWrite(first, { id: "x1" }, options);
-    expect(second.outcome.kind).toBe("PERSISTED");
+    expect(second.outcome.kind).toBe("TRANSFORMED");
   });
 
   it("retryShadowWrite is a no-op when the previous outcome was not retryable", () => {
@@ -158,7 +158,7 @@ describe("shadow-write domain wiring", () => {
   });
 
   it("shadowWriteReport persists when enabled", () => {
-    expect(shadowWriteReport(report, { ctx: ENABLED }).outcome.kind).toBe("PERSISTED");
+    expect(shadowWriteReport(report, { ctx: ENABLED }).outcome.kind).toBe("TRANSFORMED");
   });
 
   it("shadowWriteExternalEvent is disabled by default", () => {
@@ -177,7 +177,7 @@ describe("shadow-write domain wiring", () => {
       status: "RECEIVED",
       createdAt: new Date(),
     };
-    expect(shadowWriteHelpRequestDomain(hr, { ctx: ENABLED }).outcome.kind).toBe("PERSISTED");
+    expect(shadowWriteHelpRequestDomain(hr, { ctx: ENABLED }).outcome.kind).toBe("TRANSFORMED");
   });
 
   it("shadowWriteKnowledgeIncident is REQUIRES_REVIEW without an approved mapping — never a fabricated PERSISTED", () => {

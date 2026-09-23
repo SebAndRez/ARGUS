@@ -59,6 +59,11 @@ REVOKE SELECT, INSERT, UPDATE ON identity.people, identity.user_accounts, identi
   identity.liveness_checks, identity.devices, identity.operational_sessions, identity.reputation_events,
   identity.emergency_contacts, identity.consents FROM app_api;
 
+-- 2a-bis. This wave's sync function (backfill.sql — one mapping shared by the
+--     backfill and the application's shadow-write). migration_meta's own DROP
+--     SCHEMA (000's rollback) has no CASCADE, so a survivor fails loudly.
+DROP FUNCTION IF EXISTS migration_meta.fn_sync_users(text[]);
+
 -- 2b. Drop the MIGRATION_REVIEW_QUEUE view (backfill.sql) before any table
 --     it depends on, or those DROP TABLE statements fail with "other
 --     objects depend on it".

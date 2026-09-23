@@ -88,11 +88,11 @@ WHERE coalesce(qual, '') LIKE '%argus.actor_role%'
 BEGIN;
 
 -- Two people, two institutions, two jurisdictions.
-INSERT INTO identity.people (id, legal_name) VALUES
-  ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One'),
-  ('d1000000-0000-0000-0000-000000000002', 'RLS Fixture Person Two');
+INSERT INTO identity.people (id, legal_name, display_alias) VALUES
+  ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One', 'RLS Fixture Person One'),
+  ('d1000000-0000-0000-0000-000000000002', 'RLS Fixture Person Two', 'RLS Fixture Person Two');
 
-INSERT INTO institution.organizations (id, name, status) VALUES
+INSERT INTO institution.organizations (id, legal_name, status) VALUES
   ('d2000000-0000-0000-0000-000000000001', 'RLS Fixture Org A', 'ACTIVE'),
   ('d2000000-0000-0000-0000-000000000002', 'RLS Fixture Org B', 'ACTIVE');
 
@@ -115,7 +115,7 @@ INSERT INTO governance.jurisdictions (id, name, primary_administrative_area_id, 
 
 -- One CURRENT membership, one EXPIRED membership (different orgs so the
 -- partial unique index on (person, org) WHERE effective_to IS NULL holds).
-INSERT INTO institution.institutional_memberships (id, person_id, organization_id, role_label, status, effective_from, effective_to) VALUES
+INSERT INTO institution.institutional_memberships (id, person_id, organization_id, role_title, status, effective_from, effective_to) VALUES
   ('d5000000-0000-0000-0000-000000000001', 'd1000000-0000-0000-0000-000000000001', 'd2000000-0000-0000-0000-000000000001', 'Coordinator', 'ACTIVE', now() - interval '1 day', NULL),
   ('d5000000-0000-0000-0000-000000000002', 'd1000000-0000-0000-0000-000000000002', 'd2000000-0000-0000-0000-000000000002', 'Expired Coordinator', 'ACTIVE', now() - interval '10 days', now() - interval '1 day');
 
@@ -270,8 +270,8 @@ SELECT CASE WHEN NOT security.fn_is_owner('d1000000-0000-0000-0000-000000000001'
 -- grant one). Reusing Person One here would make "no persisted assignment ->
 -- false" assert against an actor that demonstrably HAS one — a false red.
 -- Person Three exists only for this ladder and holds no command role.
-INSERT INTO identity.people (id, legal_name) VALUES
-  ('d1000000-0000-0000-0000-000000000003', 'RLS Fixture Person Three');
+INSERT INTO identity.people (id, legal_name, display_alias) VALUES
+  ('d1000000-0000-0000-0000-000000000003', 'RLS Fixture Person Three', 'RLS Fixture Person Three');
 
 SET LOCAL argus.actor_id = 'd1000000-0000-0000-0000-000000000003';
 
@@ -306,7 +306,7 @@ ROLLBACK;
 
 -- ---------- app_api: OWN promotion visible (positive) ----------
 BEGIN;
-INSERT INTO identity.people (id, legal_name) VALUES ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One');
+INSERT INTO identity.people (id, legal_name, display_alias) VALUES ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One', 'RLS Fixture Person One');
 INSERT INTO governance.incident_categories (id, code, name) VALUES ('d6000000-0000-0000-0000-000000000001', 'RLS_FIXTURE_CAT', 'RLS Fixture Category');
 INSERT INTO governance.incident_types (id, code, incident_category_id) VALUES ('d6000000-0000-0000-0000-000000000002', 'RLS_FIXTURE_TYPE', 'd6000000-0000-0000-0000-000000000001');
 INSERT INTO incident.incident_candidates (id, status, classification) VALUES ('d7000000-0000-0000-0000-000000000001', 'PROMOTED', 'OPERATIONAL');
@@ -328,7 +328,7 @@ ROLLBACK;
 
 -- ---------- app_api: OTHER actor's promotion NOT visible (negative) ----------
 BEGIN;
-INSERT INTO identity.people (id, legal_name) VALUES ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One');
+INSERT INTO identity.people (id, legal_name, display_alias) VALUES ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One', 'RLS Fixture Person One');
 INSERT INTO governance.incident_categories (id, code, name) VALUES ('d6000000-0000-0000-0000-000000000001', 'RLS_FIXTURE_CAT', 'RLS Fixture Category');
 INSERT INTO governance.incident_types (id, code, incident_category_id) VALUES ('d6000000-0000-0000-0000-000000000002', 'RLS_FIXTURE_TYPE', 'd6000000-0000-0000-0000-000000000001');
 INSERT INTO incident.incident_candidates (id, status, classification) VALUES ('d7000000-0000-0000-0000-000000000001', 'PROMOTED', 'OPERATIONAL');
@@ -336,7 +336,7 @@ INSERT INTO incident.incidents (id, origin_candidate_id, incident_type_id, class
 INSERT INTO incident.incident_promotions (id, incident_candidate_id, incident_id, decided_by_actor_type, decided_by_actor_id, input_data_snapshot, confidence, explanation, idempotency_key)
 VALUES ('d9000000-0000-0000-0000-000000000001', 'd7000000-0000-0000-0000-000000000001', 'd7000000-0000-0000-0000-000000000002', 'PERSON', 'd1000000-0000-0000-0000-000000000001', '{}'::jsonb, 'HIGH', 'RLS fixture promotion', 'd9000000-0000-0000-0000-0000000000ff');
 
-INSERT INTO identity.people (id, legal_name) VALUES ('d1000000-0000-0000-0000-000000000002', 'RLS Fixture Person Two') ON CONFLICT (id) DO NOTHING;
+INSERT INTO identity.people (id, legal_name, display_alias) VALUES ('d1000000-0000-0000-0000-000000000002', 'RLS Fixture Person Two', 'RLS Fixture Person Two') ON CONFLICT (id) DO NOTHING;
 -- Persisted authorization for Person Two — authorized, but NOT the owner, so the denial below is provably about OWNERSHIP and not about missing clearance: a real access_subject + a real ACTIVE
 -- access_role_assignment. This replaces the former `SET LOCAL
 -- argus.actor_role` line — the policies now require a row, not a claim.
@@ -352,11 +352,11 @@ ROLLBACK;
 
 -- ---------- app_api: incident visible ONLY via real command role ----------
 BEGIN;
-INSERT INTO identity.people (id, legal_name) VALUES
-  ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One'),
-  ('d1000000-0000-0000-0000-000000000002', 'RLS Fixture Person Two');
-INSERT INTO institution.organizations (id, name, status) VALUES ('d2000000-0000-0000-0000-000000000001', 'RLS Fixture Org A', 'ACTIVE');
-INSERT INTO institution.institutional_memberships (id, person_id, organization_id, role_label, status, effective_from, effective_to)
+INSERT INTO identity.people (id, legal_name, display_alias) VALUES
+  ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One', 'RLS Fixture Person One'),
+  ('d1000000-0000-0000-0000-000000000002', 'RLS Fixture Person Two', 'RLS Fixture Person Two');
+INSERT INTO institution.organizations (id, legal_name, status) VALUES ('d2000000-0000-0000-0000-000000000001', 'RLS Fixture Org A', 'ACTIVE');
+INSERT INTO institution.institutional_memberships (id, person_id, organization_id, role_title, status, effective_from, effective_to)
 VALUES ('d5000000-0000-0000-0000-000000000001', 'd1000000-0000-0000-0000-000000000001', 'd2000000-0000-0000-0000-000000000001', 'Coordinator', 'ACTIVE', now() - interval '1 day', NULL);
 INSERT INTO governance.incident_categories (id, code, name) VALUES ('d6000000-0000-0000-0000-000000000001', 'RLS_FIXTURE_CAT', 'RLS Fixture Category');
 INSERT INTO governance.incident_types (id, code, incident_category_id) VALUES ('d6000000-0000-0000-0000-000000000002', 'RLS_FIXTURE_TYPE', 'd6000000-0000-0000-0000-000000000001');
@@ -410,7 +410,7 @@ FROM incident.incidents WHERE id = 'd7000000-0000-0000-0000-000000000002';
 ROLLBACK;
 
 BEGIN;
-INSERT INTO identity.people (id, legal_name) VALUES ('d1000000-0000-0000-0000-000000000002', 'RLS Fixture Person Two');
+INSERT INTO identity.people (id, legal_name, display_alias) VALUES ('d1000000-0000-0000-0000-000000000002', 'RLS Fixture Person Two', 'RLS Fixture Person Two');
 INSERT INTO governance.incident_categories (id, code, name) VALUES ('d6000000-0000-0000-0000-000000000001', 'RLS_FIXTURE_CAT', 'RLS Fixture Category');
 INSERT INTO governance.incident_types (id, code, incident_category_id) VALUES ('d6000000-0000-0000-0000-000000000002', 'RLS_FIXTURE_TYPE', 'd6000000-0000-0000-0000-000000000001');
 INSERT INTO incident.incidents (id, incident_type_id, classification, title) VALUES ('d7000000-0000-0000-0000-000000000002', 'd6000000-0000-0000-0000-000000000002', 'CRITICAL', 'RLS Fixture Incident');
@@ -431,7 +431,7 @@ ROLLBACK;
 BEGIN;
 INSERT INTO incident.incident_candidates (id, status, classification) VALUES ('d7000000-0000-0000-0000-000000000003', 'UNDER_ASSESSMENT', 'OPERATIONAL');
 
-INSERT INTO identity.people (id, legal_name) VALUES ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One') ON CONFLICT (id) DO NOTHING;
+INSERT INTO identity.people (id, legal_name, display_alias) VALUES ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One', 'RLS Fixture Person One') ON CONFLICT (id) DO NOTHING;
 -- Persisted authorization for Person One: a real access_subject + a real ACTIVE
 -- access_role_assignment. This replaces the former `SET LOCAL
 -- argus.actor_role` line — the policies now require a row, not a claim.
@@ -464,7 +464,7 @@ INSERT INTO security.audit_logs (id, actor_type, actor_id, action, target_table,
 VALUES (gen_random_uuid(), 'PERSON', 'd1000000-0000-0000-0000-000000000001', 'RLS_FIXTURE_ACTION', 'identity.people',
         'd1000000-0000-0000-0000-000000000001', 'CRITICAL', 'SUCCESS', 'fixture-integrity-value', TIMESTAMPTZ '2026-07-15 12:00:00+00');
 
-INSERT INTO identity.people (id, legal_name) VALUES ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One') ON CONFLICT (id) DO NOTHING;
+INSERT INTO identity.people (id, legal_name, display_alias) VALUES ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One', 'RLS Fixture Person One') ON CONFLICT (id) DO NOTHING;
 -- Persisted authorization for Person One: a real access_subject + a real ACTIVE
 -- access_role_assignment. This replaces the former `SET LOCAL
 -- argus.actor_role` line — the policies now require a row, not a claim.
@@ -567,7 +567,7 @@ INSERT INTO ingest.ingestion_runs (id, source_id, idempotency_key, origin_kind, 
 -- row-level security policy") — which is exactly the point: the write is
 -- authorized by an assignment now, not by a session string. Found by running
 -- this suite after the substitution, not assumed.
-INSERT INTO identity.people (id, legal_name) VALUES ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One') ON CONFLICT (id) DO NOTHING;
+INSERT INTO identity.people (id, legal_name, display_alias) VALUES ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One', 'RLS Fixture Person One') ON CONFLICT (id) DO NOTHING;
 SELECT security.fn_grant_access_role(security.fn_register_access_subject('PERSON', 'd1000000-0000-0000-0000-000000000001'), 'OPERATIONAL');
 
 SET LOCAL ROLE ingest_worker;
@@ -601,7 +601,7 @@ ROLLBACK;
 
 BEGIN;
 INSERT INTO incident.incident_candidates (id, status, classification) VALUES ('d7000000-0000-0000-0000-00000000000a', 'UNDER_ASSESSMENT', 'OPERATIONAL');
-INSERT INTO identity.people (id, legal_name) VALUES ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One') ON CONFLICT (id) DO NOTHING;
+INSERT INTO identity.people (id, legal_name, display_alias) VALUES ('d1000000-0000-0000-0000-000000000001', 'RLS Fixture Person One', 'RLS Fixture Person One') ON CONFLICT (id) DO NOTHING;
 -- Persisted authorization for Person One — holds SYSTEM, which is NOT one of the OPERATIONAL/ADMIN roles incident_candidates requires: a real access_subject + a real ACTIVE
 -- access_role_assignment. This replaces the former `SET LOCAL
 -- argus.actor_role` line — the policies now require a row, not a claim.

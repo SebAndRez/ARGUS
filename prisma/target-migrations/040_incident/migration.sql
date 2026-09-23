@@ -220,13 +220,15 @@ CREATE TABLE IF NOT EXISTS incident.discard_decisions (
 CREATE TABLE IF NOT EXISTS incident.sub_incidents (
   id                           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   incident_id                  uuid NOT NULL,
-  area                         geography(Polygon,4326) NOT NULL,
+  -- NULL per A1 §incident.sub_incidents: a sub-incident is declared before its
+  -- polygon is drawn, and forcing a geometry at insert time would mean
+  -- fabricating one. Paso 6A: 040|incident.sub_incidents.
+  area                         geography(Polygon,4326) NULL,
   status                       incident.sub_incident_status_enum NOT NULL DEFAULT 'ACTIVE',
   responsible_organization_id  uuid NULL,
   created_at                   timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_sub_incidents_incident FOREIGN KEY (incident_id) REFERENCES incident.incidents(id) ON DELETE CASCADE,
-  CONSTRAINT fk_sub_incidents_organization FOREIGN KEY (responsible_organization_id) REFERENCES institution.organizations(id) ON DELETE SET NULL,
-  CONSTRAINT ck_sub_incidents_area_not_null CHECK (area IS NOT NULL)
+  CONSTRAINT fk_sub_incidents_organization FOREIGN KEY (responsible_organization_id) REFERENCES institution.organizations(id) ON DELETE SET NULL
 );
 
 -- relation_type enum values fixed (matches Prisma IncidentRelationType exactly).

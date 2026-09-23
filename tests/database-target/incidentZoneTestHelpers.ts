@@ -180,14 +180,15 @@ export async function createIncidentZoneFixture(tag: string): Promise<IncidentZo
   const lat = 10 + (hash(tag + "y") % 40);
 
   await owner.$executeRawUnsafe(
-    `INSERT INTO identity.people (id, legal_name) VALUES ($1::uuid, $3), ($2::uuid, $4)`,
+    // display_alias is NOT NULL since the Paso 6A reconciliation.
+    `INSERT INTO identity.people (id, legal_name, display_alias) VALUES ($1::uuid, $3, $3), ($2::uuid, $4, $4)`,
     f.personAId,
     f.personBId,
     `${tag} Actor A`,
     `${tag} Actor B`
   );
   await owner.$executeRawUnsafe(
-    `INSERT INTO institution.organizations (id, name, status)
+    `INSERT INTO institution.organizations (id, legal_name, status)
      VALUES ($1::uuid, $3, 'ACTIVE'), ($2::uuid, $4, 'ACTIVE')`,
     f.orgAId,
     f.orgBId,
@@ -196,7 +197,7 @@ export async function createIncidentZoneFixture(tag: string): Promise<IncidentZo
   );
   await owner.$executeRawUnsafe(
     `INSERT INTO institution.institutional_memberships
-       (id, person_id, organization_id, role_label, status, effective_from, effective_to)
+       (id, person_id, organization_id, role_title, status, effective_from, effective_to)
      VALUES ($1::uuid, $3::uuid, $5::uuid, 'Coordinator', 'ACTIVE', now() - interval '2 days', NULL),
             ($2::uuid, $4::uuid, $6::uuid, 'Coordinator', 'ACTIVE', now() - interval '2 days', NULL)`,
     f.membershipAId,

@@ -11,6 +11,12 @@
 -- because this is the one wave upstream of every data-mapping decision.
 
 CREATE SCHEMA IF NOT EXISTS migration_meta;
+-- Paso 6A: the runtime sync principal needs USAGE on this schema to resolve the
+-- fn_sync_* names it is granted EXECUTE on (each wave's backfill.sql). USAGE on
+-- a schema conveys no privilege on anything inside it, and sync_worker is
+-- granted no table privilege in migration_meta or in any target schema: the
+-- SECURITY DEFINER functions are its entire surface.
+GRANT USAGE ON SCHEMA migration_meta TO sync_worker;
 -- Owned by migration_owner (Wave 000 role) — never granted to app_api/
 -- ingest_worker/jobs_worker; this schema exists only for the duration of
 -- the migration program, not as steady-state application schema.
@@ -50,6 +56,48 @@ CREATE TABLE IF NOT EXISTS migration_meta.migration_checkpoints (
   notes          text NULL
 );
 CREATE INDEX IF NOT EXISTS ix_migration_checkpoints_wave ON migration_meta.migration_checkpoints (wave);
+
+-- ------------------------------------------------------------
+-- Legacy id -> target uuid (T-11). Production legacy ids are Prisma cuids,
+-- never uuids (Paso 3 preflight: AuditLog.targetId is a cuid in 54/54 rows),
+-- so no backfill may cast a legacy id with ::uuid. Where a target column is a
+-- polymorphic uuid with no FK (security.audit_logs.actor_id/target_id), the
+-- value is derived deterministically from a namespaced seed with EXACTLY the
+-- algorithm of src/lib/database-target/repositories/deterministicId.ts
+-- (uuidFromSeed): SHA-256 of the seed, first 32 hex chars, version nibble 'a',
+-- variant nibble "89ab"[hex[16] % 4]. The raw legacy id is always kept next
+-- to it (legacy_record_id / context), never replaced by the derived value.
+-- sha256() is core PostgreSQL (no pgcrypto, so no search_path dependency).
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION migration_meta.fn_legacy_uuid(p_seed text)
+RETURNS uuid
+LANGUAGE sql
+IMMUTABLE STRICT PARALLEL SAFE
+SET search_path = pg_catalog
+AS $$
+  SELECT (
+    substr(h, 1, 8) || '-' || substr(h, 9, 4) || '-a' || substr(h, 14, 3) || '-' ||
+    substr('89ab', (('x' || lpad(substr(h, 17, 1), 8, '0'))::bit(32)::int % 4) + 1, 1) || substr(h, 18, 3) || '-' ||
+    substr(h, 21, 12)
+  )::uuid
+  FROM (SELECT encode(sha256(convert_to(p_seed, 'UTF8')), 'hex') AS h) s
+$$;
+
+-- ------------------------------------------------------------
+-- Every legacy row a backfill deliberately does NOT migrate is recorded here,
+-- one row per legacy row, with the reason and the decision it waits on.
+-- "No legacy row disappears" is then checkable: each source row is either
+-- in a target table (legacy_record_id) or here.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS migration_meta.legacy_deferred_rows (
+  source_table      varchar(100) NOT NULL,
+  legacy_record_id  text NOT NULL,
+  wave              varchar(60) NOT NULL,
+  reason            varchar(100) NOT NULL,
+  pending_decision  varchar(100) NULL,
+  recorded_at       timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT pk_legacy_deferred_rows PRIMARY KEY (source_table, legacy_record_id)
+);
 
 -- ============================================================
 -- 3. This wave's own checkpoint — process, not data.

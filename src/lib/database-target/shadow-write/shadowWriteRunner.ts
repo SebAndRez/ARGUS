@@ -1,9 +1,18 @@
 /**
  * src/lib/database-target/shadow-write/shadowWriteRunner.ts
  *
- * Generic shadow-write engine (Executable Migration Plan Fase 8). Not
- * wired into any real endpoint — isolated, tested standalone, gated by
- * `AdapterWriteContext.shadowWriteEnabled` (itself sourced from
+ * Generic shadow-write PREVIEW engine (Executable Migration Plan Fase 8):
+ * it runs a domain's pure transform and records the outcome, and it writes
+ * nothing. Its success outcome is `TRANSFORMED`, never `PERSISTED` — Paso 5
+ * renamed it precisely because this engine cannot persist.
+ *
+ * The connected shadow-write path is
+ * `shadow-write/legacyShadowSync.ts`: it calls the wave's own
+ * `migration_meta.fn_sync_*` function (the same SQL the backfill runs) and
+ * reports INSERTED/UPDATED/UNCHANGED as the database reported them. This
+ * engine stays because `domains.ts` and its tests exercise the transform
+ * contract without a database; it is not wired to any endpoint.
+ * Gated by `AdapterWriteContext.shadowWriteEnabled` (itself sourced from
  * `targetDatabaseShadowWrite`, default `false`).
  *
  * Contract (Fase 8, verbatim requirements):
@@ -41,12 +50,12 @@ export interface ShadowWriteRecord<TTarget> {
   legacyId: string;
   idempotencyKey: string;
   outcome: ShadowWriteResultOutcome<TTarget>;
-  /** Whether calling `retryShadowWrite` again for this same record is meaningful. `false` once genuinely `PERSISTED` or `NOT_ENABLED` (retrying won't change anything by itself). */
+  /** Whether calling `retryShadowWrite` again for this same record is meaningful. `false` once genuinely `TRANSFORMED` or `NOT_ENABLED` (retrying won't change anything by itself). */
   retryable: boolean;
   attemptedAt: string;
 }
 
-/** Tracks which idempotency keys have already been successfully persisted to the target — prevents a retry from double-writing. Injectable so tests never depend on a real store. */
+/** Tracks which idempotency keys were already transformed in this process (the pure-transform preview layer; nothing is written here) — prevents a retry from double-writing. Injectable so tests never depend on a real store. */
 export interface IdempotencyStore {
   hasSucceeded(idempotencyKey: string): boolean;
   markSucceeded(idempotencyKey: string): void;
@@ -124,11 +133,11 @@ export function runShadowWrite<TLegacyResult, TTarget>(
     outcome = notEnabled(`targetDatabaseShadowWrite is disabled — ${options.domain} shadow write not attempted`);
   } else if (store?.hasSucceeded(idempotencyKey)) {
     outcome = notEnabled(
-      `idempotency key ${idempotencyKey} already persisted for ${options.domain} — skipping duplicate shadow write`
+      `idempotency key ${idempotencyKey} already transformed for ${options.domain} — skipping duplicate shadow write`
     );
   } else {
     outcome = attemptTargetTransform(legacyResult, options.domain, legacyId, options.targetTransform);
-    if (outcome.kind === "PERSISTED") {
+    if (outcome.kind === "TRANSFORMED") {
       store?.markSucceeded(idempotencyKey);
     }
   }

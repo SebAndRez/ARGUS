@@ -182,7 +182,10 @@ jobs:
           # check (it also carries psql's own "\pset" echo lines, so they cancel out).
           $baseline = Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/sql/catalog-object-inventory.sql"
           $baseline.Output | Set-Content -Path "$env:RUNNER_TEMP/catalog-empty.txt" -Encoding utf8
-          Invoke-ArgusPsql -SqlFile "./scripts/migration-rehearsal/fixtures/000_legacy_synthetic_fixtures.sql" | Out-Null
+          # Realistic legacy baseline: the 13 real prisma migrations in
+          # production order + production-shaped data (Paso 4), replacing the
+          # former 22-table synthetic fixture.
+          Import-ArgusLegacyBaseline
           $waves = @("000_preflight", "010_foundation", "020_identity", "030_ingestion_observation_evidence", "040_incident")
           foreach ($w in $waves) {
             $dir = Join-Path (Join-Path $Script:ArgusRepoRoot "prisma/target-migrations") $w
@@ -274,7 +277,13 @@ jobs:
           DATABASE_URL=$(grep '^DATABASE_URL=' .env.argus-migration.local | cut -d= -f2-)
           export ARGUS_WAVE3_INTEGRATION_TEST=true
           export TARGET_DATABASE_URL="$DATABASE_URL"
+          # Per-run key the Wave 010 backfill signed with; the integrity suite
+          # verifies every migrated row with the app's own verifier.
+          ARGUS_AUDIT_INTEGRITY_KEY_DEV=$(grep '^ARGUS_AUDIT_INTEGRITY_KEY_DEV=' .env.argus-migration.local | cut -d= -f2-)
+          ARGUS_AUDIT_INTEGRITY_KEY_ID=$(grep '^ARGUS_AUDIT_INTEGRITY_KEY_ID=' .env.argus-migration.local | cut -d= -f2-)
+          export ARGUS_AUDIT_INTEGRITY_KEY_DEV ARGUS_AUDIT_INTEGRITY_KEY_ID
           npx vitest run \
+            tests/database-target/legacy-audit-backfill-integrity.test.ts \
             tests/database-target/audit-log-partition-name.test.ts \
             tests/database-target/audit-log-partition-utc-bounds.test.ts \
             tests/database-target/audit-log-partition-window.test.ts \
@@ -448,6 +457,71 @@ jobs:
 
       - name: R31 — static rollback contract (no Docker)
         run: npx vitest run tests/database-target/incident-zone-rollback.test.ts
+
+      # ---------------------------------------------------------------------
+      # Paso 6A — the runtime principal for the shadow-write. sync_worker can
+      # execute the 11 fn_sync_* functions and nothing else; the file proves
+      # both directions by running AS that role, so a mistake that widens its
+      # rights (or one that leaves it unable to sync at all) fails the job.
+      # ---------------------------------------------------------------------
+      - name: Paso 6A — sync_worker is the only principal that can run fn_sync_* (blocking)
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATABASE_URL=$(grep ^DATABASE_URL= .env.argus-migration.local | cut -d= -f2-)
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/migration-rehearsal/sql/sync-principal-checks.sql \
+            | tee sync-principal-output.txt
+          grep -q "SYNC_PRINCIPAL_FAIL" sync-principal-output.txt && { echo "SYNC_PRINCIPAL_FAIL reported"; exit 1; } || true
+          grep -q "SYNC_PRINCIPAL_CHECKS_PASS" sync-principal-output.txt || { echo "SYNC_PRINCIPAL_FAIL: the file ran without reaching its conclusion"; exit 1; }
+          positive=$(grep -c "SYNC_PRINCIPAL_OK | positive" sync-principal-output.txt || true)
+          negative=$(grep -c "SYNC_PRINCIPAL_OK | negative" sync-principal-output.txt || true)
+          test "$positive" -ge 2 || { echo "SYNC_PRINCIPAL_FAIL: only $positive positive case(s)"; exit 1; }
+          test "$negative" -ge 5 || { echo "SYNC_PRINCIPAL_FAIL: only $negative negative case(s)"; exit 1; }
+      # ---------------------------------------------------------------------
+      # Paso 5 — shadow-write, dual-read, reconciliation, blocked cutover.
+      # The local suite does the whole sequence against this same database and
+      # leaves the legacy tables byte-identical (it asserts that itself). The
+      # markers are re-checked here so a suite that passes without reaching its
+      # conclusions still fails the job.
+      # ---------------------------------------------------------------------
+      - name: Paso 5 — shadow-write + dual-read + reconciliation + blocked cutover (blocking)
+        shell: bash
+        run: |
+          set -euo pipefail
+          DATABASE_URL=$(grep ^DATABASE_URL= .env.argus-migration.local | cut -d= -f2-)
+          export ARGUS_WAVE3_INTEGRATION_TEST=true
+          export TARGET_DATABASE_URL="$DATABASE_URL"
+          ARGUS_AUDIT_INTEGRITY_KEY_DEV=$(grep ^ARGUS_AUDIT_INTEGRITY_KEY_DEV= .env.argus-migration.local | cut -d= -f2-)
+          ARGUS_AUDIT_INTEGRITY_KEY_ID=$(grep ^ARGUS_AUDIT_INTEGRITY_KEY_ID= .env.argus-migration.local | cut -d= -f2-)
+          export ARGUS_AUDIT_INTEGRITY_KEY_DEV ARGUS_AUDIT_INTEGRITY_KEY_ID
+          # The suite writes its conclusions to this file. Vitest does not put a
+          # test's console output on the stdout this step can grep, so the file is
+          # the evidence and the file is what gets asserted; the suite truncates it
+          # when it starts, so a stale file cannot satisfy the check.
+          export ARGUS_PASO5_EVIDENCE_FILE="$PWD/paso5-markers.txt"
+          rm -f "$ARGUS_PASO5_EVIDENCE_FILE"
+          npx vitest run \
+            tests/database-target/paso5-shadow-dual-read-local.test.ts \
+            tests/database-target/paso5-shadow-sync-contract.test.ts \
+            tests/database-target/paso5-dual-read-contract.test.ts \
+            tests/database-target/paso5-legacy-response-unaffected.test.ts \
+            | tee paso5-output.txt
+          test -s "$ARGUS_PASO5_EVIDENCE_FILE" || { echo "PASO5_SHADOW_DUAL_READ_FAIL: the suites exited 0 but recorded no evidence"; exit 1; }
+          cat "$ARGUS_PASO5_EVIDENCE_FILE"
+          for marker in PASO5_DUAL_READ_RECONCILED_PASS PASO5_CUTOVER_BLOCKED_PASS PASO5_LEGACY_UNCHANGED_PASS PASO5_SIMULATION_PASS; do
+            grep -q "$marker" "$ARGUS_PASO5_EVIDENCE_FILE" || { echo "PASO5_SHADOW_DUAL_READ_FAIL: missing $marker"; exit 1; }
+          done
+          grep -q "PASO5_RECONCILIATION|" "$ARGUS_PASO5_EVIDENCE_FILE" || { echo "PASO5_SHADOW_DUAL_READ_FAIL: no reconciled domain reported"; exit 1; }
+          grep -q "PASO5_CUTOVER_BLOCKED|" "$ARGUS_PASO5_EVIDENCE_FILE" || { echo "PASO5_SHADOW_DUAL_READ_FAIL: no blocked cutover gate reported"; exit 1; }
+
+      - name: Paso 5 — cutover gates and the legacy migration-history guard (no Docker)
+        run: |
+          npx vitest run \
+            tests/database-target/target-cutover-guard-integration.test.ts \
+            tests/database-target/target-drift-guard.test.ts \
+            tests/database-target/target-rls-auto-enable-guard.test.ts \
+            tests/database-target/paso5-drift-classification.test.ts
+
 
       - name: Audit partitions — maintenance is OFF while every target flag is off, and never reads DATABASE_URL/DIRECT_URL
         # Deliberately runs with NO ARGUS_TARGET_DB_* variable and NO

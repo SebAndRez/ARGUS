@@ -102,7 +102,7 @@ describe.skipIf(!incidentZoneDockerShouldRun)("R31 relation RLS under real princ
     const owner = raw(await ownerClient());
     const strangerId = randomUUID();
     await owner.$executeRawUnsafe(
-      `INSERT INTO identity.people (id, legal_name) VALUES ($1::uuid, 'R31 Rls Stranger')`,
+      `INSERT INTO identity.people (id, legal_name, display_alias) VALUES ($1::uuid, 'R31 Rls Stranger', 'R31 Rls Stranger')`,
       strangerId
     );
     // A real, ACTIVE AccessSubject with NO role assignment: the denial is

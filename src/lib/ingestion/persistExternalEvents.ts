@@ -1,5 +1,6 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type IngestionRun } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
 import type {
   ArgusExternalSourceId,
   ArgusNormalizedEvent,
@@ -29,12 +30,13 @@ export async function persistExternalEvents(
     raw?: unknown;
   }
 ): Promise<PersistenceResult> {
+  const persistedIds: string[] = [];
   try {
     const now = new Date();
     const fetchedAt = dateOrNull(options?.fetchedAt) ?? now;
     const expiresAt = dateOrNull(options?.expiresAt);
 
-    await Promise.all(
+    const persisted = await Promise.all(
       events.map((event) =>
         prisma.externalEvent.upsert({
           where: {
@@ -87,7 +89,7 @@ export async function persistExternalEvents(
       )
     );
 
-    return { persistedCount: events.length, error: null };
+    persistedIds.push(...persisted.map((row) => row.id));
   } catch (error) {
     return {
       persistedCount: 0,
@@ -97,6 +99,16 @@ export async function persistExternalEvents(
           : "External event persistence failed.",
     };
   }
+
+  // Shadow write (Paso 5), deliberately OUTSIDE the try above: the legacy
+  // upsert has committed and stays the source of truth, and nothing the target
+  // side does may influence the result returned below. This mirrors those
+  // exact rows into the target schema by calling the same SQL the Wave 030
+  // backfill runs; it is a no-op that opens no connection while
+  // ARGUS_TARGET_DB_SHADOW_WRITE_ENABLED is off, and it never throws.
+  await shadowWriteAfterLegacyWrite("ExternalEvent", persistedIds);
+
+  return { persistedCount: events.length, error: null };
 }
 
 export async function recordIngestionRun(
@@ -110,8 +122,9 @@ export async function recordIngestionRun(
     metadata?: unknown;
   }
 ) {
+  let run: IngestionRun | null = null;
   try {
-    return await prisma.ingestionRun.create({
+    run = await prisma.ingestionRun.create({
       data: {
         sourceId,
         status,
@@ -129,6 +142,11 @@ export async function recordIngestionRun(
   } catch {
     return null;
   }
+
+  // Shadow write (Paso 5) — see persistExternalEvents above for the contract.
+  await shadowWriteAfterLegacyWrite("IngestionRun", [run.id]);
+
+  return run;
 }
 
 export async function persistFreshIngestion(

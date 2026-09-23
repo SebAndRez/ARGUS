@@ -1,10 +1,16 @@
 import { prisma } from "@/lib/prisma";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
 
 export async function adjustTrustScore(userId: string, change: number) {
   const user = await prisma.user.update({
     where: { id: userId },
     data: { trustScore: { increment: change } },
   });
+  // Shadow write (Paso 5): trustScore is mirrored as the single
+  // identity.reputation_events snapshot row the Ola 2 backfill defines
+  // (delta = trustScore - 70). It is explicitly NOT an event history — legacy
+  // never recorded one — and the sync updates that snapshot in place.
+  await shadowWriteAfterLegacyWrite("User", [userId]);
   return user;
 }
 
@@ -25,6 +31,8 @@ export async function applyStrike(userId: string, reason: string) {
     where: { id: userId },
     data: { accountStatus },
   });
+
+  await shadowWriteAfterLegacyWrite("User", [userId]);
 
   return updated;
 }

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   TARGET_MIGRATION_FLAG_DEFAULTS,
-  assertCutoverAllowed,
   getTargetMigrationFlags,
+  isDualReadEnabled,
+  isShadowWriteEnabled,
   isTargetMigrationFlagEnabled,
-  resolveCutoverFlag,
+  isTargetReadAllowed,
 } from "../../src/lib/database-target/flags/targetMigrationFlags";
 
 describe("targetMigrationFlags defaults", () => {
@@ -44,75 +45,38 @@ describe("targetMigrationFlags defaults", () => {
   });
 });
 
-describe("assertCutoverAllowed", () => {
-  it("blocks when evidence is undefined, naming all 5 reasons", () => {
-    const result = assertCutoverAllowed(undefined);
-    expect(result.allowed).toBe(false);
-    expect(result.blockingReasons).toHaveLength(5);
+/**
+ * Paso 5 flag semantics. The helpers exist so no call site re-derives these
+ * rules (and gets them subtly wrong): in particular dual-read needs the READ
+ * flag too, because comparing legacy against target IS a target read.
+ */
+describe("flag semantics helpers", () => {
+  it("shadow-write is independent of the read flag", () => {
+    expect(isShadowWriteEnabled({ ARGUS_TARGET_DB_SHADOW_WRITE_ENABLED: "true" })).toBe(true);
+    expect(isShadowWriteEnabled({ ARGUS_TARGET_DB_READ_ENABLED: "true" })).toBe(false);
   });
 
-  it("blocks when drift 13/15 is not reconciled even if everything else is satisfied", () => {
-    const result = assertCutoverAllowed({
-      drift13Vs15Reconciled: false,
-      rehearsalCiApproved: true,
-      backfillComplete: true,
-      rowCountsMatch: true,
-      rollbackAvailable: true,
-    });
-    expect(result.allowed).toBe(false);
-    expect(result.blockingReasons).toEqual(["drift 13/15 not reconciled"]);
-  });
-
-  it("blocks when any single precondition is missing", () => {
-    const full = {
-      drift13Vs15Reconciled: true,
-      rehearsalCiApproved: true,
-      backfillComplete: true,
-      rowCountsMatch: true,
-      rollbackAvailable: true,
-    };
-    for (const key of Object.keys(full) as (keyof typeof full)[]) {
-      const result = assertCutoverAllowed({ ...full, [key]: false });
-      expect(result.allowed).toBe(false);
-      expect(result.blockingReasons.length).toBeGreaterThan(0);
-    }
-  });
-
-  it("allows only when all 5 preconditions are satisfied", () => {
-    const result = assertCutoverAllowed({
-      drift13Vs15Reconciled: true,
-      rehearsalCiApproved: true,
-      backfillComplete: true,
-      rowCountsMatch: true,
-      rollbackAvailable: true,
-    });
-    expect(result).toEqual({ allowed: true, blockingReasons: [] });
-  });
-});
-
-describe("resolveCutoverFlag", () => {
-  const fullEvidence = {
-    drift13Vs15Reconciled: true,
-    rehearsalCiApproved: true,
-    backfillComplete: true,
-    rowCountsMatch: true,
-    rollbackAvailable: true,
-  };
-
-  it("stays false when the env var is unset, regardless of evidence", () => {
-    expect(resolveCutoverFlag(fullEvidence, {})).toBe(false);
-  });
-
-  it("stays false when the env var is true but evidence is incomplete", () => {
+  it("dual-read requires BOTH its own flag and the read flag — fails closed", () => {
+    expect(isDualReadEnabled({ ARGUS_TARGET_DB_DUAL_READ_ENABLED: "true" })).toBe(false);
+    expect(isDualReadEnabled({ ARGUS_TARGET_DB_READ_ENABLED: "true" })).toBe(false);
     expect(
-      resolveCutoverFlag(
-        { ...fullEvidence, rollbackAvailable: false },
-        { ARGUS_TARGET_DB_CUTOVER_ENABLED: "true" }
-      )
-    ).toBe(false);
+      isDualReadEnabled({ ARGUS_TARGET_DB_DUAL_READ_ENABLED: "true", ARGUS_TARGET_DB_READ_ENABLED: "true" })
+    ).toBe(true);
   });
 
-  it("is true only when the env var is true AND evidence is fully satisfied", () => {
-    expect(resolveCutoverFlag(fullEvidence, { ARGUS_TARGET_DB_CUTOVER_ENABLED: "true" })).toBe(true);
+  it("every helper is false with an empty env (nothing is enabled by default)", () => {
+    expect(isTargetReadAllowed({})).toBe(false);
+    expect(isShadowWriteEnabled({})).toBe(false);
+    expect(isDualReadEnabled({})).toBe(false);
+  });
+
+  it("the flags module exposes no way to resolve the cutover flag — that lives behind the gates", async () => {
+    const mod = await import("../../src/lib/database-target/flags/targetMigrationFlags");
+    // Reading the raw flag is still possible (getTargetMigrationFlags), but no
+    // helper here turns it into a decision: resolveCutoverFlag/
+    // resolveSourceOfTruth live in cutover/cutoverGuards.ts, which requires
+    // evidence for every gate.
+    expect(Object.keys(mod)).not.toContain("resolveCutoverFlag");
+    expect(Object.keys(mod)).not.toContain("assertCutoverAllowed");
   });
 });

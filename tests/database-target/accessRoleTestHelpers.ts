@@ -74,14 +74,16 @@ export async function createAccessFixture(tag: string): Promise<AccessFixture> {
   const emergencyBasisDeprecatedId = randomUUID();
 
   await owner.$executeRawUnsafe(
-    `INSERT INTO identity.people (id, legal_name) VALUES ($1::uuid, $3), ($2::uuid, $4)`,
+    // display_alias is NOT NULL since the Paso 6A reconciliation; these are
+    // synthetic rows, so the alias reuses the fixture name.
+    `INSERT INTO identity.people (id, legal_name, display_alias) VALUES ($1::uuid, $3, $3), ($2::uuid, $4, $4)`,
     personAId,
     personBId,
     `${tag} Person A`,
     `${tag} Person B`
   );
   await owner.$executeRawUnsafe(
-    `INSERT INTO institution.organizations (id, name, status) VALUES ($1::uuid, $3, 'ACTIVE'), ($2::uuid, $4, 'ACTIVE')`,
+    `INSERT INTO institution.organizations (id, legal_name, status) VALUES ($1::uuid, $3, 'ACTIVE'), ($2::uuid, $4, 'ACTIVE')`,
     orgAId,
     orgBId,
     `${tag} Institution A`,

@@ -93,7 +93,7 @@ export function shadowWriteHelpRequest(
   }
   const target = helpRequestToTarget(record);
   return {
-    kind: "PERSISTED",
+    kind: "TRANSFORMED",
     target,
     legacyId: record.id,
     migrationConfidence: target.migrationConfidence ?? "HIGH",

@@ -36,15 +36,24 @@
 -- time this statement runs, migration_meta contains only the 2 tables
 -- this wave itself created — safe to drop the schema bare (no CASCADE)
 -- once both are gone.
+DROP TABLE IF EXISTS migration_meta.legacy_deferred_rows;
+DROP FUNCTION IF EXISTS migration_meta.fn_legacy_uuid(text);
 DROP TABLE IF EXISTS migration_meta.legacy_status_mapping;
 DROP TABLE IF EXISTS migration_meta.migration_checkpoints;
 DROP SCHEMA IF EXISTS migration_meta;
 
 -- ============================================================
--- 1. Drop the 7 roles (guarded)
+-- 1. Drop the 8 roles (guarded)
 -- ============================================================
 DO $$
 BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sync_worker') THEN
+    -- Its only privileges are USAGE on migration_meta and EXECUTE on the
+    -- fn_sync_* functions, all of which are gone by the time this runs (the
+    -- schema is dropped above), so DROP ROLE has nothing left to refuse over.
+    DROP ROLE sync_worker;
+  END IF;
+
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'access_admin') THEN
     DROP ROLE access_admin;
   END IF;

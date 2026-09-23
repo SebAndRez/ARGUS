@@ -78,7 +78,7 @@ function Get-ArgusRedactedText {
     if ([string]::IsNullOrEmpty($Text)) { return $Text }
     $redacted = [regex]::Replace($Text, '(?i)([a-z][a-z0-9+.\-]*://[^:/\s@]+):([^@/\s]+)@', '$1:***@')
     $redacted = [regex]::Replace($redacted, '(?i)(PGPASSWORD=)\S+', '$1***')
-    foreach ($name in @("POSTGRES_PASSWORD", "ARGUS_APP_API_PASSWORD", "ARGUS_ACCESS_ADMIN_PASSWORD")) {
+    foreach ($name in @("POSTGRES_PASSWORD", "ARGUS_APP_API_PASSWORD", "ARGUS_ACCESS_ADMIN_PASSWORD", "ARGUS_AUDIT_INTEGRITY_KEY_DEV")) {
         $value = [Environment]::GetEnvironmentVariable($name)
         if ($value -and $value.Length -ge 8) {
             $redacted = $redacted.Replace($value, "***")
@@ -398,6 +398,122 @@ function Assert-ArgusVitestCoverage {
     }
     Write-ArgusLog "[$Phase] files=$($s.FilesPassed)/$($s.FilesTotal) tests=$($s.TestsPassed)/$($s.TestsTotal) skipped_files=$($s.FilesSkipped) skipped_tests=$($s.TestsSkipped)"
     return $s
+}
+
+function Import-ArgusLegacyBaseline {
+    <#
+    Builds the CURRENT (legacy) production schema and a realistic data set in
+    the rehearsal database, replacing the former 22-table synthetic fixture.
+
+    Structure: the 13 real prisma/migrations/*/migration.sql files, applied in
+    the order production applied them (public._prisma_migrations.started_at,
+    Paso 3 preflight) - not the lexicographic folder order, which differs for
+    the two 20260620_* folders. Then _prisma_migrations itself (15 rows, the
+    2 BOM-failure attempts included). Then legacy-baseline/20_realistic_data.sql.
+
+    Must run after Reset-ArgusRehearsal.ps1 (platform emulation) and after the
+    empty-catalog snapshot; every object it creates lives in `public`.
+    #>
+    $productionOrder = @(
+        "20260620_init_supabase_postgres",
+        "20260620_add_external_events_and_reliefweb",
+        "202606250001_add_risk_and_hazard_knowledge",
+        "202606250002_add_google_auth_fields",
+        "202607020001_add_local_auth_profile_completion",
+        "202607020002_add_profile_location_preferences",
+        "202607020003_add_knowledge_intake_persistence",
+        "202607060001_add_vesta_preparedness",
+        "202607070001_add_critical_poi",
+        "202607160001_add_shelter_operational_status",
+        "202607170001_add_shelter_codigo_azul_fields",
+        "202607170002_add_telecom_connectivity",
+        "202607170003_add_canonical_incident_fields"
+    )
+    $migrationsDir = Join-Path $Script:ArgusRepoRoot "prisma\migrations"
+    $onDisk = @(Get-ChildItem -Path $migrationsDir -Directory | ForEach-Object { $_.Name } | Sort-Object)
+    $expected = @($productionOrder | Sort-Object)
+    if (($onDisk -join ",") -ne ($expected -join ",")) {
+        throw "LEGACY_BASELINE_MIGRATION_SET_MISMATCH - prisma/migrations has [$($onDisk -join ', ')], the production-ordered list has [$($expected -join ', ')]. Update Import-ArgusLegacyBaseline from a fresh read-only preflight, never by guessing."
+    }
+    Write-ArgusLog "=== Legacy baseline: 13 real prisma migrations, production order ==="
+    foreach ($name in $productionOrder) {
+        Invoke-ArgusPsql -SqlFile (Join-Path $migrationsDir "$name\migration.sql") | Out-Null
+    }
+    $baselineDir = Join-Path $PSScriptRoot "..\legacy-baseline"
+    Invoke-ArgusPsql -SqlFile (Join-Path $baselineDir "10_prisma_migrations.sql") | Out-Null
+    $data = Invoke-ArgusPsql -SqlFile (Join-Path $baselineDir "20_realistic_data.sql")
+    if (($data.Output -join "`n") -notmatch "LEGACY_BASELINE_DATA_PASS") {
+        throw "LEGACY_BASELINE_DATA_FAIL - 20_realistic_data.sql did not report LEGACY_BASELINE_DATA_PASS."
+    }
+    Write-ArgusLog "LEGACY_BASELINE_LOADED"
+}
+
+function Get-ArgusLegacyFingerprint {
+    # LEGACY_FP|<table>|<count>|<md5> for every legacy public table, sorted.
+    $o = Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "..\sql\legacy-fingerprint.sql")
+    $lines = @($o.Output | ForEach-Object { if ("$_" -match '(LEGACY_FP\|[^\s]+)') { $Matches[1] } } | Sort-Object)
+    if ($lines.Count -eq 0) { throw "LEGACY_FINGERPRINT_UNREADABLE - legacy-fingerprint.sql produced no LEGACY_FP lines." }
+    return $lines
+}
+
+function Test-ArgusLegacyMigration {
+    <#
+    Runs right after a full 000-100 install, BEFORE any suite writes target rows
+    of its own (the wave-3 integration suites create target rows with synthetic
+    legacy ids, which would read as phantom rows here):
+      <scope>/LegacyDataInvariants - sql/legacy-data-invariants.sql, blocking;
+      <scope>/LegacyFingerprint    - legacy public tables byte-identical to the
+                                     fingerprint taken when the baseline loaded;
+      <scope>/TargetSchemaDrift    - lib/compare-target-schema.mjs against the
+                                     committed baseline, blocking on ANY change.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$PhaseScope,
+        [Parameter(Mandatory)][string[]]$BaselineFingerprint
+    )
+    $inv = Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "..\sql\legacy-data-invariants.sql") -AllowFailure
+    $invText = ($inv.Output | ForEach-Object { "$_" }) -join "`n"
+    $invLines = @($inv.Output | ForEach-Object { if ("$_" -match '(LEGACY_INVARIANT\|.*)$') { $Matches[1] } })
+    $invPassed = ($inv.ExitCode -eq 0) -and ($invText -match 'LEGACY_DATA_INVARIANTS_PASS')
+    Add-ArgusPhaseResult -Name "$PhaseScope/LegacyDataInvariants" -ExitCode $inv.ExitCode -Passed $invPassed `
+        -FailureCode "LEGACY_DATA_INVARIANTS_FAIL" -Evidence "$($invLines.Count) invariant lines" | Out-Null
+    foreach ($l in $invLines) { Write-ArgusLog "[$PhaseScope] $l" }
+    if (-not $invPassed) {
+        $why = if ($invText -match '(LEGACY_DATA_INVARIANTS_FAIL[^\n]*)') { $Matches[1] } else { "exit $($inv.ExitCode), no PASS marker" }
+        throw "LEGACY_DATA_INVARIANTS_FAIL - phase '$PhaseScope/LegacyDataInvariants': $why"
+    }
+    Write-ArgusLog "LEGACY_DATA_INVARIANTS_PASS ($PhaseScope)"
+
+    Assert-ArgusLegacyFingerprintUnchanged -Phase "$PhaseScope/LegacyFingerprint" -BaselineFingerprint $BaselineFingerprint
+
+    if (-not (Test-Path $Script:ArgusArtifactDir)) { New-Item -ItemType Directory -Force -Path $Script:ArgusArtifactDir | Out-Null }
+    $safeScope = $PhaseScope -replace '[^A-Za-z0-9]', '-'
+    $catalogFile = Join-Path $Script:ArgusArtifactDir "target-schema-catalog-$safeScope.json"
+    $inventoryFile = Join-Path $Script:ArgusArtifactDir "target-schema-drift-$safeScope.json"
+    $catalog = Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "..\sql\target-schema-catalog.sql")
+    $catalog.Output | Set-Content -Path $catalogFile -Encoding utf8
+    $drift = Invoke-ArgusBlockingCommand -Phase "$PhaseScope/TargetSchemaDrift" -Command "node" `
+        -Arguments @((Join-Path $PSScriptRoot "compare-target-schema.mjs"), "--catalog", $catalogFile, "--out", $inventoryFile) `
+        -FailureCode "TARGET_SCHEMA_DRIFT_FAIL" -TimeoutSeconds 120
+    foreach ($l in @($drift.Output | Where-Object { "$_" -match '^TARGET_SCHEMA_DRIFT' })) { Write-ArgusLog "[$PhaseScope] $l" }
+    Add-ArgusPhaseResult -Name "$PhaseScope/TargetSchemaDrift" -ExitCode $drift.ExitCode -Passed $true `
+        -Evidence "inventory equals scripts/migration-rehearsal/target-schema-drift-baseline.json" | Out-Null
+}
+
+function Assert-ArgusLegacyFingerprintUnchanged {
+    param(
+        [Parameter(Mandatory)][string]$Phase,
+        [Parameter(Mandatory)][string[]]$BaselineFingerprint
+    )
+    $now = Get-ArgusLegacyFingerprint
+    $changed = @(Compare-Object -ReferenceObject $BaselineFingerprint -DifferenceObject $now | ForEach-Object { "$($_.SideIndicator) $($_.InputObject)" })
+    $ok = $changed.Count -eq 0
+    Add-ArgusPhaseResult -Name $Phase -ExitCode ([int](-not $ok)) -Passed $ok -FailureCode "LEGACY_FINGERPRINT_CHANGED" `
+        -Evidence "$($now.Count) legacy tables, count+md5 identical to the loaded baseline" | Out-Null
+    if (-not $ok) {
+        throw "LEGACY_FINGERPRINT_CHANGED - phase '$Phase': the target migration modified legacy data: $($changed -join ' ; ')"
+    }
+    Write-ArgusLog "LEGACY_FINGERPRINT_UNCHANGED ($Phase, $($now.Count) tables)"
 }
 
 function Get-ArgusTestFileCount {
@@ -790,7 +906,22 @@ function New-ArgusEnvLocalFile {
     # runs. Never written to a tracked path (.env.argus-migration.local is
     # excluded via .git/info/exclude, not .gitignore, per the mandate).
     $password = New-ArgusLocalPassword
+    # 55432 by default (non-productive, unambiguous). Overridable via
+    # ARGUS_REHEARSAL_PORT because a Windows host can have the port inside a
+    # Hyper-V/WinNAT reserved range (`netsh interface ipv4 show
+    # excludedportrange protocol=tcp`), where `docker compose up` fails with
+    # "ports are not available ... bind: permission denied". That is a host
+    # condition, not a rehearsal defect, and it must not require editing
+    # tracked files to work around. Loopback-only either way.
     $port = 55432
+    if ($env:ARGUS_REHEARSAL_PORT) {
+        $parsedPort = 0
+        if (-not [int]::TryParse($env:ARGUS_REHEARSAL_PORT, [ref]$parsedPort) -or $parsedPort -lt 1024 -or $parsedPort -gt 65535) {
+            throw "REHEARSAL_PORT_INVALID - ARGUS_REHEARSAL_PORT must be an integer in 1024..65535, got '$($env:ARGUS_REHEARSAL_PORT)'."
+        }
+        $port = $parsedPort
+        Write-ArgusLog "ARGUS_REHEARSAL_PORT override in effect: $port (still 127.0.0.1 only)."
+    }
     $dbName = "argus_migration_rehearsal"
     $user = "argus_rehearsal_user"
     $databaseUrl = "postgresql://$user`:$password@127.0.0.1:$port/$dbName"
@@ -804,11 +935,20 @@ function New-ArgusEnvLocalFile {
     # audit writer and the assignment administrator use.
     $appPassword = New-ArgusLocalPassword
     $adminPassword = New-ArgusLocalPassword
+    # Per-run key for the AuditLog backfill's integrity values (010). Never a
+    # constant in SQL: the backfill reads it from the session
+    # (argus.audit_integrity_key) and fails closed without it. The same value
+    # is what src/lib/database-target/security.ts reads, so the app's own
+    # verifier can check every migrated row.
+    $auditIntegrityKey = New-ArgusLocalPassword
 
     $lines = @(
         "ARGUS_MIGRATION_LOCAL_ONLY=true",
         "POSTGRES_HOST=127.0.0.1",
         "POSTGRES_PORT=$port",
+        # docker-compose.argus-migration.yml reads this via --env-file, so the
+        # published port and every URL above always agree.
+        "ARGUS_REHEARSAL_PORT=$port",
         "POSTGRES_DB=$dbName",
         "POSTGRES_USER=$user",
         "POSTGRES_PASSWORD=$password",
@@ -816,7 +956,9 @@ function New-ArgusEnvLocalFile {
         "ARGUS_APP_API_PASSWORD=$appPassword",
         "ARGUS_ACCESS_ADMIN_PASSWORD=$adminPassword",
         "TARGET_RUNTIME_DATABASE_URL=postgresql://app_api`:$appPassword@127.0.0.1:$port/$dbName",
-        "TARGET_ADMIN_DATABASE_URL=postgresql://access_admin`:$adminPassword@127.0.0.1:$port/$dbName"
+        "TARGET_ADMIN_DATABASE_URL=postgresql://access_admin`:$adminPassword@127.0.0.1:$port/$dbName",
+        "ARGUS_AUDIT_INTEGRITY_KEY_DEV=$auditIntegrityKey",
+        "ARGUS_AUDIT_INTEGRITY_KEY_ID=rehearsal-local-per-run"
     )
     Set-Content -Path $Script:ArgusEnvLocalFile -Value $lines -Encoding utf8 -NoNewline:$false
     Write-ArgusLog "Generated fresh .env.argus-migration.local (password not logged)."
@@ -862,7 +1004,15 @@ function Invoke-ArgusPsql {
         [string]$SqlFile,
         [string]$SqlText,
         [string]$Database = $env:POSTGRES_DB,
-        [switch]$AllowFailure
+        [switch]$AllowFailure,
+        # Session TimeZone (PGTZ). Backfills run under a deliberately non-UTC
+        # zone so that any implicit timestamp -> timestamptz conversion of a
+        # legacy `timestamp without time zone` column shows up as a shifted
+        # instant instead of passing silently because production is UTC.
+        [string]$TimeZone,
+        # Session-level settings passed as PGOPTIONS (-c name=value), e.g. the
+        # per-run audit integrity key. Values are redacted from every log.
+        [hashtable]$SessionSettings
     )
     Assert-ArgusLocalOnly
 
@@ -870,9 +1020,16 @@ function Invoke-ArgusPsql {
         throw "Invoke-ArgusPsql requires either -SqlFile or -SqlText."
     }
 
-    $psqlArgs = @(
-        "exec", "-i",
-        "-e", "PGPASSWORD=$($env:POSTGRES_PASSWORD)",
+    $envArgs = @("-e", "PGPASSWORD=$($env:POSTGRES_PASSWORD)")
+    if ($TimeZone) { $envArgs += @("-e", "PGTZ=$TimeZone") }
+    if ($SessionSettings -and $SessionSettings.Count -gt 0) {
+        $opts = ($SessionSettings.GetEnumerator() | Sort-Object Name | ForEach-Object {
+            if ($_.Value -match '\s') { throw "Session setting $($_.Name) must not contain whitespace." }
+            "-c $($_.Name)=$($_.Value)"
+        }) -join ' '
+        $envArgs += @("-e", "PGOPTIONS=$opts")
+    }
+    $psqlArgs = @("exec", "-i") + $envArgs + @(
         $Script:ArgusContainerName,
         "psql", "-U", $env:POSTGRES_USER, "-d", $Database,
         "-v", "ON_ERROR_STOP=1", "--no-psqlrc"

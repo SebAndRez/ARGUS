@@ -703,7 +703,7 @@ RETURNS TABLE (
   jurisdiction_resolvable  boolean
 )
 LANGUAGE plpgsql STABLE SECURITY DEFINER
-SET search_path = pg_catalog, public
+SET search_path = pg_catalog, public, extensions
 AS $fn$
 DECLARE
   v_source_area double precision;
@@ -814,7 +814,7 @@ $fn$;
 CREATE OR REPLACE FUNCTION geo.fn_incident_resolution_geography(p_incident_id uuid)
 RETURNS geography
 LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = pg_catalog, public
+SET search_path = pg_catalog, public, extensions
 AS $$
   SELECT coalesce(
     (SELECT aav.geometry
@@ -836,7 +836,7 @@ $$;
 CREATE OR REPLACE FUNCTION geo.fn_candidate_resolution_geography(p_incident_candidate_id uuid)
 RETURNS geography
 LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = pg_catalog, public
+SET search_path = pg_catalog, public, extensions
 AS $$
   SELECT ST_Collect(o.location::geometry)::geography
     FROM incident.incident_candidate_observations ico
@@ -907,7 +907,7 @@ CREATE OR REPLACE FUNCTION geo.fn_audit_incident_zone_change(
 )
 RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, security, public
+SET search_path = pg_catalog, security, public, extensions
 AS $fn$
 DECLARE
   v_now timestamptz := now();

@@ -181,9 +181,11 @@ DECLARE
   v_legacy_rows    bigint;
   v_target_rows    bigint;
 BEGIN
-  SELECT string_agg(to_char(m, 'YYYY-MM'), ',') INTO v_missing_months
+  SELECT string_agg(to_char(m AT TIME ZONE 'UTC', 'YYYY-MM'), ',') INTO v_missing_months
   FROM (
-    SELECT DISTINCT date_trunc('month', al."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS m
+    -- legacy "createdAt" is timestamp WITHOUT time zone in UTC (Paso 3): truncate
+    -- the wall value, then read it as UTC — no session-TimeZone dependency.
+    SELECT DISTINCT date_trunc('month', al."createdAt") AT TIME ZONE 'UTC' AS m
     FROM "AuditLog" al WHERE al."createdAt" IS NOT NULL
   ) s
   WHERE NOT EXISTS (
@@ -284,8 +286,8 @@ BEGIN;
 -- for a machine identity the subject's own id IS its actor id.
 CREATE TEMP TABLE audit_partition_actors (k text PRIMARY KEY, v uuid);
 GRANT SELECT ON audit_partition_actors TO app_api, audit_reader, readonly_inspector;
-INSERT INTO identity.people (id, legal_name)
-VALUES ('d1000000-0000-0000-0000-0000000000a7', 'Audit Partition Fixture Reader')
+INSERT INTO identity.people (id, legal_name, display_alias)
+VALUES ('d1000000-0000-0000-0000-0000000000a7', 'Audit Partition Fixture Reader', 'Audit Partition Fixture Reader')
 ON CONFLICT (id) DO NOTHING;
 INSERT INTO audit_partition_actors (k, v)
 VALUES ('service', security.fn_register_access_subject('SYSTEM', NULL, NULL, NULL, 'ARGUS_AUDIT_PARTITION_PROBE')),

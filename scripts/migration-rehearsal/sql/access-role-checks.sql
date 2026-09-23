@@ -38,10 +38,10 @@ CREATE TEMP TABLE access_check_ids (k text PRIMARY KEY, v uuid);
 GRANT SELECT ON access_check_ids
   TO app_api, ingest_worker, jobs_worker, audit_reader, readonly_inspector, access_admin;
 
-INSERT INTO identity.people (id, legal_name) VALUES
-  ('e1000000-0000-0000-0000-00000000000a', 'Access Fixture Person A'),
-  ('e1000000-0000-0000-0000-00000000000b', 'Access Fixture Person B');
-INSERT INTO institution.organizations (id, name, status) VALUES
+INSERT INTO identity.people (id, legal_name, display_alias) VALUES
+  ('e1000000-0000-0000-0000-00000000000a', 'Access Fixture Person A', 'Access Fixture Person A'),
+  ('e1000000-0000-0000-0000-00000000000b', 'Access Fixture Person B', 'Access Fixture Person B');
+INSERT INTO institution.organizations (id, legal_name, status) VALUES
   ('e2000000-0000-0000-0000-00000000000a', 'Access Fixture Institution A', 'ACTIVE'),
   ('e2000000-0000-0000-0000-00000000000b', 'Access Fixture Institution B', 'ACTIVE');
 

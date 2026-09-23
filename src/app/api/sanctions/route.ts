@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
 import { requireOperator } from "@/lib/security/apiGuards";
 import { logAuditEvent, buildSanctionAuditMetadata } from "@/services/auditService";
 
@@ -79,6 +80,9 @@ export async function POST(req: Request) {
       nextAccountStatus: accountStatus,
     }),
   });
+
+  // Shadow write (Paso 5): accountStatus maps to identity.user_accounts.status.
+  await shadowWriteAfterLegacyWrite("User", [userId]);
 
   return NextResponse.json({ sanction });
 }

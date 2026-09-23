@@ -62,16 +62,15 @@ INSERT INTO identity.people (id, legal_name, display_alias, national_id_hash, co
   ('b0000000-0000-0000-0000-000000000002', 'Persona de Ensayo Dos', 'ensayo.dos', 'synthetic-hash-0000002', '{"note":"synthetic fixture, not a real person"}'::jsonb, now())
 ON CONFLICT (id) DO NOTHING;
 
--- email is NOT NULL with no default (020_identity/migration.sql:110-128).
--- Distinct from fixtures/000_legacy_synthetic_fixtures.sql's User rows,
--- whose emails already flow into identity.user_accounts via Wave 020's real
--- backfill by the time this file runs.
-INSERT INTO identity.user_accounts (id, person_id, email, status, auth_provider, updated_at) VALUES
-  ('b0000000-0000-0000-0000-000000000011', 'b0000000-0000-0000-0000-000000000001', 'fixture-001-ensayo-uno@example.invalid', 'ACTIVE', 'synthetic-local', now())
+-- identity.user_accounts has no email column since the Paso 6A reconciliation
+-- (020|identity.user_accounts): contact data lives in identity.people.contact_info,
+-- written just above for this same fixture person.
+INSERT INTO identity.user_accounts (id, person_id, status, auth_provider, updated_at) VALUES
+  ('b0000000-0000-0000-0000-000000000011', 'b0000000-0000-0000-0000-000000000001', 'ACTIVE', 'synthetic-local', now())
 ON CONFLICT (id) DO NOTHING;
 
--- column is trust_domain, not domain (020_identity/migration.sql:188-201)
-INSERT INTO identity.reputation_events (id, person_id, trust_domain, delta, reason, occurred_at) VALUES
+-- the column is `domain` since the Paso 6A reconciliation
+INSERT INTO identity.reputation_events (id, person_id, domain, delta, reason, occurred_at) VALUES
   ('b0000000-0000-0000-0000-000000000021', 'b0000000-0000-0000-0000-000000000001', 'GENERAL', 1.500, 'Ensayo local — evento sintético de reputación', now())
 ON CONFLICT (id) DO NOTHING;
 
@@ -83,15 +82,14 @@ ON CONFLICT (id) DO NOTHING;
 -- 3. Institution (schema institution) — Organization ("Institution" logical name), InstitutionalMembership
 -- =============================================================================
 
--- institution.organizations has "name" (not legal_name), no
--- has_formal_authority, and only created_at (not updated_at)
--- (020_identity/migration.sql:241-248)
-INSERT INTO institution.organizations (id, name, registration_identifier, status, created_at) VALUES
+-- `legal_name`, `has_formal_authority` and `updated_at` exist since the Paso 6A
+-- reconciliation (020|institution.organizations).
+INSERT INTO institution.organizations (id, legal_name, registration_identifier, status, created_at) VALUES
   ('c0000000-0000-0000-0000-000000000001', 'Organización de Ensayo', 'TEST-ORG-0001', 'ACTIVE', now())
 ON CONFLICT (id) DO NOTHING;
 
--- column is role_label, not role_title (020_identity/migration.sql:261-273)
-INSERT INTO institution.institutional_memberships (id, person_id, organization_id, role_label, status, effective_from) VALUES
+-- the column is `role_title` (NOT NULL) since the Paso 6A reconciliation
+INSERT INTO institution.institutional_memberships (id, person_id, organization_id, role_title, status, effective_from) VALUES
   ('c0000000-0000-0000-0000-000000000011', 'b0000000-0000-0000-0000-000000000001', 'c0000000-0000-0000-0000-000000000001', 'Coordinador de Ensayo', 'ACTIVE', now())
 ON CONFLICT (id) DO NOTHING;
 
@@ -190,11 +188,10 @@ INSERT INTO evidence.observations (
 )
 ON CONFLICT (id) DO NOTHING;
 
--- evidence.evidence_records, post-reconciliation: column is chain_of_custody
--- (jsonb NOT NULL, not structured_content); evidence.evidence_origin_enum is
--- PRIMARY/DERIVED (matches schema.target.prisma's OriginType, not
--- INTERNAL/EXTERNAL).
-INSERT INTO evidence.evidence_records (id, evidence_origin, classification, chain_of_custody) VALUES
+-- evidence.evidence_records: chain_of_custody is jsonb NOT NULL, and the
+-- column that carries evidence.evidence_origin_enum (PRIMARY/DERIVED) is
+-- `origin_type` since the Paso 6A reconciliation (030|evidence.evidence_records).
+INSERT INTO evidence.evidence_records (id, origin_type, classification, chain_of_custody) VALUES
   ('f0000000-0000-0000-0000-000000000011', 'PRIMARY', 'OPERATIONAL',
    '{"chain":[{"step_kind":"synthetic_fixture","actor_type":"PERSON"}]}'::jsonb)
 ON CONFLICT (id) DO NOTHING;
@@ -240,18 +237,19 @@ INSERT INTO help.help_requests (id, incident_id, requester_person_id, status, cl
    'RECEIVED', 'SENSITIVE', ST_GeogFromText('POINT(0.003 0.003)'))
 ON CONFLICT (id) DO NOTHING;
 
--- column is status (not affectation_status), and help.affected_people has no
--- classification column (050_help_mission/migration.sql:185-193)
-INSERT INTO help.affected_people (id, help_request_id, person_id, status) VALUES
+-- the column is `affectation_status` since the Paso 6A reconciliation
+-- (050|help.affected_people); classification has a DEFAULT, so it is omitted.
+INSERT INTO help.affected_people (id, help_request_id, person_id, affectation_status) VALUES
   ('20000000-0000-0000-0000-000000000011', '20000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000002', 'AT_RISK')
 ON CONFLICT (id) DO NOTHING;
 
 -- help.operational_needs has no help_request_id/classification columns
--- (050_help_mission/migration.sql:175-182); help.operational_need_status_enum
--- has no 'IDENTIFIED' label (OPEN/IN_PROGRESS/FULFILLED/CANCELLED only).
+-- help.operational_need_status_enum is IDENTIFIED/IN_PROGRESS/CONVERTED/
+-- RESOLVED since the Paso 6A reconciliation (050|help.operational_need_status_enum),
+-- and classification has a DEFAULT, so it is omitted here.
 INSERT INTO help.operational_needs (id, incident_id, description, status) VALUES
   ('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-000000000021',
-   'Necesidad sintética de ensayo — evacuación', 'OPEN')
+   'Necesidad sintética de ensayo — evacuación', 'IDENTIFIED')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO mission.missions (id, operational_need_id, status, classification, objective) VALUES

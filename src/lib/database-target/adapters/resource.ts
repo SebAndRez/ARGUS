@@ -152,7 +152,7 @@ export function shadowWriteResource(
   }
   const target = criticalPoiToTarget(record, classifier);
   return {
-    kind: "PERSISTED",
+    kind: "TRANSFORMED",
     target,
     legacyId: record.id,
     migrationConfidence: target.route === "A" ? "HIGH" : target.route === "D" ? "LOW" : "MEDIUM",

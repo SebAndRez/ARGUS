@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { analyzeHelpRequest } from "@/services/crisisAnalysisService";
 import { getCurrentUser } from "@/services/authService";
 import { logAuditEvent } from "@/services/auditService";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
+import { observeDualRead } from "@/lib/database-target/dual-read/legacyDualRead";
 import { hasAnyRole } from "@/lib/security/rbac";
 import { OPERATOR_ROLES } from "@/lib/security/apiGuards";
 import { toOperatorHelpRequest, toPublicHelpRequest } from "@/lib/security/incidentDto";
@@ -41,6 +43,17 @@ export async function GET(request: NextRequest) {
   const payload = canViewFull
     ? helpRequests.map(toOperatorHelpRequest)
     : helpRequests.map(toPublicHelpRequest);
+
+  // Dual-read (Paso 5): compares the rows just read against their target
+  // counterparts. The payload above is already built from legacy and is never
+  // touched; the comparison result is only logged/metric'd (field names and
+  // codes, never values) and is never returned to any caller. Off by default:
+  // it needs BOTH ARGUS_TARGET_DB_DUAL_READ_ENABLED and
+  // ARGUS_TARGET_DB_READ_ENABLED, and it runs in a READ ONLY transaction.
+  await observeDualRead(
+    "HelpRequest",
+    helpRequests.map((row) => row.id)
+  );
 
   const response = NextResponse.json({ helpRequests: payload });
   if (canViewFull) {
@@ -98,6 +111,12 @@ export async function POST(req: Request) {
     targetId: helpRequest.id,
     metadata: { category, restrictedMode },
   });
+
+  // Shadow write (Paso 5): mirrors the committed legacy HelpRequest into
+  // help.help_requests + help.affected_people through Wave 050's own sync
+  // function. Legacy stays the source of truth; this never throws and never
+  // changes the response the caller gets.
+  await shadowWriteAfterLegacyWrite("HelpRequest", [helpRequest.id]);
 
   return NextResponse.json({ helpRequest, restrictedMode });
 }

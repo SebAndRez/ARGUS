@@ -155,16 +155,23 @@ try {
     if (-not (Test-Path $Script:ArgusArtifactDir)) { New-Item -ItemType Directory -Force -Path $Script:ArgusArtifactDir | Out-Null }
     $emptyInventory.Output | Set-Content -Path $baselineInventoryPath -Encoding utf8
 
-    # Legacy-schema synthetic fixtures (public schema) - loaded here, after the
-    # empty-catalog snapshot so that snapshot stays genuinely empty, and before
-    # any wave applies, since Wave 010's backfill.sql is the first to SELECT
-    # FROM legacy tables (see fixtures/000_legacy_synthetic_fixtures.sql header).
-    Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "fixtures\000_legacy_synthetic_fixtures.sql") | Out-Null
+    # Realistic legacy baseline (public schema): the 13 real prisma migrations
+    # in production order + _prisma_migrations + production-shaped data
+    # (legacy-baseline/). Loaded after the empty-catalog snapshot so that
+    # snapshot stays genuinely empty, and before any wave applies, since Wave
+    # 010's backfill.sql is the first to SELECT FROM legacy tables. Its
+    # fingerprint is the reference every later LegacyFingerprint phase checks.
+    Import-ArgusLegacyBaseline
+    $legacyFingerprint = Get-ArgusLegacyFingerprint
+    $overallResult.LegacyFingerprint = $legacyFingerprint
 
     Write-ArgusLog "=== Fase 9: applying all 11 waves, 1st install ==="
     $overallResult.FirstInstallWaves = Invoke-ArgusWaveCycle
     Add-ArgusPhaseResult -Name "FirstInstallWaves" -ExitCode 0 -Passed $true `
         -Evidence "$(@($overallResult.FirstInstallWaves).Count) waves applied 000->100" | Out-Null
+    # Measured BEFORE Test-ArgusRehearsal: its suites write target rows of
+    # their own, which must not be mistaken for (or mask) backfill results.
+    Test-ArgusLegacyMigration -PhaseScope "FirstInstall" -BaselineFingerprint $legacyFingerprint
 
     # ---- Fase 10-12,16,17: fixtures, RLS, physical validations, prisma, repo tests ----
     $overallResult.FirstInstallTests = & (Join-Path $PSScriptRoot "Test-ArgusRehearsal.ps1") -PhaseScope "FirstInstall"
@@ -205,6 +212,8 @@ try {
     Add-ArgusPhaseResult -Name "RollbackZeroResidue" -ExitCode $residueExit -Passed $true `
         -Evidence "$residueCountLine" | Out-Null
     Write-ArgusLog "ROLLBACK_ZERO_RESIDUE_PASS"
+    # Rolling the target back must leave every legacy row exactly as loaded.
+    Assert-ArgusLegacyFingerprintUnchanged -Phase "RollbackLegacyFingerprint" -BaselineFingerprint $legacyFingerprint
 
     # ---- Audit partition rollback: zero partitions, zero functions ----
     # The generic residue classifier above would already catch a surviving
@@ -278,16 +287,22 @@ try {
     $overallResult.ReapplyWaves = Invoke-ArgusWaveCycle
     Add-ArgusPhaseResult -Name "ReapplyWaves" -ExitCode 0 -Passed $true `
         -Evidence "$(@($overallResult.ReapplyWaves).Count) waves reapplied 000->100 on the same volume" | Out-Null
+    Test-ArgusLegacyMigration -PhaseScope "Reapply" -BaselineFingerprint $legacyFingerprint
     $overallResult.ReapplyTests = & (Join-Path $PSScriptRoot "Test-ArgusRehearsal.ps1") -SkipRepoTests -PhaseScope "Reapply"
 
     if (-not $SkipSecondInstall) {
         # ---- Fase 15: destroy volume completely, fresh install from scratch ----
         Write-ArgusLog "=== Fase 15: destroying volume, fresh install from a genuinely empty database ==="
         & (Join-Path $PSScriptRoot "Reset-ArgusRehearsal.ps1")
-        Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "fixtures\000_legacy_synthetic_fixtures.sql") | Out-Null
+        Import-ArgusLegacyBaseline
+        $secondFingerprint = Get-ArgusLegacyFingerprint
+        if (($secondFingerprint -join "`n") -ne ($legacyFingerprint -join "`n")) {
+            throw "LEGACY_BASELINE_NOT_DETERMINISTIC - the second install loaded a different legacy baseline than the first."
+        }
         $overallResult.SecondInstallWaves = Invoke-ArgusWaveCycle
         Add-ArgusPhaseResult -Name "SecondInstallWaves" -ExitCode 0 -Passed $true `
             -Evidence "$(@($overallResult.SecondInstallWaves).Count) waves applied 000->100 on a genuinely empty volume" | Out-Null
+        Test-ArgusLegacyMigration -PhaseScope "SecondInstall" -BaselineFingerprint $legacyFingerprint
         $overallResult.SecondInstallTests = & (Join-Path $PSScriptRoot "Test-ArgusRehearsal.ps1") -PhaseScope "SecondInstall"
     }
 
@@ -380,6 +395,9 @@ try {
         "CleanTargetFiles",
         "DockerReady",
         "FirstInstallWaves",
+        "FirstInstall/LegacyDataInvariants",
+        "FirstInstall/LegacyFingerprint",
+        "FirstInstall/TargetSchemaDrift",
         "FirstInstall/PhysicalValidations",
         "FirstInstall/RlsRuntimeChecks",
         "FirstInstall/RlsMatrix",
@@ -387,31 +405,50 @@ try {
         "FirstInstall/AuditPartitionConcurrency",
         "FirstInstall/AccessRoleChecks",
         "FirstInstall/AuditWriterPrincipal",
+        "FirstInstall/LegacyAuditIntegrity",
         "FirstInstall/IncidentZoneChecks",
         "FirstInstall/IncidentZoneTests",
+        "FirstInstall/SyncPrincipal",
+        "FirstInstall/ShadowDualRead",
         "FirstInstall/PrismaValidate",
         "FirstInstall/TargetTests",
         "FirstInstall/P0Tests",
         "RollbackWaves",
         "RollbackZeroResidue",
+        "RollbackLegacyFingerprint",
         "AuditPartitionRollback",
         "AccessRoleRollback",
         "IncidentZoneRollback",
         "ReapplyWaves",
+        "Reapply/LegacyDataInvariants",
+        "Reapply/LegacyFingerprint",
+        "Reapply/TargetSchemaDrift",
         "Reapply/RlsMatrix",
         "Reapply/AuditPartitionChecks",
         "Reapply/AccessRoleChecks",
-        "Reapply/IncidentZoneChecks"
+        "Reapply/IncidentZoneChecks",
+        # The Paso 5 simulation again, on the REAPPLIED database: this is the
+        # "second execution / idempotency" leg — shadow-write must still produce
+        # no duplicates and the reconciliation must still come out clean after a
+        # full rollback and reinstall.
+        "Reapply/SyncPrincipal",
+        "Reapply/ShadowDualRead"
     )
     if (-not $SkipSecondInstall) {
         $requiredPhases += @(
             "SecondInstallWaves",
+            "SecondInstall/LegacyDataInvariants",
+            "SecondInstall/LegacyFingerprint",
+            "SecondInstall/TargetSchemaDrift",
             "SecondInstall/RlsMatrix",
             "SecondInstall/AuditPartitionChecks",
             "SecondInstall/AccessRoleChecks",
             "SecondInstall/IncidentZoneChecks",
+            "SecondInstall/SyncPrincipal",
+            "SecondInstall/ShadowDualRead",
             "SecondInstall/PrismaValidate",
             "SecondInstall/TargetTests",
+            "SecondInstall/LegacyAuditIntegrity",
             "SecondInstall/P0Tests"
         )
     }
@@ -428,10 +465,17 @@ try {
     if ($ledger["FirstInstall/P0Tests"].Passed)     { $blockingMarkers += "P0_CANONICAL_SUITE_PASS" }
     $blockingMarkers += "REHEARSAL_REQUIRED_PHASES_PASS"
     if ($ledger["FailurePropagationSelfTest"].Passed) { $blockingMarkers += "REHEARSAL_FAILURE_PROPAGATION_PASS" }
+    # Paso 5: the shadow-write/dual-read simulation and the blocked cutover
+    # attempt. Derived from the ledger like every other marker, so it can only
+    # appear when the phase actually ran and passed.
+    if ($ledger["FirstInstall/SyncPrincipal"].Passed)   { $blockingMarkers += "SYNC_PRINCIPAL_PASS" }
+    if ($ledger["FirstInstall/ShadowDualRead"].Passed) { $blockingMarkers += "PASO5_SHADOW_DUAL_READ_PASS" }
+    if ($ledger["Reapply/ShadowDualRead"].Passed)      { $blockingMarkers += "PASO5_IDEMPOTENT_AFTER_REAPPLY_PASS" }
 
     $expectedBlockingMarkers = @(
         "TARGET_TESTS_BLOCKING_PASS",
         "P0_CANONICAL_SUITE_PASS",
+        "SYNC_PRINCIPAL_PASS",
         "REHEARSAL_REQUIRED_PHASES_PASS",
         "REHEARSAL_FAILURE_PROPAGATION_PASS"
     )

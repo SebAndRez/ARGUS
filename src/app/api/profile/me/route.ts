@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { countries, getCountryName } from "@/data/countries";
 import { getDefaultUnitSystem } from "@/lib/units/unitSystem";
 import { prisma } from "@/lib/prisma";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
 import { getCurrentUser } from "@/services/authService";
 import { logAuditEvent } from "@/services/auditService";
 
@@ -108,6 +109,9 @@ export async function PATCH(request: Request) {
     targetId: user.id,
     metadata: { fields: Object.keys(data) },
   });
+
+  // Shadow write (Paso 5) — mapped profile columns converge in place.
+  await shadowWriteAfterLegacyWrite("User", [user.id]);
 
   return NextResponse.json({ profile: sanitizeProfile(updatedUser) });
 }

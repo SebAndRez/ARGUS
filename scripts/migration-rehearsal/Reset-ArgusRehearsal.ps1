@@ -67,6 +67,17 @@ try {
 
     $versionCheck = Invoke-ArgusPsql -SqlText "SELECT version(); SELECT PostGIS_Full_Version();"
     Write-ArgusLog "Fresh instance version check:`n$($versionCheck.Output)"
+
+    # The image's own PostGIS was only needed for the health probe above. From
+    # here on the instance must look like production (Paso 3 preflight):
+    # PostGIS absent, pgcrypto in `extensions`, search_path with `extensions`,
+    # UTC, API roles, rls_auto_enable event trigger. Done BEFORE any caller
+    # takes the empty-catalog snapshot, so none of it is ever ARGUS residue.
+    $platform = Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "legacy-baseline\00_supabase_platform.sql")
+    if (($platform.Output -join "`n") -notmatch "SUPABASE_PLATFORM_EMULATION_PASS") {
+        throw "SUPABASE_PLATFORM_EMULATION_FAIL - see migration-rehearsal-logs/psql-output.log"
+    }
+    Write-ArgusLog "SUPABASE_PLATFORM_EMULATION_PASS"
 } finally {
     Pop-Location
 }

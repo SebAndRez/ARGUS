@@ -1,5 +1,6 @@
 import type { CriticalPoi as CriticalPoiRow, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
 import type {
   CriticalPoi,
   CriticalPoiBoundingBox,
@@ -62,10 +63,11 @@ export async function upsertCriticalPois(pois: UpsertCriticalPoiInput[]): Promis
   // procesa en tandas chicas y secuenciales entre si.
   const BATCH_SIZE = 8;
   let upsertedCount = 0;
+  const upsertedIds: string[] = [];
   try {
     for (let start = 0; start < pois.length; start += BATCH_SIZE) {
       const batch = pois.slice(start, start + BATCH_SIZE);
-      await Promise.all(
+      const rows = await Promise.all(
         batch.map((poi) =>
           prisma.criticalPoi.upsert({
             // Prisma's compound-unique upsert.where requires a defined value even though
@@ -120,11 +122,21 @@ export async function upsertCriticalPois(pois: UpsertCriticalPoiInput[]): Promis
         )
       );
       upsertedCount += batch.length;
+      upsertedIds.push(...rows.map((row) => row.id));
     }
-    return { upsertedCount, error: null };
   } catch (error) {
     return { upsertedCount, error: error instanceof Error ? error.message : "Critical POI persistence failed." };
   }
+
+  // Shadow write (Paso 5), outside the try so the target side can never change
+  // the result above: Wave 060's own sync function routes each POI exactly as
+  // the backfill does — route A (resource.resources + .facilities) when it has
+  // managed operational state, otherwise the D-06 review queue. A POI that
+  // would CHANGE route comes back as BLOCKED_RECLASSIFICATION, because D-06
+  // owns that call.
+  await shadowWriteAfterLegacyWrite("CriticalPoi", upsertedIds);
+
+  return { upsertedCount, error: null };
 }
 
 export interface CriticalPoiQueryOptions {

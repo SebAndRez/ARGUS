@@ -134,7 +134,36 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_audit_logs_legacy ON security.audit_logs (l
 --     only ever READ from it;
 --   * idempotent: fn_ensure_audit_log_partition returns ALREADY_EXISTS on
 --     every re-run, so the second backfill pass creates nothing new.
-DO $$
+--
+-- Legacy "createdAt" is `timestamp without time zone` holding UTC wall time
+-- (Paso 3 preflight). The month is therefore taken from the legacy value as
+-- is and then EXPLICITLY interpreted as UTC. Never rely on an implicit
+-- timestamp -> timestamptz cast: that uses the session TimeZone, and a
+-- non-UTC session moves 2026-07-31 23:30 into August (reproduced).
+-- ONE MAPPING, TWO CALLERS (Paso 5): everything from the partition
+-- preparation to the signed INSERT lives in
+-- migration_meta.fn_sync_audit_logs(p_ids) — NULL = every row. This file
+-- calls it with NULL (the backfill); the application's shadow-write calls it
+-- with the id auditService just wrote, after setting the same session key.
+-- AuditLog is insert-only in legacy, so the function has no UPDATE path: a
+-- row is INSERTED once and UNCHANGED forever (an audit row must never be
+-- rewritten, which is also why its integrity value stays verifiable).
+-- ============================================================
+-- Paso 6A: sync_worker is the runtime principal for every fn_sync_* in
+-- this file. Each function is declared SECURITY DEFINER and granted
+-- EXECUTE to sync_worker alone (PUBLIC is revoked first, and app_api /
+-- ingest_worker / jobs_worker are never granted). sync_worker holds no
+-- table privilege in any target schema, so this EXECUTE is its only way
+-- in, and what it can do through it is exactly the mapping written here —
+-- for legacy ids that already exist, with no caller-supplied SQL.
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION migration_meta.fn_sync_audit_logs(p_ids text[])
+RETURNS TABLE (source_table text, legacy_record_id text, target_table text, action text, detail text)
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public, extensions
+AS $fn$
+#variable_conflict use_column
 DECLARE
   v_month   timestamptz;
   v_result  text;
@@ -142,9 +171,10 @@ DECLARE
   v_existing integer := 0;
 BEGIN
   FOR v_month IN
-    SELECT DISTINCT date_trunc('month', al."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+    SELECT DISTINCT date_trunc('month', al."createdAt") AT TIME ZONE 'UTC'
     FROM "AuditLog" al
     WHERE al."createdAt" IS NOT NULL
+      AND (p_ids IS NULL OR al.id = ANY(p_ids))
     ORDER BY 1
   LOOP
     v_result := security.fn_ensure_audit_log_partition(v_month);
@@ -153,94 +183,138 @@ BEGIN
     ELSE
       v_existing := v_existing + 1;
     END IF;
-    RAISE NOTICE 'ARGUS_BACKFILL_AUDIT_PARTITION % %', to_char(v_month, 'YYYY-MM'), v_result;
+    RAISE NOTICE 'ARGUS_BACKFILL_AUDIT_PARTITION % %', to_char(v_month AT TIME ZONE 'UTC', 'YYYY-MM'), v_result;
   END LOOP;
   RAISE NOTICE 'ARGUS_BACKFILL_AUDIT_PARTITIONS created=% already_existing=%', v_created, v_existing;
-END $$;
 
--- SQL_COMPLEMENTARY_REQUIRED: the actual HMAC chain computation
--- (integrity_algorithm='HMAC-SHA256', canonicalization_version=1) requires
--- an application-side or plpgsql routine not fully specified in any frozen
--- document beyond "digest || integrity_value_fila_anterior" — drafted here
--- as a placeholder INSERT shape, chain computation deferred to
--- implementation review.
-INSERT INTO security.audit_logs (
-  actor_type, actor_id, action, target_table, target_id, classification, result,
-  integrity_value, occurred_at,
+-- ------------------------------------------------------------
+-- 2.1 Integrity key: supplied by whoever runs the migration, never stored in
+-- SQL. The previous draft signed with a hardcoded placeholder literal; that
+-- value is gone. Without argus.audit_integrity_key AND
+-- argus.audit_integrity_key_id in the session (e.g.
+-- PGOPTIONS="-c argus.audit_integrity_key=... -c argus.audit_integrity_key_id=..."),
+-- the backfill fails closed before writing anything.
+-- ------------------------------------------------------------
+  IF (SELECT count(*) FROM "AuditLog" al WHERE p_ids IS NULL OR al.id = ANY(p_ids)) > 0 AND (
+       coalesce(current_setting('argus.audit_integrity_key', true), '') = ''
+    OR coalesce(current_setting('argus.audit_integrity_key_id', true), '') = '') THEN
+    RAISE EXCEPTION 'AUDIT_INTEGRITY_KEY_MISSING: set argus.audit_integrity_key and argus.audit_integrity_key_id for this session; refusing to sign migrated audit rows without a real key';
+  END IF;
+
+-- ------------------------------------------------------------
+-- 2.2 security.audit_logs <- AuditLog
+-- ------------------------------------------------------------
+-- * Legacy ids are cuids. actor_id/target_id (polymorphic uuids, no FK) are
+--   derived with migration_meta.fn_legacy_uuid (same algorithm as
+--   deterministicId.ts) from 'legacy:<Table>:<cuid>', and the raw cuids are
+--   preserved in `context` (legacyActorUserId, legacyTargetId). Nothing is
+--   cast with ::uuid.
+-- * No actorUserId in legacy = the actor was not recorded: SYSTEM, flagged
+--   REQUIRES_REVIEW (never a fabricated PERSON with a nil id).
+-- * integrity_value = HMAC-SHA256 over the SAME canonical projection that
+--   src/lib/database-target/security.ts signs (computeAuditLogIntegrityValue:
+--   the 12 signable fields, keys sorted, nested keys sorted, JSON.stringify
+--   spacing), so the application's own verifier can check every migrated
+--   row. hmac() is schema-qualified: pgcrypto lives in `extensions`
+--   (Supabase layout, asserted by 010/migration.sql).
+  RETURN QUERY
+  WITH up AS (
+  INSERT INTO security.audit_logs AS t (
+  actor_type, actor_id, action, target_table, target_id, classification, context, result,
+  integrity_value, integrity_key_id, occurred_at,
   legacy_status, legacy_source, legacy_record_id, migration_confidence, migration_review_status
 )
 SELECT
-  -- security.actor_type_enum has no 'USER' label (see migration.sql:49-50:
-  -- PERSON/ORGANIZATION/SYSTEM/AUTOMATION_RULE/ANONYMOUS) - 'PERSON' is the
-  -- correct label for an end-user actor.
-  'PERSON'::security.actor_type_enum,
-  COALESCE(al."actorUserId", '00000000-0000-0000-0000-000000000000')::uuid,
-  al.action,
-  al."targetType",
-  COALESCE(al."targetId", '00000000-0000-0000-0000-000000000000')::uuid,
-  -- classification is NOT NULL with no default (migration.sql:395) - RESTRICTED
-  -- matches the conservative default used for audit-adjacent data elsewhere
-  -- in the package (e.g. 040_incident/backfill.sql's risk_assessments).
-  'RESTRICTED'::security.information_classification_enum,
-  COALESCE(al.metadata, '{}'),
-  encode(hmac(al.id || COALESCE(al.metadata, ''), 'PLACEHOLDER_KEY_REVIEW_REQUIRED', 'sha256'), 'hex'),
-  al."createdAt",
-  al.action,
-  'AuditLog',
-  al.id,
-  'HIGH',
-  'AUTO_MAPPED'
-FROM "AuditLog" al
-ORDER BY al."createdAt" ASC
+  s.actor_type::security.actor_type_enum, s.actor_id, s.action, s.target_table, s.target_id,
+  'RESTRICTED'::security.information_classification_enum, s.context, s.result,
+  encode(extensions.hmac(
+    '{"action":' || to_json(s.action)::text
+    || ',"actorId":' || to_json(s.actor_id::text)::text
+    || ',"actorType":' || to_json(s.actor_type)::text
+    || ',"afterState":null,"beforeState":null'
+    || ',"classification":"RESTRICTED"'
+    || ',"context":{"legacyActorUserId":' || coalesce(to_json(s.legacy_actor)::text, 'null')
+    ||            ',"legacyTargetId":' || coalesce(to_json(s.legacy_target)::text, 'null') || '}'
+    || ',"decision":null,"purpose":null'
+    || ',"result":' || to_json(s.result)::text
+    || ',"targetId":' || to_json(s.target_id::text)::text
+    || ',"targetTable":' || to_json(s.target_table)::text
+    || '}',
+    current_setting('argus.audit_integrity_key'), 'sha256'), 'hex'),
+  current_setting('argus.audit_integrity_key_id'),
+  s.occurred_at,
+  s.action, 'AuditLog', s.legacy_id,
+  CASE WHEN s.legacy_actor IS NULL THEN 'MEDIUM' ELSE 'HIGH' END,
+  CASE WHEN s.legacy_actor IS NULL THEN 'REQUIRES_REVIEW' ELSE 'AUTO_MAPPED' END
+FROM (
+  SELECT
+    al.id AS legacy_id,
+    al."actorUserId" AS legacy_actor,
+    al."targetId" AS legacy_target,
+    CASE WHEN al."actorUserId" IS NULL THEN 'SYSTEM' ELSE 'PERSON' END AS actor_type,
+    CASE WHEN al."actorUserId" IS NULL
+         THEN migration_meta.fn_legacy_uuid('legacy:AuditLog:unrecorded-actor')
+         ELSE migration_meta.fn_legacy_uuid('legacy:User:' || al."actorUserId") END AS actor_id,
+    al.action,
+    al."targetType" AS target_table,
+    CASE WHEN al."targetId" IS NULL
+         THEN migration_meta.fn_legacy_uuid('legacy:AuditLog:no-target:' || al.id)
+         ELSE migration_meta.fn_legacy_uuid('legacy:' || al."targetType" || ':' || al."targetId") END AS target_id,
+    jsonb_build_object('legacyActorUserId', al."actorUserId", 'legacyTargetId', al."targetId") AS context,
+    COALESCE(al.metadata, '{}') AS result,
+    al."createdAt" AT TIME ZONE 'UTC' AS occurred_at
+  FROM "AuditLog" al
+  WHERE p_ids IS NULL OR al.id = ANY(p_ids)
+) s
+ORDER BY s.occurred_at ASC
 -- Target matches uq_audit_logs_legacy exactly, including its WHERE predicate
 -- (a partial index can only arbitrate ON CONFLICT when the predicate is
 -- repeated here) - occurred_at was added to the index because audit_logs is
 -- partitioned by occurred_at and a unique index on a partitioned table must
 -- include every partition key column (see the index's own definition above).
-ON CONFLICT (legacy_source, legacy_record_id, occurred_at) WHERE legacy_record_id IS NOT NULL DO NOTHING;
--- NOTE: actor_id/target_id here assume the source ids are already valid
--- uuids post-Wave-020 identity migration (User.id -> identity.people.id
--- via legacy_record_id lookup) — a real run joins against
--- identity.people WHERE legacy_record_id = al."actorUserId", not a raw
--- cast, since "actorUserId" is a cuid(), not a uuid. Simplified here for
--- draft legibility; flagged for implementation review.
+ON CONFLICT (legacy_source, legacy_record_id, occurred_at) WHERE legacy_record_id IS NOT NULL DO NOTHING
+  RETURNING t.legacy_record_id AS lid
+  )
+  SELECT 'AuditLog'::text, al.id, 'security.audit_logs'::text,
+    CASE WHEN up.lid IS NULL THEN 'UNCHANGED' ELSE 'INSERTED' END, NULL::text
+  FROM "AuditLog" al LEFT JOIN up ON up.lid = al.id
+  WHERE p_ids IS NULL OR al.id = ANY(p_ids);
+
+  RETURN QUERY
+  SELECT 'AuditLog'::text, u.id, NULL::text, 'LEGACY_NOT_FOUND'::text, NULL::text
+  FROM unnest(p_ids) AS u(id)
+  WHERE NOT EXISTS (SELECT 1 FROM "AuditLog" al WHERE al.id = u.id);
+END
+$fn$;
+REVOKE ALL ON FUNCTION migration_meta.fn_sync_audit_logs(text[]) FROM PUBLIC;
+ALTER FUNCTION migration_meta.fn_sync_audit_logs(text[]) SECURITY DEFINER;
+GRANT EXECUTE ON FUNCTION migration_meta.fn_sync_audit_logs(text[]) TO sync_worker;
+
+SELECT source_table, target_table, action, count(*) AS rows FROM migration_meta.fn_sync_audit_logs(NULL) GROUP BY 1, 2, 3 ORDER BY 1, 2, 3;
 
 -- ============================================================
 -- 3. Row counts (before/after)
 -- ============================================================
-SELECT COUNT(*) AS audit_log_before FROM "AuditLog"; -- expect 52
-SELECT COUNT(*) AS audit_logs_after FROM security.audit_logs WHERE legacy_source = 'AuditLog'; -- expect 52
+SELECT COUNT(*) AS audit_log_before FROM "AuditLog";
+SELECT COUNT(*) AS audit_logs_after FROM security.audit_logs WHERE legacy_source = 'AuditLog';
 SELECT COUNT(*) AS hazard_types_after FROM governance.hazard_types; -- expect >=8 (seed floor)
 SELECT COUNT(*) AS feature_flags_after FROM governance.feature_flags; -- expect >=4 (seed floor)
 
 -- ============================================================
--- 4. Validation query
--- ============================================================
--- HMAC chain integrity re-derivation (structural sketch — verifies row
--- count parity and chronological monotonicity, not a full re-hash here):
-SELECT COUNT(*) FROM security.audit_logs a
-WHERE legacy_source = 'AuditLog'
-  AND NOT EXISTS (
-    SELECT 1 FROM security.audit_logs b
-    WHERE b.occurred_at <= a.occurred_at AND b.legacy_source = 'AuditLog'
-  ) IS FALSE; -- placeholder monotonicity check, full HMAC re-derivation is implementation-time work
-
--- ============================================================
--- 5. MIGRATION_REVIEW_QUEUE — none for this wave (all seed/audit rows are
---    AUTO_MAPPED or HIGH confidence); the view is still declared, per
---    convention, so every wave's queue is discoverable the same way.
+-- 5. MIGRATION_REVIEW_QUEUE
 -- ============================================================
 CREATE OR REPLACE VIEW governance.vw_migration_review_queue_010 AS
 SELECT 'security.audit_logs'::text AS target_table, id, legacy_source, legacy_record_id, migration_review_status
 FROM security.audit_logs WHERE migration_review_status = 'REQUIRES_REVIEW';
 
 -- ============================================================
--- 6. Checkpoints
+-- 6. Checkpoints — expected = the source's own count, never a constant
 -- ============================================================
 INSERT INTO migration_meta.migration_checkpoints (wave, source_table, target_table, expected_count, actual_count, status, notes)
-SELECT '010_foundation', 'AuditLog', 'security.audit_logs', 52,
-  (SELECT COUNT(*) FROM security.audit_logs WHERE legacy_source = 'AuditLog'),
-  CASE WHEN (SELECT COUNT(*) FROM security.audit_logs WHERE legacy_source = 'AuditLog') = 52 THEN 'PASS' ELSE 'FAIL' END,
-  'HMAC chain re-derivation is implementation-time work, not covered by this checkpoint alone.';
+SELECT '010_foundation', 'AuditLog', 'security.audit_logs', e.n, a.n,
+  CASE WHEN a.n = e.n THEN 'PASS' ELSE 'FAIL' END,
+  'Integrity verified outside SQL by tests/database-target/legacy-audit-backfill-integrity.test.ts.'
+FROM (SELECT COUNT(*) AS n FROM "AuditLog") e,
+     (SELECT COUNT(*) AS n FROM security.audit_logs WHERE legacy_source = 'AuditLog') a;
 INSERT INTO migration_meta.migration_checkpoints (wave, source_table, target_table, expected_count, actual_count, status, notes)
 VALUES ('010_foundation', NULL, 'governance.hazard_types', 8, 8, 'PASS', 'Seed floor only — distinct-value extraction against real data not yet run.');

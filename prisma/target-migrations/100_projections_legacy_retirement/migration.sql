@@ -180,26 +180,26 @@ CREATE TABLE IF NOT EXISTS knowledge.simulation_results (
 -- 3.1 proj.trust_profiles — materialized, refreshed by periodic job.
 -- VERIFY_AGAINST_V1.0: exact banding thresholds not given in any frozen
 -- document; drafted as a plausible aggregate, flagged for human review.
--- identity.reputation_events' column is trust_domain, not domain
--- (020_identity/migration.sql:188-201); it also has no evidence_id column -
--- removed from 3.2 below.
+-- identity.reputation_events' column is `domain` and the table now carries
+-- `evidence_id` (Paso 6A reconciliation, 020|identity.reputation_events);
+-- both are reflected here and in 3.2 below.
 CREATE MATERIALIZED VIEW IF NOT EXISTS proj.trust_profiles AS
 SELECT
   re.person_id,
-  re.trust_domain,
+  re.domain,
   SUM(re.delta) AS aggregate_score,
   COUNT(*) AS event_count,
   MAX(re.occurred_at) AS last_event_at
 FROM identity.reputation_events re
-GROUP BY re.person_id, re.trust_domain
+GROUP BY re.person_id, re.domain
 WITH NO DATA;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_trust_profiles_person_domain ON proj.trust_profiles (person_id, trust_domain);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_trust_profiles_person_domain ON proj.trust_profiles (person_id, domain);
 -- SQL_COMPLEMENTARY_REQUIRED: REFRESH MATERIALIZED VIEW CONCURRENTLY proj.trust_profiles,
 -- scheduled via jobs_worker on a periodic cadence (frequency not fixed by any frozen doc).
 
 -- 3.2 proj.trust_profile_detail — simple view, always fresh. NEW v1.1 (P1-07).
 CREATE OR REPLACE VIEW proj.trust_profile_detail AS
-SELECT re.id, re.person_id, re.trust_domain, re.delta, re.reason, re.occurred_at
+SELECT re.id, re.person_id, re.domain, re.delta, re.reason, re.evidence_id, re.occurred_at
 FROM identity.reputation_events re;
 
 -- 3.3 proj.incident_timelines — simple view, always fresh.

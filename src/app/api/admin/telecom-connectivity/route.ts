@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logAuditEvent } from "@/services/auditService";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
 import { requireTelecomConnectivityWriter } from "@/lib/security/apiGuards";
 import { canConfirmOfficialConnectivityStatus } from "@/lib/security/rbac";
 import {
@@ -319,6 +320,12 @@ async function handleConnectivityPoint(body: Record<string, unknown>, actor: { i
     targetId: poi.id,
     metadata: { category, evidenceId: evidence.id },
   });
+
+  // Shadow write (Paso 5): the POI itself. D-04's TelecomConnectivity* tables
+  // have no target mapping yet (Wave 030 documents them as structural-only),
+  // so the evidence row above is deliberately NOT mirrored — dual-read reports
+  // it as an unmapped legacy table instead of pretending it arrived.
+  await shadowWriteAfterLegacyWrite("CriticalPoi", [poi.id]);
 
   return NextResponse.json({ status: poi, evidenceId: evidence.id });
 }

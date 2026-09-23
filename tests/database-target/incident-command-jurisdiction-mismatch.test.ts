@@ -97,7 +97,7 @@ describe.skipIf(!incidentZoneDockerShouldRun)("jurisdictional mismatch is denied
     const ownMembershipInA = randomUUID();
     await owner.$executeRawUnsafe(
       `INSERT INTO institution.institutional_memberships
-         (id, person_id, organization_id, role_label, status, effective_from)
+         (id, person_id, organization_id, role_title, status, effective_from)
        VALUES ($1::uuid, $2::uuid, $3::uuid, 'Coordinator', 'ACTIVE', now() - interval '1 day')`,
       ownMembershipInA,
       fixture.personBId,

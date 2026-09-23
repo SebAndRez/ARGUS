@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
 import {
   findExistingIncident,
   getExternalIdFromIncident,
@@ -250,7 +251,16 @@ export async function finishIngestionRun(
 }
 
 export async function saveKnowledgeIncident(incident: ArgusIncidentKnowledge) {
-  return prisma.knowledgeIncident.create({ data: incidentCreateData(incident) });
+  const saved = await prisma.knowledgeIncident.create({ data: incidentCreateData(incident) });
+  // Shadow write (Paso 5): Wave 040's own sync function routes the row to
+  // incident.incident_candidates or incident.incidents exactly as the backfill
+  // would (split on verificationStatus), and syncs the evidence and transitions
+  // written alongside it. Legacy stays the source of truth; nothing here can
+  // promote a candidate into an Incident — that still needs a promotion
+  // decision, and a legacy status change that would imply one comes back as
+  // BLOCKED_RECLASSIFICATION.
+  await shadowWriteAfterLegacyWrite("KnowledgeIncident", [saved.id]);
+  return saved;
 }
 
 /**
@@ -288,7 +298,9 @@ export async function upsertKnowledgeIncidentByExternalId(incident: ArgusInciden
   const existing = await findExistingIncident(incident);
   if (!existing) {
     const data = incidentCreateData(incident);
-    return { action: "inserted" as const, incident: await prisma.knowledgeIncident.create({ data }) };
+    const inserted = await prisma.knowledgeIncident.create({ data });
+    await shadowWriteAfterLegacyWrite("KnowledgeIncident", [inserted.id]);
+    return { action: "inserted" as const, incident: inserted };
   }
   if (!shouldUpdateExistingIncident(existing, incident)) {
     return { action: "skipped" as const, incident: existing };
@@ -331,11 +343,15 @@ export async function upsertKnowledgeIncidentByExternalId(incident: ArgusInciden
     { status: canonical.status, effectiveSeverity: canonical.effectiveSeverity }
   );
 
+  // Shadow write after the update AND its transition row, so both converge in
+  // the same pass (the sync function takes the incident's transitions too).
+  await shadowWriteAfterLegacyWrite("KnowledgeIncident", [updated.id]);
+
   return { action: "updated" as const, incident: updated };
 }
 
 export async function saveKnowledgeEvidence(evidence: ArgusKnowledgeEvidenceItem) {
-  return prisma.knowledgeEvidence.create({
+  const saved = await prisma.knowledgeEvidence.create({
     data: {
       incidentId: evidence.incidentId,
       sourceId: evidence.sourceId,
@@ -359,6 +375,12 @@ export async function saveKnowledgeEvidence(evidence: ArgusKnowledgeEvidenceItem
       }),
     },
   });
+
+  // Shadow write (Paso 5): evidence.evidence_records via Wave 030's sync
+  // function. The legacy incident link is preserved inside chain_of_custody.
+  await shadowWriteAfterLegacyWrite("KnowledgeEvidence", [saved.id]);
+
+  return saved;
 }
 
 export async function saveKnowledgeEvidenceIfNew(evidence: ArgusKnowledgeEvidenceItem) {

@@ -227,20 +227,46 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_observations_legacy ON evidence.observation
 -- table receives backfill from KnowledgeEvidence/Evidence per T-04/T-12/D-04).
 CREATE TABLE IF NOT EXISTS evidence.evidence_records (
   id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  evidence_origin       evidence.evidence_origin_enum NOT NULL,
+  -- `origin_type` per A1 §evidence.evidence_records (`evidence_origin` was
+  -- applied). Same enum, same PRIMARY|DERIVED value set; only the column name
+  -- changes, and it now matches the identically-purposed
+  -- evidence.observations.origin_type. Paso 6A: 030|evidence.evidence_records.
+  origin_type           evidence.evidence_origin_enum NOT NULL,
   classification        security.information_classification_enum NOT NULL DEFAULT 'SENSITIVE',
   chain_of_custody      jsonb NOT NULL,
   license_terms         jsonb NULL,
   consent_id            uuid NULL,
   derived_from_evidence_id uuid NULL,
+  -- LocalOperationAlias block, same shape and same FKs as
+  -- evidence.observations: an evidence record can also be captured offline on
+  -- a device and reconciled later.
+  local_alias           varchar(255) NULL,
+  device_id             uuid NULL,
+  operational_session_id uuid NULL,
+  client_created_at     timestamptz NULL,
+  received_at           timestamptz NULL,
+  reconciliation_status varchar(30) NULL,
   legacy_status         text NULL,
   legacy_source         varchar(100) NULL,
   legacy_record_id      text NULL,
   migration_confidence  varchar(10) NULL CHECK (migration_confidence IN ('HIGH','MEDIUM','LOW')),
   migration_review_status varchar(30) NULL,
   created_at            timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_evidence_records_derived_from FOREIGN KEY (derived_from_evidence_id) REFERENCES evidence.evidence_records(id) ON DELETE SET NULL
+  CONSTRAINT fk_evidence_records_derived_from FOREIGN KEY (derived_from_evidence_id) REFERENCES evidence.evidence_records(id) ON DELETE SET NULL,
+  CONSTRAINT fk_evidence_records_consent FOREIGN KEY (consent_id) REFERENCES identity.consents(id) ON DELETE SET NULL,
+  CONSTRAINT fk_evidence_records_device FOREIGN KEY (device_id) REFERENCES identity.devices(id) ON DELETE SET NULL,
+  CONSTRAINT fk_evidence_records_operational_session FOREIGN KEY (operational_session_id) REFERENCES identity.operational_sessions(id) ON DELETE SET NULL
 );
+-- Cross-wave FK deferred here by Wave 020: identity.reputation_events.
+-- evidence_id -> evidence.evidence_records(id) ON DELETE SET NULL. The column
+-- is declared in 020 (the evidence schema does not exist yet at that point);
+-- the constraint is declared here, the same pattern Wave 010 uses for
+-- security.audit_logs.device_id.
+DO $$ BEGIN
+  ALTER TABLE identity.reputation_events
+    ADD CONSTRAINT fk_reputation_events_evidence
+    FOREIGN KEY (evidence_id) REFERENCES evidence.evidence_records(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_evidence_records_legacy ON evidence.evidence_records (legacy_source, legacy_record_id)
   WHERE legacy_record_id IS NOT NULL;
 

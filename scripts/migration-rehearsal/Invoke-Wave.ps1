@@ -95,12 +95,22 @@ try {
         }
 
         if (-not $SkipBackfill -and (Test-Path $backfillFile)) {
-            $o = Invoke-ArgusPsql -SqlFile $backfillFile
+            # Backfills run under a deliberately NON-UTC session TimeZone:
+            # production is UTC, so an implicit timestamp -> timestamptz cast
+            # of a legacy `timestamp without time zone` column would pass there
+            # by accident; here it shifts the instant and the legacy data
+            # invariants fail. The audit integrity key comes from the per-run
+            # env file, never from SQL.
+            $backfillSession = @{
+                "argus.audit_integrity_key"    = $env:ARGUS_AUDIT_INTEGRITY_KEY_DEV
+                "argus.audit_integrity_key_id" = $env:ARGUS_AUDIT_INTEGRITY_KEY_ID
+            }
+            $o = Invoke-ArgusPsql -SqlFile $backfillFile -TimeZone "America/Santiago" -SessionSettings $backfillSession
             Add-Step "backfill.sql (1st run)" $o
 
             # Fase 13 - idempotency: run again immediately, expect zero
             # duplicates / zero errors on the second pass.
-            $o2 = Invoke-ArgusPsql -SqlFile $backfillFile
+            $o2 = Invoke-ArgusPsql -SqlFile $backfillFile -TimeZone "America/Santiago" -SessionSettings $backfillSession
             Add-Step "backfill.sql (2nd run, idempotency check)" $o2
         }
 

@@ -8,14 +8,20 @@
  * `src/lib/database-target/shadow-write/*` (itself disabled by default)
  * and by tests.
  *
- * Central rule (Fase 6): an adapter must NEVER fabricate a success result
- * when it did not actually persist anything. Every write-shaped function
- * returns exactly one of:
- *   - `AdapterPersisted<T>` — genuinely constructed/would-construct the
- *     target row, carrying its migration-confidence/review-status/legacy-id
- *     provenance.
+ * Central rule (Fase 6, tightened in Paso 5): an adapter must NEVER report a
+ * result it did not produce — and, since these functions are PURE TRANSFORMS
+ * that touch no database, they can never report persistence. The success
+ * outcome used to be called `PERSISTED`, which said "this row is in the
+ * target" about a value that only existed in memory. It is now `TRANSFORMED`:
+ *   - `AdapterTransformed<T>` — the target row was successfully BUILT from the
+ *     legacy row, carrying its migration-confidence/review-status/legacy-id
+ *     provenance. Nothing was written.
  *   - `AdapterBlocked` — an explicit `NOT_ENABLED` / `MIGRATION_BLOCKED` /
  *     `REQUIRES_REVIEW` outcome, with a human-readable reason.
+ *
+ * Real persistence lives in exactly one place:
+ * `shadow-write/legacyShadowSync.ts`, which reports INSERTED/UPDATED/
+ * UNCHANGED per row and only ever from what the database itself returned.
  */
 
 import type { LegacyProvenance } from "../shared";
@@ -32,18 +38,18 @@ export interface AdapterBlocked {
   reason: string;
 }
 
-export interface AdapterPersisted<TTarget> {
-  kind: "PERSISTED";
+export interface AdapterTransformed<TTarget> {
+  kind: "TRANSFORMED";
   target: TTarget;
   legacyId: string;
   migrationConfidence: MigrationConfidence;
   reviewStatus: ReviewStatus;
 }
 
-export type AdapterOutcome<TTarget> = AdapterPersisted<TTarget> | AdapterBlocked;
+export type AdapterOutcome<TTarget> = AdapterTransformed<TTarget> | AdapterBlocked;
 
-export function isPersisted<T>(outcome: AdapterOutcome<T>): outcome is AdapterPersisted<T> {
-  return outcome.kind === "PERSISTED";
+export function isTransformed<T>(outcome: AdapterOutcome<T>): outcome is AdapterTransformed<T> {
+  return outcome.kind === "TRANSFORMED";
 }
 
 export function notEnabled(reason: string): AdapterBlocked {

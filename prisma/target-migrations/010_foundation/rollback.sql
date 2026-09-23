@@ -31,6 +31,11 @@ REVOKE SELECT ON security.access_policies, security.permissions, security.access
   security.access_role_permissions FROM app_api, ingest_worker, jobs_worker;
 REVOKE SELECT ON ALL TABLES IN SCHEMA governance FROM app_api, ingest_worker, jobs_worker;
 
+-- This wave's sync function (backfill.sql — one mapping shared by the
+-- backfill and the application's shadow-write). migration_meta's own DROP
+-- SCHEMA (000's rollback) has no CASCADE, so a survivor fails loudly.
+DROP FUNCTION IF EXISTS migration_meta.fn_sync_audit_logs(text[]);
+
 -- Drop the MIGRATION_REVIEW_QUEUE view (backfill.sql) before security.audit_logs
 -- below, or that DROP TABLE fails with "other objects depend on it".
 DROP VIEW IF EXISTS governance.vw_migration_review_queue_010;
@@ -150,7 +155,7 @@ DO $$ BEGIN DROP TYPE IF EXISTS security.contextual_access_basis_enum; EXCEPTION
 DO $$ BEGIN DROP TYPE IF EXISTS security.access_role_status_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN DROP TYPE IF EXISTS security.permission_status_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN DROP TYPE IF EXISTS security.policy_status_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN DROP TYPE IF EXISTS governance.resource_type_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP TYPE IF EXISTS resource.resource_type_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN DROP TYPE IF EXISTS governance.emergency_basis_status_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN DROP TYPE IF EXISTS governance.emergency_basis_category_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN DROP TYPE IF EXISTS governance.jurisdiction_scope_role_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
@@ -169,6 +174,11 @@ DO $$ BEGIN DROP TYPE IF EXISTS security.information_classification_enum; EXCEPT
 -- ============================================================
 DROP SCHEMA IF EXISTS security;
 DROP SCHEMA IF EXISTS governance;
+-- `resource` is created by THIS wave (it holds resource.resource_type_enum,
+-- whose first user governance.resource_reservation_rules lives here), so this
+-- wave removes it. No CASCADE: if wave 060 left a table behind, this fails
+-- loudly instead of deleting it.
+DROP SCHEMA IF EXISTS resource;
 
 -- ============================================================
 -- 7. Extensions — NOT dropped here

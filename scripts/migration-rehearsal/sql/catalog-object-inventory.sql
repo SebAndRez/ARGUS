@@ -17,19 +17,37 @@
 \pset format unaligned
 \pset tuples_only on
 
+-- Temporary namespaces (pg_temp_N / pg_toast_temp_N) are created by the
+-- server for any session that uses a temp object (e.g. the pg_temp helper
+-- functions of legacy-baseline/20_realistic_data.sql) and persist in the
+-- catalog; they are never ARGUS objects.
 SELECT 'SCHEMA|' || schema_name
 FROM information_schema.schemata
 WHERE schema_name NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+  AND schema_name NOT LIKE 'pg_temp_%'
+  AND schema_name NOT LIKE 'pg_toast_temp_%'
 ORDER BY 1;
 
-SELECT 'TABLE|' || schemaname || '.' || tablename
-FROM pg_tables
-WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+-- Tables and views owned by an installed extension (pg_depend deptype
+-- 'e', e.g. PostGIS spatial_ref_sys / geometry_columns / geography_columns,
+-- which now live in schema `extensions` like on Supabase) are excluded exactly
+-- as extension-owned functions/types/indexes already were below.
+SELECT 'TABLE|' || t.schemaname || '.' || t.tablename
+FROM pg_tables t
+WHERE t.schemaname NOT IN ('pg_catalog', 'information_schema')
+  AND NOT EXISTS (
+    SELECT 1 FROM pg_depend d
+    WHERE d.objid = format('%I.%I', t.schemaname, t.tablename)::regclass AND d.deptype = 'e'
+  )
 ORDER BY 1;
 
-SELECT 'VIEW|' || schemaname || '.' || viewname
-FROM pg_views
-WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+SELECT 'VIEW|' || v.schemaname || '.' || v.viewname
+FROM pg_views v
+WHERE v.schemaname NOT IN ('pg_catalog', 'information_schema')
+  AND NOT EXISTS (
+    SELECT 1 FROM pg_depend d
+    WHERE d.objid = format('%I.%I', v.schemaname, v.viewname)::regclass AND d.deptype = 'e'
+  )
 ORDER BY 1;
 
 SELECT 'MATVIEW|' || schemaname || '.' || matviewname

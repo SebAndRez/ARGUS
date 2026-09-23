@@ -30,7 +30,10 @@ services:
       # Bind ONLY to loopback. Never 0.0.0.0. Non-productive port (55432,
       # not the default 5432) to avoid colliding with any other local
       # Postgres and to make "is this the rehearsal instance" unambiguous.
-      - "127.0.0.1:55432:5432"
+      # ARGUS_REHEARSAL_PORT (written into .env.argus-migration.local by
+      # Common.ps1) overrides it when the host has 55432 inside a WinNAT
+      # reserved range; the bind address is loopback regardless.
+      - "127.0.0.1:${ARGUS_REHEARSAL_PORT:-55432}:5432"
     environment:
       POSTGRES_DB: argus_migration_rehearsal
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set via .env.argus-migration.local}

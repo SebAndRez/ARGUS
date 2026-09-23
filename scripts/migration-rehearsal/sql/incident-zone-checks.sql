@@ -177,11 +177,11 @@ SELECT 'INCIDENT_ZONE_RELATION_PASS';
 BEGIN;
 
 -- ---------------- identities & institutions ----------------
-INSERT INTO identity.people (id, legal_name) VALUES
-  ('e1000000-0000-0000-0000-000000000001', 'R31 Actor One'),
-  ('e1000000-0000-0000-0000-000000000002', 'R31 Actor Two');
+INSERT INTO identity.people (id, legal_name, display_alias) VALUES
+  ('e1000000-0000-0000-0000-000000000001', 'R31 Actor One', 'R31 Actor One'),
+  ('e1000000-0000-0000-0000-000000000002', 'R31 Actor Two', 'R31 Actor Two');
 
-INSERT INTO institution.organizations (id, name, status) VALUES
+INSERT INTO institution.organizations (id, legal_name, status) VALUES
   ('e2000000-0000-0000-0000-000000000001', 'R31 Institution A', 'ACTIVE'),
   ('e2000000-0000-0000-0000-000000000002', 'R31 Institution B', 'ACTIVE');
 
@@ -189,7 +189,7 @@ INSERT INTO institution.organizations (id, name, status) VALUES
 -- Actor Two: CURRENT membership in Institution B (used for the jurisdiction
 -- mismatch case) plus an EXPIRED one in Institution A (case D's companion).
 INSERT INTO institution.institutional_memberships
-  (id, person_id, organization_id, role_label, status, effective_from, effective_to) VALUES
+  (id, person_id, organization_id, role_title, status, effective_from, effective_to) VALUES
   ('e3000000-0000-0000-0000-000000000001', 'e1000000-0000-0000-0000-000000000001',
    'e2000000-0000-0000-0000-000000000001', 'Coordinator', 'ACTIVE', now() - interval '2 days', NULL),
   ('e3000000-0000-0000-0000-000000000002', 'e1000000-0000-0000-0000-000000000002',

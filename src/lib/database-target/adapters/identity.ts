@@ -119,7 +119,7 @@ export function shadowWriteIdentity(
   }
   const target = userToIdentityTarget(user);
   return {
-    kind: "PERSISTED",
+    kind: "TRANSFORMED",
     target,
     legacyId: user.id,
     migrationConfidence: target.person.migrationConfidence ?? "HIGH",

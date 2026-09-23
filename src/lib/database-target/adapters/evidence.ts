@@ -138,7 +138,7 @@ export function shadowWriteEvidence(
   }
   const target = evidenceSourceToTarget(source);
   return {
-    kind: "PERSISTED",
+    kind: "TRANSFORMED",
     target,
     legacyId: record.id,
     migrationConfidence: target.migrationConfidence ?? "MEDIUM",

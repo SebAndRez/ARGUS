@@ -8,7 +8,7 @@ import {
   type LegacyKnowledgeIncidentRecord,
   type LegacyStatusMappingTable,
 } from "../../src/lib/database-target/adapters/incident";
-import { isPersisted } from "../../src/lib/database-target/adapters/types";
+import { isTransformed } from "../../src/lib/database-target/adapters/types";
 
 const record: LegacyKnowledgeIncidentRecord = {
   id: "ki_42",
@@ -129,8 +129,8 @@ describe("shadowWriteIncidentCandidate", () => {
 
   it("always persists a candidate when enabled, even without an approved mapping (REQUIRES_REVIEW, never dropped)", () => {
     const outcome = shadowWriteIncidentCandidate(record, emptyTable, ENABLED);
-    expect(isPersisted(outcome)).toBe(true);
-    if (isPersisted(outcome)) {
+    expect(isTransformed(outcome)).toBe(true);
+    if (isTransformed(outcome)) {
       expect(outcome.reviewStatus).toBe("REQUIRES_REVIEW");
       expect(outcome.target.proposedProfile).toBeNull();
     }
@@ -138,8 +138,8 @@ describe("shadowWriteIncidentCandidate", () => {
 
   it("persists a fully-classified candidate when the mapping resolves", () => {
     const outcome = shadowWriteIncidentCandidate(record, mappedTable, ENABLED);
-    expect(isPersisted(outcome)).toBe(true);
-    if (isPersisted(outcome)) {
+    expect(isTransformed(outcome)).toBe(true);
+    if (isTransformed(outcome)) {
       expect(outcome.reviewStatus).toBe("AUTO_MAPPED");
       expect(outcome.target.proposedProfile?.operationalStatus).toBe("ACTIVE");
     }
@@ -147,8 +147,8 @@ describe("shadowWriteIncidentCandidate", () => {
 
   it("never returns an Incident-shaped target — the outcome's target is always an IncidentCandidate", () => {
     const outcome = shadowWriteIncidentCandidate(record, mappedTable, ENABLED);
-    expect(isPersisted(outcome)).toBe(true);
-    if (isPersisted(outcome)) {
+    expect(isTransformed(outcome)).toBe(true);
+    if (isTransformed(outcome)) {
       expect(outcome.target.status).toBe("UNDER_ASSESSMENT");
     }
   });

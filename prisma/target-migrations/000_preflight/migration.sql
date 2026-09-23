@@ -102,6 +102,27 @@ BEGIN
     CREATE ROLE access_admin LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
   END IF;
 
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sync_worker') THEN
+    -- The principal that runs the application's shadow-write while legacy is
+    -- still the source of truth (Paso 5/6A). An 8th role, not a reuse:
+    --   * app_api is the request role. If it could call the sync functions,
+    --     any request path could rewrite a target row on the strength of a
+    --     legacy id, which is precisely the blast radius this split removes;
+    --   * migration_owner is a DDL identity with NOLOGIN, and connecting a
+    --     running application as the object owner is the silent-owner reuse
+    --     this package forbids everywhere else.
+    -- Its ONLY reachable path into the target is EXECUTE on the
+    -- migration_meta.fn_sync_* functions (granted in each wave's backfill.sql,
+    -- where the function is defined). It gets NO table privilege in ANY target
+    -- schema: it cannot SELECT a row, cannot INSERT or UPDATE one directly,
+    -- and cannot DELETE anything. What it CAN do is re-run the one mapping
+    -- those functions implement, for legacy ids that already exist.
+    -- NOBYPASSRLS like every other role here; the functions are SECURITY
+    -- DEFINER, which is what lets a role with no table grants run a mapping
+    -- that is fixed in SQL rather than supplied by the caller.
+    CREATE ROLE sync_worker LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  END IF;
+
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'readonly_inspector') THEN
     -- General read-only inspection role for humans/tooling doing schema
     -- review (analogous in spirit to

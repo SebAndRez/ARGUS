@@ -25,7 +25,7 @@ Catalog v1.1; the other 7 tables are reconstructed from cross-referenced clues.
 
 ## Dependencies on prior waves
 
-`010_foundation` (`governance.resource_type_enum`,
+`010_foundation` (`resource.resource_type_enum`,
 `governance.resource_reservation_rules` — the config table this wave's
 reservation TTLs resolve against, never codified locally), `020_identity`
 (`institution.organizations`), `050_help_mission` (`mission.missions`).

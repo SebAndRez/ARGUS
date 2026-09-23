@@ -160,31 +160,46 @@ CREATE TABLE IF NOT EXISTS community.family_networks (
 );
 
 -- VERIFY_AGAINST_V1.0
+-- RECONCILED_AGAINST_V1.0 (Paso 6A: 090|community.dependents).
 CREATE TABLE IF NOT EXISTS community.dependents (
   id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_network_id   uuid NULL,
+  -- NOT NULL + CASCADE per A1: a dependent record exists INSIDE a family
+  -- network. SET NULL would have left an orphan dependent — a minor with a
+  -- guardian and no network — silently readable.
+  family_network_id   uuid NOT NULL,
+  -- The dependent is a person in their own right (A1: person_id NOT NULL),
+  -- not only a pointer to whoever is responsible for them.
+  person_id           uuid NOT NULL,
   guardian_person_id  uuid NOT NULL,
   status              community.dependent_status_enum NOT NULL DEFAULT 'ACTIVE',
-  created_at          timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_dependents_family_network FOREIGN KEY (family_network_id) REFERENCES community.family_networks(id) ON DELETE SET NULL,
+  CONSTRAINT fk_dependents_family_network FOREIGN KEY (family_network_id) REFERENCES community.family_networks(id) ON DELETE CASCADE,
+  CONSTRAINT fk_dependents_person FOREIGN KEY (person_id) REFERENCES identity.people(id) ON DELETE RESTRICT,
   CONSTRAINT fk_dependents_guardian FOREIGN KEY (guardian_person_id) REFERENCES identity.people(id) ON DELETE RESTRICT,
   CONSTRAINT ck_dependents_has_guardian CHECK (guardian_person_id IS NOT NULL)
 );
 
 -- VERIFY_AGAINST_V1.0
+-- RECONCILED_AGAINST_V1.0 (Paso 6A: 090|community.community_groups).
 CREATE TABLE IF NOT EXISTS community.community_groups (
-  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  help_request_id uuid NULL,
-  name            varchar(255) NOT NULL,
-  status          community.community_group_status_enum NOT NULL DEFAULT 'ACTIVE',
-  created_at      timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_community_groups_help_request FOREIGN KEY (help_request_id) REFERENCES help.help_requests(id) ON DELETE SET NULL
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- No help_request_id: A1 gives this table none, and a community group is not
+  -- a child of one help request — it outlives any single emergency. If the two
+  -- ever need linking it belongs in a join table, where the cardinality is
+  -- honest, not in a nullable column that quietly makes the group disposable.
+  name       varchar(255) NOT NULL,
+  status     community.community_group_status_enum NOT NULL DEFAULT 'ACTIVE',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  deleted_at timestamptz NULL
 );
 
 -- VERIFY_AGAINST_V1.0. Derived from User.role subset (volunteer-related values).
+-- RECONCILED_AGAINST_V1.0 (Paso 6A: 090|community.volunteers).
 CREATE TABLE IF NOT EXISTS community.volunteers (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   person_id            uuid NOT NULL,
+  -- A volunteer may belong to a community group, and keeps existing when the
+  -- group is dissolved (A1: SET NULL).
+  community_group_id   uuid NULL,
   status               community.volunteer_status_enum NOT NULL DEFAULT 'ACTIVE',
   legacy_status        text NULL,
   legacy_source        varchar(100) NULL,
@@ -193,6 +208,7 @@ CREATE TABLE IF NOT EXISTS community.volunteers (
   migration_review_status varchar(30) NULL,
   created_at           timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_volunteers_person FOREIGN KEY (person_id) REFERENCES identity.people(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_volunteers_community_group FOREIGN KEY (community_group_id) REFERENCES community.community_groups(id) ON DELETE SET NULL,
   CONSTRAINT uq_volunteers_person UNIQUE (person_id)
 );
 

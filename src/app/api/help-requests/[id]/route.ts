@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logAuditEvent } from "@/services/auditService";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
 import { requireOperator } from "@/lib/security/apiGuards";
 
 type RouteContext = {
@@ -61,6 +62,13 @@ export async function PATCH(req: Request, ctx: RouteContext) {
     targetId: requestId,
     metadata: { note, previousStatus: helpRequest.status },
   });
+
+  // Shadow write (Paso 5): a status change is mapped, so it converges in
+  // place — except a change into RESOLVED/CLOSED, which the target cannot
+  // accept without an authorized closer (Access Control §8). That case comes
+  // back as BLOCKED_REQUIRES_DECISION and shows up in dual-read as a status
+  // divergence; it is never fabricated and never silently dropped.
+  await shadowWriteAfterLegacyWrite("HelpRequest", [requestId]);
 
   return NextResponse.json({ helpRequest: updatedRequest });
 }

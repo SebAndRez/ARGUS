@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
 import {
   MASTER_INCIDENT_PARENT_DOMAIN,
   MASTER_INCIDENT_RULES,
@@ -210,6 +211,9 @@ async function upsertParentIncident(
         tagsJson: toJson(["multi_hazard_event", rule.id]),
       },
     });
+    // Shadow write (Paso 5) — Wave 040's sync function, same contract as
+    // knowledgePersistenceService.
+    await shadowWriteAfterLegacyWrite("KnowledgeIncident", [existing.id]);
     return { id: existing.id, created: false };
   }
 
@@ -246,6 +250,7 @@ async function upsertParentIncident(
       evidenceCount: 0,
     },
   });
+  await shadowWriteAfterLegacyWrite("KnowledgeIncident", [created.id]);
   return { id: created.id, created: true };
 }
 

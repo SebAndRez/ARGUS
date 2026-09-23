@@ -63,82 +63,41 @@ export function isTargetMigrationFlagEnabled(
 }
 
 /**
- * The 5 preconditions the Executable Migration Plan (Fase 5) requires before
- * `targetDatabaseCutover` may ever be set to `true`. This is evidence
- * SUPPLIED BY THE CALLER — this module never inspects production, never
- * queries a database, never guesses. Absence of a field is treated as "not
- * satisfied" (fail closed), never as "assume satisfied".
+ * What each flag is allowed to mean (Paso 5 — the semantics the guards and
+ * the call sites both rely on):
+ *
+ *   * OFF means ZERO target access. Every entry point checks its flag before
+ *     importing the target client module, so "off" is not "connect and do
+ *     nothing" — nothing connects at all.
+ *   * `targetDatabaseRead` gates any read of the target. Dual-read is a read,
+ *     so it requires this flag AS WELL as its own (fail closed: either off =
+ *     no target access).
+ *   * `targetDatabaseShadowWrite` gates writing the target in parallel. It
+ *     can never change what the caller returns: the legacy write has already
+ *     committed and the shadow result is a separate value
+ *     (`shadow-write/legacyShadowSync.ts`).
+ *   * `targetDatabaseDualRead` gates comparing legacy against target. It
+ *     changes no user-visible behavior: the response is the legacy one, and
+ *     the comparison is only logged/metric'd.
+ *   * `targetDatabaseCutover` is NOT resolved here. It lives behind
+ *     `cutover/cutoverGuards.ts` (`resolveCutoverFlag` /
+ *     `resolveSourceOfTruth`), which requires the env flag AND every gate's
+ *     evidence. Reading the raw flag from `getTargetMigrationFlags()` and
+ *     acting on it would bypass those gates, which is exactly what the
+ *     previous 5-boolean checklist made too easy.
  */
-export interface CutoverReadinessEvidence {
-  /** The Drift 13/15 gap (13 local target-migration folders vs. 15 known-production rows) has an approved reconciliation. */
-  drift13Vs15Reconciled: boolean;
-  /** The full 11-wave rehearsal CI workflow's most recent run on this branch/commit is green. */
-  rehearsalCiApproved: boolean;
-  /** No backfill for any wave is left partially applied. */
-  backfillComplete: boolean;
-  /** Row-count parity between every legacy source and its target destination has been confirmed, with zero unexplained divergence. */
-  rowCountsMatch: boolean;
-  /** A tested, reviewed rollback path (full 11-wave rollback, per the Rollback Runbook) is available and current. */
-  rollbackAvailable: boolean;
+export function isTargetReadAllowed(env: FlagEnvSource = process.env): boolean {
+  return isTargetMigrationFlagEnabled("targetDatabaseRead", env);
 }
 
-export interface CutoverGuardResult {
-  allowed: boolean;
-  /** Empty when `allowed` is true. Each entry names exactly which precondition failed. */
-  blockingReasons: string[];
+export function isShadowWriteEnabled(env: FlagEnvSource = process.env): boolean {
+  return isTargetMigrationFlagEnabled("targetDatabaseShadowWrite", env);
 }
 
-const EMPTY_EVIDENCE: CutoverReadinessEvidence = {
-  drift13Vs15Reconciled: false,
-  rehearsalCiApproved: false,
-  backfillComplete: false,
-  rowCountsMatch: false,
-  rollbackAvailable: false,
-};
-
-/**
- * Evaluates whether `targetDatabaseCutover` may be enabled. Called
- * explicitly wherever a caller is about to flip the flag — this function
- * does not read env vars itself, it only judges the evidence handed to it,
- * so it can be unit-tested without any process/env coupling.
- */
-export function assertCutoverAllowed(
-  evidence: Partial<CutoverReadinessEvidence> | undefined
-): CutoverGuardResult {
-  const merged: CutoverReadinessEvidence = { ...EMPTY_EVIDENCE, ...(evidence ?? {}) };
-  const blockingReasons: string[] = [];
-
-  if (!merged.drift13Vs15Reconciled) {
-    blockingReasons.push("drift 13/15 not reconciled");
-  }
-  if (!merged.rehearsalCiApproved) {
-    blockingReasons.push("rehearsal CI not approved");
-  }
-  if (!merged.backfillComplete) {
-    blockingReasons.push("backfill incomplete");
-  }
-  if (!merged.rowCountsMatch) {
-    blockingReasons.push("row count divergence present");
-  }
-  if (!merged.rollbackAvailable) {
-    blockingReasons.push("rollback not available");
-  }
-
-  return { allowed: blockingReasons.length === 0, blockingReasons };
-}
-
-/**
- * Guarded flag resolution: even if `ARGUS_TARGET_DB_CUTOVER_ENABLED=true` is
- * set in the environment, this returns `false` unless `evidence` also
- * satisfies every precondition. Use this instead of raw
- * `getTargetMigrationFlags().targetDatabaseCutover` anywhere the cutover
- * flag actually gates behavior.
- */
-export function resolveCutoverFlag(
-  evidence: Partial<CutoverReadinessEvidence> | undefined,
-  env: FlagEnvSource = process.env
-): boolean {
-  const envEnabled = isTargetMigrationFlagEnabled("targetDatabaseCutover", env);
-  if (!envEnabled) return false;
-  return assertCutoverAllowed(evidence).allowed;
+/** Dual-read requires BOTH its own flag and the read flag — fail closed. */
+export function isDualReadEnabled(env: FlagEnvSource = process.env): boolean {
+  return (
+    isTargetMigrationFlagEnabled("targetDatabaseDualRead", env) &&
+    isTargetMigrationFlagEnabled("targetDatabaseRead", env)
+  );
 }

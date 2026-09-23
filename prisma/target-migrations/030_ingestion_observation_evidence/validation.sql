@@ -35,7 +35,7 @@ SELECT indexname FROM pg_indexes WHERE schemaname = 'evidence' AND indexname = '
 -- Expected: 1 row.
 
 -- D-04: TelecomConnectivityStatus/Evidence (0 rows currently) map onto the
--- same PRIMARY/DERIVED origin_type_enum as every other observation — no
+-- same PRIMARY/DERIVED observation_origin_enum as every other observation — no
 -- special label was ever required; confirm the enum has exactly the 2
 -- schema.target.prisma values (never a 3rd invented label).
 SELECT enumlabel FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid

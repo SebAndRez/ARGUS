@@ -8,9 +8,15 @@
  * is the natural next satellite once its target type is modeled — tracked,
  * not fabricated here).
  *
- * These are isolated services: nothing here is imported by
- * `src/app/api/**` or any real persistence path. Each function assumes the
- * legacy/canonical write already happened and its result is passed in.
+ * These are TRANSFORM PREVIEWS, not writers: they build the target row in
+ * memory and return `TRANSFORMED`. Until Paso 5 they returned `PERSISTED`
+ * while writing nothing, which is exactly the kind of fake success the rest
+ * of this package refuses — the outcome was renamed rather than papered over.
+ * The connected shadow-write is `legacyShadowSync.ts`.
+ *
+ * Nothing here is imported by `src/app/api/**` or any persistence path. Each
+ * function assumes the legacy/canonical write already happened and its result
+ * is passed in.
  */
 
 import {
@@ -52,7 +58,7 @@ export function shadowWriteReport(
     targetTransform: (r) => {
       const target = evidenceSourceToTarget({ kind: "REPORT", record: r });
       return {
-        kind: "PERSISTED",
+        kind: "TRANSFORMED",
         target,
         legacyId: r.id,
         migrationConfidence: target.migrationConfidence ?? "HIGH",
@@ -77,7 +83,7 @@ export function shadowWriteExternalEvent(
     targetTransform: (r) => {
       const target = evidenceSourceToTarget({ kind: "EXTERNAL_EVENT", record: r });
       return {
-        kind: "PERSISTED",
+        kind: "TRANSFORMED",
         target,
         legacyId: r.id,
         migrationConfidence: target.migrationConfidence ?? "MEDIUM",
@@ -102,7 +108,7 @@ export function shadowWriteHelpRequestDomain(
     targetTransform: (r) => {
       const target = helpRequestToTarget(r);
       return {
-        kind: "PERSISTED",
+        kind: "TRANSFORMED",
         target,
         legacyId: r.id,
         migrationConfidence: target.migrationConfidence ?? "HIGH",
@@ -140,7 +146,7 @@ export function shadowWriteKnowledgeIncident(
         };
       }
       return {
-        kind: "PERSISTED",
+        kind: "TRANSFORMED",
         target,
         legacyId: r.id,
         migrationConfidence: target.migrationConfidence ?? "HIGH",

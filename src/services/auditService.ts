@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
 
 export async function logAuditEvent(options: {
   actorUserId?: string;
@@ -7,7 +8,7 @@ export async function logAuditEvent(options: {
   targetId?: string;
   metadata?: unknown;
 }) {
-  return prisma.auditLog.create({
+  const entry = await prisma.auditLog.create({
     data: {
       actorUserId: options.actorUserId,
       action: options.action,
@@ -16,6 +17,17 @@ export async function logAuditEvent(options: {
       metadata: options.metadata ? JSON.stringify(options.metadata) : null,
     },
   });
+
+  // Dual-write of audit events (Ola 1 §9 of the executable plan, connected in
+  // Paso 5): the legacy AuditLog row above is the source of truth; this mirrors
+  // it into security.audit_logs through Wave 010's own sync function, which
+  // signs each row with the session integrity key and REFUSES to write without
+  // one (AUDIT_INTEGRITY_KEY_MISSING). In production that key is the pending
+  // KMS decision, so the shadow write fails closed there — visibly, as a
+  // TARGET_WRITE_FAILED outcome, never as a row signed with a fake key.
+  await shadowWriteAfterLegacyWrite("AuditLog", [entry.id]);
+
+  return entry;
 }
 
 /**

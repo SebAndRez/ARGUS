@@ -203,7 +203,7 @@ export async function upsertEvidence(
   const id = uuidFromSeed(idempotencyKey);
   if (await findExistingId(client, "evidence.evidence_records", id)) return { targetId: id, created: false };
   await raw(client).$executeRawUnsafe(
-    `INSERT INTO evidence.evidence_records (id, evidence_origin, classification, chain_of_custody, license_terms, consent_id, derived_from_evidence_id, legacy_status, legacy_source, legacy_record_id, migration_confidence, migration_review_status, created_at)
+    `INSERT INTO evidence.evidence_records (id, origin_type, classification, chain_of_custody, license_terms, consent_id, derived_from_evidence_id, legacy_status, legacy_source, legacy_record_id, migration_confidence, migration_review_status, created_at)
      VALUES ($1::uuid, $2::evidence.evidence_origin_enum, $3::security.information_classification_enum, $4::jsonb, $5::jsonb, $6::uuid, $7::uuid, $8, $9, $10, $11, $12, now())`,
     id,
     target.originType,

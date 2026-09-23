@@ -23,7 +23,7 @@ import {
 } from "../../src/lib/database-target/adapters/resource";
 import { shadowWriteAlert } from "../../src/lib/database-target/adapters/alert";
 import { shadowWriteIce } from "../../src/lib/database-target/adapters/ice";
-import { isPersisted } from "../../src/lib/database-target/adapters/types";
+import { isTransformed } from "../../src/lib/database-target/adapters/types";
 
 const DISABLED = { shadowWriteEnabled: false };
 const ENABLED = { shadowWriteEnabled: true };
@@ -52,8 +52,8 @@ describe("identity adapter", () => {
 
   it("persists with HIGH confidence for a recognized account status", () => {
     const outcome = shadowWriteIdentity(user, ENABLED);
-    expect(isPersisted(outcome)).toBe(true);
-    if (isPersisted(outcome)) {
+    expect(isTransformed(outcome)).toBe(true);
+    if (isTransformed(outcome)) {
       expect(outcome.migrationConfidence).toBe("HIGH");
       expect(outcome.legacyId).toBe("user_1");
     }
@@ -72,7 +72,7 @@ describe("institution adapter (CREATE_EMPTY, D-01)", () => {
   it("blocks with no legacy source when no request is supplied", () => {
     const outcome = shadowWriteInstitution(undefined, ENABLED);
     expect(outcome.kind).toBe("MIGRATION_BLOCKED");
-    if (outcome.kind !== "PERSISTED") {
+    if (outcome.kind !== "TRANSFORMED") {
       expect(outcome.reason).toMatch(/D-01/);
     }
   });
@@ -179,8 +179,8 @@ describe("incident adapter (D-02 status split, never inline CASE WHEN)", () => {
       ],
     ]);
     const outcome = shadowWriteIncident(record, table, ENABLED);
-    expect(isPersisted(outcome)).toBe(true);
-    if (isPersisted(outcome)) {
+    expect(isTransformed(outcome)).toBe(true);
+    if (isTransformed(outcome)) {
       expect(outcome.target.operationalStatus).toBe("ACTIVE");
       expect(outcome.target.verificationStatus).toBe("CONFIRMED");
     }
@@ -201,8 +201,8 @@ describe("help-request adapter", () => {
 
   it("never persists closed_* fields via this adapter (SECURITY DEFINER-only per catalog)", () => {
     const outcome = shadowWriteHelpRequest(record, ENABLED);
-    expect(isPersisted(outcome)).toBe(true);
-    if (isPersisted(outcome)) {
+    expect(isTransformed(outcome)).toBe(true);
+    if (isTransformed(outcome)) {
       expect(outcome.target.closedByActorId).toBeNull();
       expect(outcome.target.closedAt).toBeNull();
     }
@@ -253,7 +253,7 @@ describe("resource adapter (D-06 4-route split, never assumes route A)", () => {
   it("shadow write for route (D) is PERSISTED-into-the-queue (a recorded outcome), not silently blocked", () => {
     const neverClassifies: PoiRouteClassifier = () => null;
     const outcome = shadowWriteResource(record, neverClassifies, ENABLED);
-    expect(isPersisted(outcome)).toBe(true);
+    expect(isTransformed(outcome)).toBe(true);
   });
 
   it("respects an explicit route (A) classification", () => {

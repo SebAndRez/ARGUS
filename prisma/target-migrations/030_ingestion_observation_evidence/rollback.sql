@@ -13,6 +13,23 @@ REVOKE SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA evidence FROM app_api;
 REVOKE SELECT ON ALL TABLES IN SCHEMA ingest FROM app_api, jobs_worker;
 REVOKE SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA ingest FROM ingest_worker;
 
+-- Drop this wave's sync functions (backfill.sql — one mapping shared by the
+-- backfill and the application's shadow-write). They live in migration_meta,
+-- whose schema-level DROP in 000's rollback has no CASCADE, so a function
+-- left behind here would fail that rollback instead of surviving silently.
+-- The cross-wave FK this wave adds onto a Wave 020 table has to come off
+-- here: identity.reputation_events outlives this rollback, and a constraint
+-- pointing at a dropped table would block it.
+DO $$ BEGIN
+  ALTER TABLE identity.reputation_events DROP CONSTRAINT IF EXISTS fk_reputation_events_evidence;
+EXCEPTION WHEN undefined_table THEN NULL; END $$;
+
+DROP FUNCTION IF EXISTS migration_meta.fn_sync_knowledge_evidence(text[], text[]);
+DROP FUNCTION IF EXISTS migration_meta.fn_sync_reports(text[]);
+DROP FUNCTION IF EXISTS migration_meta.fn_sync_external_events(text[]);
+DROP FUNCTION IF EXISTS migration_meta.fn_sync_ingestion_runs(text[]);
+DROP FUNCTION IF EXISTS migration_meta.fn_sync_sources(text[]);
+
 -- Drop the MIGRATION_REVIEW_QUEUE views (backfill.sql) before any table they
 -- depend on, or those DROP TABLE statements fail with "other objects depend on it".
 DROP VIEW IF EXISTS ingest.vw_migration_review_queue;

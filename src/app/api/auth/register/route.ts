@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { hashPassword, validatePasswordStrength } from "@/lib/auth/passwordService";
 import { prisma } from "@/lib/prisma";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
 import {
   buildDuplicateIdentityMessage,
   hashGovId,
@@ -103,6 +104,13 @@ export async function POST(req: Request) {
     targetId: user.id,
     metadata: { email, publicAlias },
   });
+
+  // Shadow write (Paso 5): identity is upstream of Report/HelpRequest, so the
+  // person/user_account rows must exist before anything referencing them can
+  // be mirrored. Legacy `User` remains the authentication source of truth for
+  // the whole transition — nothing here reads or writes credentials into the
+  // target (passwordHash is never migrated).
+  await shadowWriteAfterLegacyWrite("User", [user.id]);
 
   return createLoginResponse({
     userId: user.id,

@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
 import { logOperationalEvent } from "@/lib/observability/operationalEvents";
 import { getCriticalPoiCategory } from "@/lib/criticalPoi/criticalPoiCategoryRegistry";
 import type { CriticalPoi, CriticalPriority } from "@/lib/criticalPoi/criticalPoiTypes";
@@ -408,6 +409,12 @@ export async function runCodigoAzulIngestion(options: { maxPages?: number } = {}
         recordsUnchanged += 1;
       }
     }
+
+    // Shadow write (Paso 5): the POI, its operational status and its status
+    // evidence have all committed in legacy; Wave 060's sync function mirrors
+    // them (evidence rows are deferred with their D-06 reason, never dropped).
+    // Never throws, so a target-side problem cannot abort this ingestion.
+    await shadowWriteAfterLegacyWrite("CriticalPoi", [poiId]);
   }
 
   const durationMs = Date.now() - startedAt;

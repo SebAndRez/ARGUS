@@ -14,8 +14,41 @@
 -- ============================================================
 -- 0. Extensions
 -- ============================================================
-CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- gen_random_uuid() for UUIDv4 PKs (ice.emergency_profiles, security.audit_logs)
-CREATE EXTENSION IF NOT EXISTS postgis;    -- geography(...) columns used from Wave 080 onward; installed here so later waves need not re-check
+-- Extensions live in schema `extensions`, as on the shared Supabase project
+-- (Paso 3 preflight: pgcrypto/uuid-ossp already there, PostGIS absent).
+-- `CREATE EXTENSION IF NOT EXISTS` without a schema would put PostGIS in the
+-- first schema of the session search_path (`public` for Supabase's postgres
+-- role) and would silently keep pgcrypto wherever it already is, so the
+-- schema is explicit and then asserted. Every SECURITY DEFINER function
+-- that calls pgcrypto or PostGIS includes `extensions` in its pinned
+-- search_path (or schema-qualifies the call); table DDL resolves the
+-- `geography` type through the migration session's search_path, which on
+-- Supabase is "$user", public, extensions.
+-- `extensions` is a PLATFORM schema (Supabase creates and owns it). ARGUS
+-- never creates or drops it — the rollback must not remove what the platform
+-- provides — so its absence is a hard, named failure instead.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'extensions') THEN
+    RAISE EXCEPTION 'ARGUS_EXTENSIONS_SCHEMA_MISSING: schema extensions must exist (Supabase provides it; a local rehearsal creates it in legacy-baseline/00_supabase_platform.sql)';
+  END IF;
+END $$;
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;   -- hmac() for audit/assignment integrity values
+CREATE EXTENSION IF NOT EXISTS postgis WITH SCHEMA extensions;    -- geography(...) columns used from Wave 030 onward
+DO $$
+DECLARE
+  v_bad text;
+BEGIN
+  SELECT string_agg(e.extname || '@' || n.nspname, ', ') INTO v_bad
+  FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
+  WHERE e.extname IN ('pgcrypto', 'postgis') AND n.nspname <> 'extensions';
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'ARGUS_EXTENSION_SCHEMA_MISMATCH: % must live in schema extensions (move them before applying the target waves; never silently continue)', v_bad;
+  END IF;
+  IF current_setting('search_path') NOT LIKE '%extensions%' THEN
+    RAISE EXCEPTION 'ARGUS_SEARCH_PATH_MISSING_EXTENSIONS: the migration session search_path (%) must include extensions, as Supabase''s postgres role does', current_setting('search_path');
+  END IF;
+END $$;
 
 -- SQL_COMPLEMENTARY_REQUIRED: UUIDv7 generation. Native pg_uuidv7 or an
 -- equivalent extension/function must be installed for the "id uuid PK,
@@ -75,11 +108,18 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
   CREATE TYPE governance.emergency_basis_status_enum AS ENUM ('ACTIVE','DEPRECATED');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
--- resource_type_enum: first used by governance.resource_reservation_rules
--- (nullable — NULL = applies to all resource types); reused unchanged by
--- resource.resources.resource_type in Wave 060. Created here, not there.
+-- resource_type_enum lives in the `resource` schema (Enums Reference Data
+-- v1.1 row 60), even though its first user — governance.resource_reservation_
+-- rules.resource_type (nullable: NULL = applies to all resource types) — is in
+-- `governance`. So the schema is created here, where the type is needed, and
+-- wave 060 creates both idempotently again. Paso 6A reconciliation
+-- (010|governance.resource_type_enum): this type used to be created as
+-- governance.resource_type_enum, which put it in a schema the frozen enums
+-- reference does not assign to it and left schema.target.prisma's
+-- @@schema("resource") permanently in drift.
+CREATE SCHEMA IF NOT EXISTS resource;
 DO $$ BEGIN
-  CREATE TYPE governance.resource_type_enum AS ENUM
+  CREATE TYPE resource.resource_type_enum AS ENUM
     ('PERSON','EQUIPMENT','FACILITY','VEHICLE','SUPPLY','SERVICE');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
@@ -268,7 +308,7 @@ CREATE TABLE IF NOT EXISTS governance.policies (
 -- jurisdictions above.
 CREATE TABLE IF NOT EXISTS governance.resource_reservation_rules (
   id                                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  resource_type                        governance.resource_type_enum NULL,  -- NULL = applies to all resource types
+  resource_type                        resource.resource_type_enum NULL,  -- NULL = applies to all resource types
   institution_id                       uuid NULL,   -- FK to institution.organizations deferred to Wave 020
   pending_confirmation_ttl_connected   interval NOT NULL DEFAULT '5 minutes',
   pending_confirmation_ttl_degraded    interval NOT NULL DEFAULT '15 minutes',

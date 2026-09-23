@@ -11,11 +11,11 @@
  *                         mandate's own rule (postgis/pgcrypto/pg_trgm are
  *                         deliberately never removed by rollback).
  *   - legacy_fixture    : anything in the `public` schema, or a
- *                         `pg_toast.*` index — the synthetic CURRENT-schema
- *                         fixture tables (`User`, `Report`,
- *                         `KnowledgeIncident`, etc., loaded by
- *                         fixtures/000_legacy_synthetic_fixtures.sql to
- *                         give backfill something to read from) and their
+ *                         `pg_toast.*` index — the CURRENT (legacy) schema
+ *                         tables (`User`, `Report`, `KnowledgeIncident`, ...,
+ *                         built by Import-ArgusLegacyBaseline from the 13 real
+ *                         prisma migrations + legacy-baseline/*.sql so that
+ *                         backfill reads production-shaped data) and their
  *                         automatic TOAST indexes. ARGUS target rollback
  *                         must never touch these — they are not ARGUS's
  *                         objects, exactly as ARGUS never touches
@@ -85,7 +85,7 @@ console.log("");
 console.log(`-- extension (${buckets.extension.length}) — never ARGUS residue --`);
 buckets.extension.forEach((l) => console.log(`  ${l}`));
 console.log("");
-console.log(`-- legacy_fixture (${buckets.legacy_fixture.length}) — synthetic current-schema fixtures + their TOAST, never touched by ARGUS rollback --`);
+console.log(`-- legacy_fixture (${buckets.legacy_fixture.length}) — legacy (current-schema) baseline tables + their TOAST, never touched by ARGUS rollback --`);
 buckets.legacy_fixture.forEach((l) => console.log(`  ${l}`));
 console.log("");
 console.log(`-- harness (${buckets.harness.length}) — the rehearsal's own connection role, not an ARGUS object --`);

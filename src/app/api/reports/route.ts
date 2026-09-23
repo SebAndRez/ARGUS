@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { analyzeReport } from "@/services/crisisAnalysisService";
 import { getCurrentUser } from "@/services/authService";
 import { logAuditEvent } from "@/services/auditService";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
+import { observeDualRead } from "@/lib/database-target/dual-read/legacyDualRead";
 import { hasAnyRole } from "@/lib/security/rbac";
 import { OPERATOR_ROLES } from "@/lib/security/apiGuards";
 import { toOperatorReport, toPublicReport } from "@/lib/security/incidentDto";
@@ -39,6 +41,15 @@ export async function GET(request: NextRequest) {
   });
 
   const payload = canViewFull ? reports.map(toOperatorReport) : reports.map(toPublicReport);
+
+  // Dual-read (Paso 5): compares the rows just read against evidence.observations.
+  // The payload above is already built from legacy and is never touched; the
+  // comparison is only logged/metric'd and never returned. Off by default and
+  // READ ONLY — see GET /api/help-requests for the full contract.
+  await observeDualRead(
+    "Report",
+    reports.map((row) => row.id)
+  );
 
   const response = NextResponse.json({ reports: payload });
   if (canViewFull) {
@@ -101,6 +112,14 @@ export async function POST(req: Request) {
     targetId: report.id,
     metadata: { category, severity: report.severity, missingPerson: isMissingPerson },
   });
+
+  // Shadow write (Paso 5): mirrors the committed legacy Report into
+  // evidence.observations through Wave 030's own sync function. Legacy stays
+  // the source of truth; this never throws and never changes the response.
+  // Report.status is deliberately NOT part of that mapping yet (no target
+  // column), which is why the status-changing PATCH routes do not call this —
+  // dual-read reports `status` as an unmapped legacy column instead.
+  await shadowWriteAfterLegacyWrite("Report", [report.id]);
 
   return NextResponse.json({ report });
 }

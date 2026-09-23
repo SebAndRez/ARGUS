@@ -69,8 +69,17 @@ SELECT kd.id, 'FACT'::knowledge.fact_kind_enum, hkf.summary,
   CASE WHEN ht.id IS NOT NULL THEN 'AUTO_MAPPED' ELSE 'REQUIRES_REVIEW' END
 FROM "HazardKnowledgeFact" hkf
 LEFT JOIN governance.hazard_types ht ON upper(ht.code) = upper(hkf."hazardType")
-LEFT JOIN knowledge.knowledge_documents kd ON kd.legacy_source = 'HazardKnowledgeDocument' AND kd.legacy_record_id = hkf."documentId"
+JOIN knowledge.knowledge_documents kd ON kd.legacy_source = 'HazardKnowledgeDocument' AND kd.legacy_record_id = hkf."documentId"
 ON CONFLICT (legacy_source, legacy_record_id) WHERE legacy_record_id IS NOT NULL DO NOTHING;
+
+-- knowledge_document_id is NOT NULL: a legacy fact with no (resolvable)
+-- document has no parent to hang from. It is recorded, not dropped and not
+-- attached to an invented document.
+INSERT INTO migration_meta.legacy_deferred_rows (source_table, legacy_record_id, wave, reason, pending_decision)
+SELECT 'HazardKnowledgeFact', hkf.id, '100_projections_legacy_retirement', 'NO_PARENT_DOCUMENT', 'knowledge document for orphan facts'
+FROM "HazardKnowledgeFact" hkf
+WHERE NOT EXISTS (SELECT 1 FROM knowledge.knowledge_facts f WHERE f.legacy_source = 'HazardKnowledgeFact' AND f.legacy_record_id = hkf.id)
+ON CONFLICT (source_table, legacy_record_id) DO NOTHING;
 -- NOTE: knowledge_document_id is NOT NULL in the target schema but
 -- HazardKnowledgeFact.documentId is nullable in the current schema — any
 -- row where kd.id resolves to NULL here will fail the NOT NULL constraint
@@ -112,15 +121,27 @@ SELECT 'knowledge.knowledge_facts', id, legacy_source, legacy_record_id, migrati
 -- ============================================================
 -- 7. Checkpoints
 -- ============================================================
-INSERT INTO migration_meta.migration_checkpoints (wave, source_table, target_table, expected_count, actual_count, status)
-SELECT '100_projections_legacy_retirement', 'HazardKnowledgeDocument+KnowledgeDocument', 'knowledge.knowledge_documents', 59,
-  (SELECT COUNT(*) FROM knowledge.knowledge_documents), CASE WHEN (SELECT COUNT(*) FROM knowledge.knowledge_documents) <= 59 THEN 'PASS' ELSE 'FAIL' END;
+-- Exact, source-derived expectations. The previous document checkpoint was
+-- "actual <= 59 -> PASS", which also passed with 0 rows migrated.
 INSERT INTO migration_meta.migration_checkpoints (wave, source_table, target_table, expected_count, actual_count, status, notes)
-SELECT '100_projections_legacy_retirement', 'HazardKnowledgeFact', 'knowledge.knowledge_facts', 41,
-  (SELECT COUNT(*) FROM knowledge.knowledge_facts), CASE WHEN (SELECT COUNT(*) FROM knowledge.knowledge_facts) = 41 THEN 'PASS' ELSE 'FAIL' END,
-  'May under-count until the nullable-documentId NOT NULL conflict (§3 note) is resolved by implementation review.';
+SELECT '100_projections_legacy_retirement', 'HazardKnowledgeDocument+KnowledgeDocument', 'knowledge.knowledge_documents', e.n, a.n,
+  CASE WHEN a.n = e.n THEN 'PASS' ELSE 'FAIL' END,
+  'Expected = every HazardKnowledgeDocument + every KnowledgeDocument whose title is not already fused.'
+FROM (SELECT (SELECT COUNT(*) FROM "HazardKnowledgeDocument")
+           + (SELECT COUNT(*) FROM "KnowledgeDocument" kd WHERE NOT EXISTS (SELECT 1 FROM "HazardKnowledgeDocument" h WHERE h.title = kd.title)) AS n) e,
+     (SELECT COUNT(*) AS n FROM knowledge.knowledge_documents WHERE legacy_source IN ('HazardKnowledgeDocument','KnowledgeDocument')) a;
+INSERT INTO migration_meta.migration_checkpoints (wave, source_table, target_table, expected_count, actual_count, status, notes)
+SELECT '100_projections_legacy_retirement', 'HazardKnowledgeFact', 'knowledge.knowledge_facts + legacy_deferred_rows', e.n, a.n,
+  CASE WHEN a.n = e.n THEN 'PASS' ELSE 'FAIL' END,
+  'Facts without a resolvable parent document are deferred (NO_PARENT_DOCUMENT), never dropped.'
+FROM (SELECT COUNT(*) AS n FROM "HazardKnowledgeFact") e,
+     (SELECT (SELECT COUNT(*) FROM knowledge.knowledge_facts WHERE legacy_source = 'HazardKnowledgeFact')
+           + (SELECT COUNT(*) FROM migration_meta.legacy_deferred_rows WHERE source_table = 'HazardKnowledgeFact') AS n) a;
 INSERT INTO migration_meta.migration_checkpoints (wave, source_table, target_table, expected_count, actual_count, status)
-VALUES ('100_projections_legacy_retirement', 'KnowledgeLesson', 'knowledge.lessons_learned', 0, 0, 'SKIPPED_NO_ROWS');
+SELECT '100_projections_legacy_retirement', 'KnowledgeLesson', 'knowledge.lessons_learned', e.n, a.n,
+  CASE WHEN e.n = 0 THEN 'SKIPPED_NO_ROWS' WHEN a.n = e.n THEN 'PASS' ELSE 'FAIL' END
+FROM (SELECT COUNT(*) AS n FROM "KnowledgeLesson") e,
+     (SELECT COUNT(*) AS n FROM knowledge.lessons_learned WHERE legacy_source = 'KnowledgeLesson') a;
 
 -- ============================================================
 -- 8. Program-level closing check — every one of the 11 waves has written

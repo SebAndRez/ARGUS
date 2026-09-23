@@ -389,6 +389,31 @@ Add-ArgusPhaseResult -Name "$PhaseScope/AuditWriterPrincipal" -ExitCode $princip
     -Evidence "$($principalSuites.Count) runtime-principal/access-role suites under app_api/access_admin, zero skipped" | Out-Null
 Write-ArgusLog "AUDIT_WRITER_PRINCIPAL_PASS"
 
+Write-ArgusLog "=== Legacy AuditLog backfill: integrity verified by the application's own code ==="
+# The Wave 010 backfill signs migrated audit rows in SQL. These suites
+# recompute every integrity_value with src/lib/database-target/security.ts
+# (the verifier the app uses) under the per-run key, check that month-edge
+# legacy instants landed in their own UTC month despite the non-UTC backfill
+# session, and that migration_meta.fn_legacy_uuid == uuidFromSeed. Same gate
+# discipline as above: Docker enabled only for this step, zero skips.
+$legacyAuditSuites = @(
+    "tests/database-target/legacy-audit-backfill-integrity.test.ts",
+    "tests/database-target/audit-log-backfill-partitions.test.ts"
+)
+$legacyAuditRun = Invoke-ArgusBlockingCommand -Phase "$PhaseScope/LegacyAuditIntegrity" `
+    -Command "npx" -Arguments (@("vitest", "run") + $legacyAuditSuites) `
+    -FailureCode "LEGACY_AUDIT_INTEGRITY_FAIL" -TimeoutSeconds 600 `
+    -Environment @{
+        ARGUS_WAVE3_INTEGRATION_TEST = "true"
+        TARGET_DATABASE_URL          = $env:DATABASE_URL
+    }
+Assert-ArgusVitestCoverage -Phase "$PhaseScope/LegacyAuditIntegrity" -Output $legacyAuditRun.Output `
+    -FailureCode "LEGACY_AUDIT_INTEGRITY_FAIL" -MinFiles $legacyAuditSuites.Count -MinTests 1 `
+    -MaxSkippedFiles 0 -MaxSkippedTests 0 | Out-Null
+Add-ArgusPhaseResult -Name "$PhaseScope/LegacyAuditIntegrity" -ExitCode $legacyAuditRun.ExitCode -Passed $true `
+    -Evidence "$($legacyAuditSuites.Count) suites, every migrated audit row verified by computeAuditLogIntegrityValue, zero skipped" | Out-Null
+Write-ArgusLog "LEGACY_AUDIT_INTEGRITY_PASS"
+
 # ============================================================
 # R31 — incident -> operational zone -> jurisdiction -> command scope.
 # BLOCKING.
@@ -493,6 +518,134 @@ $summary.IncidentZoneTestsResult = "PASS"
 Add-ArgusPhaseResult -Name "$PhaseScope/IncidentZoneTests" -ExitCode $zoneRun.ExitCode -Passed $true `
     -Evidence "$($zoneSuites.Count) R31 suites under app_api/access_admin, zero skipped" | Out-Null
 Write-ArgusLog "INCIDENT_ZONE_TESTS_PASS"
+
+# ============================================================
+# Paso 5 — shadow-write, dual-read, reconciliation and the BLOCKED cutover
+# attempt, against this fully-applied database. BLOCKING.
+#
+# The local suite does the whole sequence for real: a legacy write through the
+# app's own ingestion path, its mirror into the target, an idempotent re-run,
+# a tampered/deleted/orphan target row each DETECTED, a blocked disposition
+# change, a failed target write that leaves legacy intact, a full
+# reconciliation pass, a cutover attempt that stays shut, and a cleanup that
+# leaves the legacy database byte-identical (asserted by fingerprint inside the
+# suite itself).
+#
+# Docker gate on for this step only, zero skips: a skipped file here would mean
+# the simulation silently did not run, which is the one outcome that must never
+# look like a pass. On top of the exit code, the suite's own conclusions are
+# re-asserted here, so a suite that passed without reaching them still fails
+# the phase. Those conclusions are read from the evidence FILE the suite writes
+# (ARGUS_PASO5_EVIDENCE_FILE), not from stdout: vitest's reporter does not
+# forward a test's console output to the captured stdout of this process, and a
+# marker check that can never see its markers is not a check.
+# ============================================================
+# ============================================================
+# Paso 6A — the runtime principal for the shadow-write. BLOCKING.
+#
+# Paso 5 closed with one technical blocker of its own: the fn_sync_* functions
+# were only callable by the migration owner, an identity with no LOGIN that no
+# production process may ever connect as. sync_worker is that principal, and
+# this phase proves what it can and cannot do BY DOING IT, as sync_worker:
+# executing the mapping works, reading or writing any table directly does not,
+# and no request/worker role can call the functions at all.
+# ============================================================
+Write-ArgusLog "=== Paso 6A: sync_worker, the runtime principal for fn_sync_* ==="
+$syncPrincipal = Invoke-ArgusPsql -SqlFile (Join-Path $PSScriptRoot "sql\sync-principal-checks.sql") -AllowFailure
+$summary.SyncPrincipalChecksOutput = $syncPrincipal.Output
+
+$syncFailures = @($syncPrincipal.Output | Select-String -Pattern "SYNC_PRINCIPAL_FAIL")
+if ($syncFailures.Count -gt 0) {
+    throw "SYNC_PRINCIPAL_FAIL - sync-principal-checks.sql reported failures:`n$($syncFailures -join "`n")"
+}
+if ($syncPrincipal.ExitCode -ne 0) {
+    throw "SYNC_PRINCIPAL_FAIL - sync-principal-checks.sql exited $($syncPrincipal.ExitCode); an aborted check file is not a passing check file."
+}
+$syncText = $syncPrincipal.Output -join "`n"
+if ($syncText -notmatch "SYNC_PRINCIPAL_CHECKS_PASS") {
+    throw "SYNC_PRINCIPAL_FAIL - the file ran without reaching its own conclusion (SYNC_PRINCIPAL_CHECKS_PASS absent)."
+}
+# Both directions again: an all-denied role would satisfy every negative case
+# while proving the shadow-write cannot run at all.
+$syncPositive = @($syncPrincipal.Output | Select-String -Pattern "SYNC_PRINCIPAL_OK \| positive").Count
+$syncNegative = @($syncPrincipal.Output | Select-String -Pattern "SYNC_PRINCIPAL_OK \| negative").Count
+if ($syncPositive -lt 2) { throw "SYNC_PRINCIPAL_FAIL - only $syncPositive positive case(s) passed; sync_worker must be able to run the mapping." }
+if ($syncNegative -lt 5) { throw "SYNC_PRINCIPAL_FAIL - only $syncNegative negative case(s) passed; expected at least 5." }
+$summary.SyncPrincipalPositivePass = $syncPositive
+$summary.SyncPrincipalNegativePass = $syncNegative
+$summary.SyncPrincipalResult = "PASS"
+Add-ArgusPhaseResult -Name "$PhaseScope/SyncPrincipal" -ExitCode $syncPrincipal.ExitCode -Passed $true `
+    -Evidence "sync_worker: positive=$syncPositive negative=$syncNegative, 11 fn_sync_* SECURITY DEFINER with pinned search_path, zero table privileges" | Out-Null
+Write-ArgusLog "SYNC_PRINCIPAL_PASS positive=$syncPositive negative=$syncNegative"
+
+Write-ArgusLog "=== Paso 5: shadow-write + dual-read + reconciliation + blocked cutover ==="
+$paso5Suites = @(
+    "tests/database-target/paso5-shadow-dual-read-local.test.ts",
+    "tests/database-target/paso5-shadow-sync-contract.test.ts",
+    "tests/database-target/paso5-dual-read-contract.test.ts",
+    "tests/database-target/paso5-legacy-response-unaffected.test.ts",
+    "tests/database-target/paso5-drift-classification.test.ts"
+)
+# The suite writes one line per conclusion here; the file is truncated by the
+# suite itself at the start of its run, so a stale file cannot satisfy this gate.
+$paso5EvidenceSlug = ($PhaseScope -replace "[^A-Za-z0-9]", "-")
+$paso5EvidenceFile = Join-Path $Script:ArgusLogDir "paso5-markers-$paso5EvidenceSlug.log"
+Remove-Item $paso5EvidenceFile -Force -ErrorAction SilentlyContinue
+$paso5Run = Invoke-ArgusBlockingCommand -Phase "$PhaseScope/ShadowDualRead" `
+    -Command "npx" -Arguments (@("vitest", "run") + $paso5Suites) `
+    -FailureCode "PASO5_SHADOW_DUAL_READ_FAIL" -TimeoutSeconds 1800 `
+    -Environment @{
+        ARGUS_WAVE3_INTEGRATION_TEST  = "true"
+        TARGET_DATABASE_URL           = $env:DATABASE_URL
+        ARGUS_AUDIT_INTEGRITY_KEY_DEV = $env:ARGUS_AUDIT_INTEGRITY_KEY_DEV
+        ARGUS_AUDIT_INTEGRITY_KEY_ID  = $env:ARGUS_AUDIT_INTEGRITY_KEY_ID
+        ARGUS_PASO5_EVIDENCE_FILE     = $paso5EvidenceFile
+    }
+$summary.Paso5ExitCode = $paso5Run.ExitCode
+$summary.Paso5Output = $paso5Run.Output | Select-Object -Last 40
+Assert-ArgusVitestCoverage -Phase "$PhaseScope/ShadowDualRead" -Output $paso5Run.Output `
+    -FailureCode "PASO5_SHADOW_DUAL_READ_FAIL" -MinFiles $paso5Suites.Count -MinTests 1 `
+    -MaxSkippedFiles 0 -MaxSkippedTests 0 | Out-Null
+
+# No evidence file at all = the simulation did not reach a single conclusion,
+# whatever the exit code said.
+if (-not (Test-Path $paso5EvidenceFile)) {
+    throw "PASO5_SHADOW_DUAL_READ_FAIL - the suites exited 0 but wrote no evidence to $paso5EvidenceFile; a simulation that records nothing proves nothing."
+}
+# [string[]] and .ToString() are not decoration: Get-Content hangs PSPath /
+# PSParentPath / ReadCount note-properties on every line it returns, and
+# ConvertTo-Json -Depth 6 walks those recursively - 41 marker lines became a
+# 104 MB property in test-summary.json and the run's own result file never
+# finished serializing. The summary stores plain strings.
+$paso5Markers = [string[]]@(Get-Content -Path $paso5EvidenceFile -Encoding utf8 |
+    ForEach-Object { $_.ToString() } | Where-Object { $_.Trim() -ne "" })
+$summary.Paso5Markers = $paso5Markers
+$paso5Text = $paso5Markers -join "`n"
+$requiredPaso5Markers = @(
+    "PASO5_DUAL_READ_RECONCILED_PASS",
+    "PASO5_CUTOVER_BLOCKED_PASS",
+    "PASO5_LEGACY_UNCHANGED_PASS",
+    "PASO5_SIMULATION_PASS"
+)
+$missingPaso5 = @($requiredPaso5Markers | Where-Object { $paso5Text -notmatch [regex]::Escape($_) })
+if ($missingPaso5.Count -gt 0) {
+    throw "PASO5_SHADOW_DUAL_READ_FAIL - the simulation ran without proving: $($missingPaso5 -join ", ")"
+}
+# The reconciliation matrix and the blocked gates go into the log as evidence.
+$summary.Paso5Reconciliation = @($paso5Markers | Where-Object { $_ -like "PASO5_RECONCILIATION|*" })
+$summary.Paso5ReconciliationTotals = @($paso5Markers | Where-Object { $_ -like "PASO5_RECONCILIATION_TOTALS|*" })
+$summary.Paso5CutoverBlockedGates = @($paso5Markers | Where-Object { $_ -like "PASO5_CUTOVER_BLOCKED|*" })
+foreach ($line in $paso5Markers) { Write-ArgusLog $line }
+if ($summary.Paso5Reconciliation.Count -lt 1) {
+    throw "PASO5_SHADOW_DUAL_READ_FAIL - no reconciled domain was reported; a reconciliation with no domains is not a reconciliation."
+}
+if ($summary.Paso5CutoverBlockedGates.Count -lt 1) {
+    throw "PASO5_SHADOW_DUAL_READ_FAIL - no blocked cutover gate was reported; a cutover that nothing blocks is not a blocked cutover."
+}
+$summary.Paso5Result = "PASS"
+Add-ArgusPhaseResult -Name "$PhaseScope/ShadowDualRead" -ExitCode $paso5Run.ExitCode -Passed $true `
+    -Evidence "$($paso5Suites.Count) Paso 5 suites, zero skipped; $($summary.Paso5Reconciliation.Count) reconciled domains; $($summary.Paso5CutoverBlockedGates.Count) cutover gates blocked" | Out-Null
+Write-ArgusLog "PASO5_SHADOW_DUAL_READ_PASS"
 
 # ============================================================
 # Fase 16 (prisma validate) and Fase 17 (repo test suites). ALL BLOCKING.

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
 import { logAuditEvent } from "@/services/auditService";
 import { requireOperator } from "@/lib/security/apiGuards";
 import { canChangeUserRole, canChangeAccountStatus } from "@/lib/security/rbac";
@@ -57,6 +58,10 @@ export async function PATCH(req: Request, ctx: RouteContext) {
     targetId: userId,
     metadata: { role, accountStatus },
   });
+
+  // Shadow write (Paso 5): role maps to identity.people.legacy_status and
+  // accountStatus to identity.user_accounts.status.
+  await shadowWriteAfterLegacyWrite("User", [userId]);
 
   return NextResponse.json({ user: updated });
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/services/authService";
 import { logAuditEvent } from "@/services/auditService";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
 import { analyzeReport } from "@/services/crisisAnalysisService";
 
 const RESTRICTED_REPORT_STATUS = ["LIMITED", "SUSPENDED", "BANNED"];
@@ -157,6 +158,9 @@ export async function POST(request: NextRequest) {
       locationText: lastSeenText,
     },
   });
+
+  // Shadow write (Paso 5) — same contract as POST /api/reports.
+  await shadowWriteAfterLegacyWrite("Report", [report.id]);
 
   return NextResponse.json({ missingPerson: publicMissingPerson(report) });
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requiresProfileCompletion } from "@/lib/identity/accountIdentityPolicy";
 import { prisma } from "@/lib/prisma";
+import { shadowWriteAfterLegacyWrite } from "@/lib/database-target/shadow-write/legacyShadowSync";
 import { createLoginRedirectResponse } from "@/services/authService";
 import { logAuditEvent } from "@/services/auditService";
 import { formatPublicAlias } from "@/services/govIdentity/govIdentityProvider";
@@ -148,6 +149,10 @@ export async function GET(request: NextRequest) {
       targetId: user.id,
       metadata: { email, provider: "google" },
     });
+
+    // Shadow write (Paso 5) — see POST /api/auth/register. Login only updates
+    // lastLoginAt, which is a mapped column, so this converges in place.
+    await shadowWriteAfterLegacyWrite("User", [user.id]);
 
     const nextPath = request.cookies.get(GOOGLE_NEXT_COOKIE)?.value ?? "/app";
     const finalPath = requiresProfileCompletion(user)

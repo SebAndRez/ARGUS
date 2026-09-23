@@ -27,14 +27,24 @@ DO $$ BEGIN CREATE TYPE help.help_request_status_enum AS ENUM
   ('RECEIVED','TRIAGED','ASSIGNED','IN_ATTENTION','ESCALATED','ON_HOLD',
    'AWAITING_RESOURCE','PARTIALLY_RESOLVED','RESOLVED','CLOSED','CANCELLED','DUPLICATE');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- #44, 12
+-- A1 §help.operational_needs: DEFAULT 'IDENTIFIED', "Pendiente/convertida/
+-- resuelta". OPEN/FULFILLED/CANCELLED were applied. Table is CREATE_EMPTY.
 DO $$ BEGIN CREATE TYPE help.operational_need_status_enum AS ENUM
-  ('OPEN','IN_PROGRESS','FULFILLED','CANCELLED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- #45, 4
+  ('IDENTIFIED','IN_PROGRESS','CONVERTED','RESOLVED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- #45, 4
+-- A1 §help.affected_people states the six values inline:
+-- AT_RISK|INJURED|TRAPPED|SAFE|DECEASED|UNKNOWN. MISSING was applied in place
+-- of TRAPPED; no migrated row uses it (the 050 backfill writes UNKNOWN).
 DO $$ BEGIN CREATE TYPE help.affectation_status_enum AS ENUM
-  ('UNKNOWN','SAFE','AT_RISK','INJURED','MISSING','DECEASED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- #46, 6
+  ('UNKNOWN','SAFE','AT_RISK','INJURED','TRAPPED','DECEASED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- #46, 6
+-- A1 §help.situation_updates states them inline: STATUS_CHANGE|
+-- RESOLUTION_CLAIM|OTHER. NOTE was applied.
 DO $$ BEGIN CREATE TYPE help.situation_update_type_enum AS ENUM
-  ('STATUS_CHANGE','RESOLUTION_CLAIM','NOTE'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- #47, 3
+  ('STATUS_CHANGE','RESOLUTION_CLAIM','OTHER'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- #47, 3
+-- A1 §help.situation_updates states them inline: PENDING_OPERATOR_REVIEW|
+-- ACKNOWLEDGED_BY_OPERATOR. REVIEWED was applied — weaker, because an
+-- operator acknowledging a resolution claim is the act the control cares about.
 DO $$ BEGIN CREATE TYPE help.resolution_claim_review_status_enum AS ENUM
-  ('PENDING_OPERATOR_REVIEW','REVIEWED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- #48, 2
+  ('PENDING_OPERATOR_REVIEW','ACKNOWLEDGED_BY_OPERATOR'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- #48, 2
 DO $$ BEGIN CREATE TYPE help.collaboration_invitation_status_enum AS ENUM
   ('OFFERED','ACCEPTED','REJECTED','EXPIRED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;   -- #49, 4
 
@@ -173,33 +183,53 @@ $$;
 
 -- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS help.operational_needs (
-  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  incident_id   uuid NOT NULL,
-  description   text NOT NULL,
-  status        help.operational_need_status_enum NOT NULL DEFAULT 'OPEN',
-  created_at    timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_operational_needs_incident FOREIGN KEY (incident_id) REFERENCES incident.incidents(id) ON DELETE RESTRICT
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- Both parents are NULL per A1: a need can be recorded from a help request
+  -- before an incident exists, or from an incident with no help request.
+  incident_id     uuid NULL,
+  help_request_id uuid NULL,
+  description     text NOT NULL,
+  status          help.operational_need_status_enum NOT NULL DEFAULT 'IDENTIFIED',
+  classification  security.information_classification_enum NOT NULL DEFAULT 'OPERATIONAL',
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT fk_operational_needs_incident FOREIGN KEY (incident_id) REFERENCES incident.incidents(id) ON DELETE SET NULL,
+  CONSTRAINT fk_operational_needs_help_request FOREIGN KEY (help_request_id) REFERENCES help.help_requests(id) ON DELETE SET NULL
 );
 
 -- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS help.affected_people (
-  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  help_request_id uuid NOT NULL,
-  person_id       uuid NULL,
-  status          help.affectation_status_enum NOT NULL DEFAULT 'UNKNOWN',
-  created_at      timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_affected_people_help_request FOREIGN KEY (help_request_id) REFERENCES help.help_requests(id) ON DELETE RESTRICT,
-  CONSTRAINT fk_affected_people_person FOREIGN KEY (person_id) REFERENCES identity.people(id) ON DELETE SET NULL
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  help_request_id      uuid NOT NULL,
+  person_id            uuid NULL,
+  -- `affectation_status` per A1 (`status` was applied): on a table whose rows
+  -- are people, "status" alone reads as record state, not as how the person is
+  -- affected. Same enum, same default. Paso 6A: 050|help.affected_people.
+  affectation_status   help.affectation_status_enum NOT NULL DEFAULT 'UNKNOWN',
+  -- An unidentified affected person is recorded provisionally rather than not
+  -- recorded at all; merges happen by pointing at the surviving row, never by
+  -- deleting one.
+  provisional_identity jsonb NULL,
+  merged_into_id       uuid NULL,
+  classification       security.information_classification_enum NOT NULL DEFAULT 'SENSITIVE',
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  -- CASCADE per A1 ("hija directa, no N:M").
+  CONSTRAINT fk_affected_people_help_request FOREIGN KEY (help_request_id) REFERENCES help.help_requests(id) ON DELETE CASCADE,
+  CONSTRAINT fk_affected_people_person FOREIGN KEY (person_id) REFERENCES identity.people(id) ON DELETE SET NULL,
+  CONSTRAINT fk_affected_people_merged_into FOREIGN KEY (merged_into_id) REFERENCES help.affected_people(id) ON DELETE SET NULL
 );
 
 -- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS help.rescue_assessments (
-  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  help_request_id      uuid NOT NULL,
-  assessed_by_actor_id uuid NULL,
-  notes                text NULL,
-  assessed_at          timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT fk_rescue_assessments_help_request FOREIGN KEY (help_request_id) REFERENCES help.help_requests(id) ON DELETE RESTRICT
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  help_request_id  uuid NOT NULL,
+  -- A1 gives three named note fields instead of one free-text `notes`, and no
+  -- assessor column: who assessed is a security.audit_logs fact, not a
+  -- denormalised uuid here. Table is CREATE_EMPTY, so nothing is rewritten.
+  hazard_notes     text NULL,
+  mobility_notes   text NULL,
+  resources_needed jsonb NULL,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT fk_rescue_assessments_help_request FOREIGN KEY (help_request_id) REFERENCES help.help_requests(id) ON DELETE CASCADE
 );
 
 -- VERIFY_AGAINST_V1.0
@@ -207,15 +237,21 @@ CREATE TABLE IF NOT EXISTS help.situation_updates (
   id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   help_request_id       uuid NOT NULL,
   update_type           help.situation_update_type_enum NOT NULL,
-  declared_by_actor_type security.actor_type_enum NULL,
-  declared_by_actor_id   uuid NULL,
+  -- NOT NULL per A1: an update always has a declarer. Table is CREATE_EMPTY.
+  declared_by_actor_type security.actor_type_enum NOT NULL,
+  declared_by_actor_id   uuid NOT NULL,
   content               text NOT NULL,
   review_status         help.resolution_claim_review_status_enum NULL,
+  local_alias           varchar(255) NULL,
   device_id             uuid NULL,
   operational_session_id uuid NULL,
-  local_alias           varchar(255) NULL,
+  client_created_at     timestamptz NULL,
+  received_at           timestamptz NULL,
+  reconciliation_status varchar(30) NULL,
   created_at            timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_situation_updates_help_request FOREIGN KEY (help_request_id) REFERENCES help.help_requests(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_situation_updates_device FOREIGN KEY (device_id) REFERENCES identity.devices(id) ON DELETE SET NULL,
+  CONSTRAINT fk_situation_updates_operational_session FOREIGN KEY (operational_session_id) REFERENCES identity.operational_sessions(id) ON DELETE SET NULL,
   CONSTRAINT ck_situation_updates_review_status
     CHECK (update_type != 'RESOLUTION_CLAIM' OR review_status IS NOT NULL)
 );
@@ -224,13 +260,31 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_situation_updates_device_local_alias
 
 -- VERIFY_AGAINST_V1.0
 CREATE TABLE IF NOT EXISTS help.collaboration_invitations (
-  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  help_request_id   uuid NOT NULL,
-  invited_person_id uuid NOT NULL,
-  status            help.collaboration_invitation_status_enum NOT NULL DEFAULT 'OFFERED',
-  created_at        timestamptz NOT NULL DEFAULT now(),
+  id                          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  help_request_id             uuid NOT NULL,
+  invited_person_id           uuid NOT NULL,
+  capability_id               uuid NULL,
+  status                      help.collaboration_invitation_status_enum NOT NULL DEFAULT 'OFFERED',
+  -- Distance is approximate on purpose: an invitation never carries the exact
+  -- location of the person who asked for help.
+  approximate_distance_meters numeric(10,2) NULL,
+  contextual_access_id        uuid NULL,
+  -- NOT NULL per A1: an invitation that never expires is a standing grant of
+  -- access to someone else's emergency. Table is CREATE_EMPTY.
+  expires_at                  timestamptz NOT NULL,
+  local_alias                 varchar(255) NULL,
+  device_id                   uuid NULL,
+  operational_session_id      uuid NULL,
+  client_created_at           timestamptz NULL,
+  received_at                 timestamptz NULL,
+  reconciliation_status       varchar(30) NULL,
+  created_at                  timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fk_collaboration_invitations_help_request FOREIGN KEY (help_request_id) REFERENCES help.help_requests(id) ON DELETE RESTRICT,
-  CONSTRAINT fk_collaboration_invitations_person FOREIGN KEY (invited_person_id) REFERENCES identity.people(id) ON DELETE RESTRICT
+  CONSTRAINT fk_collaboration_invitations_person FOREIGN KEY (invited_person_id) REFERENCES identity.people(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_collaboration_invitations_capability FOREIGN KEY (capability_id) REFERENCES capability.capabilities(id) ON DELETE SET NULL,
+  CONSTRAINT fk_collaboration_invitations_contextual_access FOREIGN KEY (contextual_access_id) REFERENCES security.contextual_accesses(id) ON DELETE SET NULL,
+  CONSTRAINT fk_collaboration_invitations_device FOREIGN KEY (device_id) REFERENCES identity.devices(id) ON DELETE SET NULL,
+  CONSTRAINT fk_collaboration_invitations_operational_session FOREIGN KEY (operational_session_id) REFERENCES identity.operational_sessions(id) ON DELETE SET NULL
 );
 
 -- ============================================================

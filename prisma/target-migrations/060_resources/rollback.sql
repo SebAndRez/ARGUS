@@ -11,6 +11,11 @@ REVOKE SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA resource FROM app_api;
 DROP TRIGGER IF EXISTS trg_resource_reservations_single_extension ON resource.resource_reservations;
 DROP FUNCTION IF EXISTS resource.fn_reservation_single_extension();
 
+-- This wave's sync function (backfill.sql — one mapping shared by the
+-- backfill and the application's shadow-write). migration_meta's own DROP
+-- SCHEMA (000's rollback) has no CASCADE, so a survivor fails loudly.
+DROP FUNCTION IF EXISTS migration_meta.fn_sync_critical_pois(text[]);
+
 -- Drop the MIGRATION_REVIEW_QUEUE view (backfill.sql) for completeness (it
 -- reads migration_meta.critical_poi_review_queue, not a resource.* table
 -- directly, so this isn't blocking the DROP TABLEs below, but leaving it
@@ -51,6 +56,10 @@ DO $$ BEGIN DROP TYPE IF EXISTS resource.reservation_status_enum; EXCEPTION WHEN
 DO $$ BEGIN DROP TYPE IF EXISTS resource.comms_link_status_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN DROP TYPE IF EXISTS resource.inventory_movement_kind_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN DROP TYPE IF EXISTS resource.resource_status_enum; EXCEPTION WHEN OTHERS THEN NULL; END $$;
--- governance.resource_type_enum is NOT dropped here — owned by 010_foundation.
+-- resource.resource_type_enum is NOT dropped here — owned by 010_foundation.
 
-DROP SCHEMA IF EXISTS resource;
+-- DROP SCHEMA IF EXISTS resource is NOT done here: since the Paso 6A
+-- reconciliation the schema is created by wave 010 (for
+-- resource.resource_type_enum) and is dropped by 010's rollback. Dropping it
+-- here would take wave 010's type with it — or fail, because rollback runs
+-- 100 -> 000 and 010 has not rolled back yet.
