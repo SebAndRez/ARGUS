@@ -1,5 +1,31 @@
 # ARGUS Public Changelog
 
+## 2026-09-23 - pending-e6d8b8f - Argus v1.0.6.12: shadow-write conectado, dual-read real y preparación de cutover
+
+**Archivos modificados:** 110
+
+**Resumen publico:**  
+Se actualizaron 110 archivos relacionados con Base de datos interna y Eventos y fuentes externas.
+
+**Cambios principales:**
+- Se mejoro la lectura y gestion de reportes.
+- Se actualizaron eventos o fuentes externas.
+- Se agregaron cambios de documentacion publica o interna.
+- Se ajustaron flujos de acceso y sesion.
+- Se actualizaron servicios internos usados por ARGUS.
+
+**Modulos afectados:**
+- Base de datos interna
+- Eventos y fuentes externas
+- Acceso y sesion
+- Perfil de usuario
+- Reportes ciudadanos
+
+**En simple:**  
+Esta actualizacion ayuda a que los reportes sean mas claros, ordenados y faciles de revisar.
+
+---
+
 ## 2026-09-22 - pending-dbe9e9e - Argus v1.0.6.11: fix Vitest ANSI parsing in database rehearsal
 
 **Archivos modificados:** 1
